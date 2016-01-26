@@ -3760,6 +3760,16 @@ Decl *Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS,
     return TagD;
   }
 
+  if (DS.isGenericSpecified()) {
+      if (Tag)
+          Diag(DS.getGenericSpecLoc(), diag::err_generic_tag)
+          << GetDiagnosticTypeSpecifierID(DS.getTypeSpecType());
+      else
+          Diag(DS.getGenericSpecLoc(), diag::err_generic_no_declarators);
+      // Don't emit warnings after this error.
+      return TagD;
+  }
+
   if (DS.isConceptSpecified()) {
     // C++ Concepts TS [dcl.spec.concept]p1: A concept definition refers to
     // either a function concept and its definition or a variable concept and
@@ -5193,6 +5203,10 @@ Sema::ActOnTypedefDeclarator(Scope* S, Declarator& D, DeclContext* DC,
   if (D.getDeclSpec().isConstexprSpecified())
     Diag(D.getDeclSpec().getConstexprSpecLoc(), diag::err_invalid_constexpr)
       << 1;
+  if (D.getDeclSpec().isGenericSpecified())
+    Diag(D.getDeclSpec().getGenericSpecLoc(),
+         diag::err_invalid_generic) << 2;
+
   if (D.getDeclSpec().isConceptSpecified())
     Diag(D.getDeclSpec().getConceptSpecLoc(),
          diag::err_concept_wrong_decl_kind);
@@ -5970,8 +5984,14 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     if (D.getDeclSpec().isConstexprSpecified())
       NewVD->setConstexpr(true);
 
+    if (D.getDeclSpec().isGenericSpecified()) {
+        Diag(D.getDeclSpec().getGenericSpecLoc(),
+            diag::err_invalid_generic) << 0;
+        NewVD->setInvalidDecl(true);
+    }
+
     if (D.getDeclSpec().isConceptSpecified()) {
-      NewVD->setConcept(true);
+        NewVD->setInvalidDecl(true);
 
       // C++ Concepts TS [dcl.spec.concept]p2: A concept definition shall not
       // be declared with the thread_local, inline, friend, or constexpr
@@ -7433,6 +7453,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     bool isVirtual = D.getDeclSpec().isVirtualSpecified();
     bool isExplicit = D.getDeclSpec().isExplicitSpecified();
     bool isConstexpr = D.getDeclSpec().isConstexprSpecified();
+    bool isGeneric = D.getDeclSpec().isGenericSpecified();
     bool isConcept = D.getDeclSpec().isConceptSpecified();
     isFriend = D.getDeclSpec().isFriendSpecified();
     if (isFriend && !isInline && D.isFunctionDefinition()) {
@@ -7643,6 +7664,11 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       // destructors cannot be declared constexpr.
       if (isa<CXXDestructorDecl>(NewFD))
         Diag(D.getDeclSpec().getConstexprSpecLoc(), diag::err_constexpr_dtor);
+    }
+
+    if (isGeneric) {
+      if (isa<CXXDestructorDecl>(NewFD))
+        Diag(D.getDeclSpec().getConstexprSpecLoc(), diag::err_invalid_generic) << 3;
     }
 
     if (isConcept) {
@@ -10430,6 +10456,9 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   if (DS.isConstexprSpecified())
     Diag(DS.getConstexprSpecLoc(), diag::err_invalid_constexpr)
       << 0;
+  if (DS.isGenericSpecified())
+    Diag(DS.getGenericSpecLoc(), diag::err_invalid_generic)
+      << 1;
   if (DS.isConceptSpecified())
     Diag(DS.getConceptSpecLoc(), diag::err_concept_wrong_decl_kind);
 

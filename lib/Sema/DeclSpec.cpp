@@ -908,6 +908,18 @@ bool DeclSpec::SetConstexprSpec(SourceLocation Loc, const char *&PrevSpec,
   return false;
 }
 
+bool DeclSpec::SetGenericSpec(SourceLocation Loc, const char *&PrevSpec,
+                                unsigned &DiagID) {
+  if (Generic_specified) {
+    DiagID = diag::ext_duplicate_declspec;
+    PrevSpec = "generic";
+    return true;
+  }
+  Generic_specified = true;
+  GenericLoc = Loc;
+  return false;
+}
+
 bool DeclSpec::SetConceptSpec(SourceLocation Loc, const char *&PrevSpec,
                               unsigned &DiagID) {
   if (Concept_specified) {

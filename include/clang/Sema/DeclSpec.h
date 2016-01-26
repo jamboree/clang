@@ -355,6 +355,9 @@ private:
   // constexpr-specifier
   unsigned Constexpr_specified : 1;
 
+  // generic-specifier
+  unsigned Generic_specified : 1;
+
   // concept-specifier
   unsigned Concept_specified : 1;
 
@@ -385,7 +388,7 @@ private:
   SourceLocation TQ_constLoc, TQ_restrictLoc, TQ_volatileLoc, TQ_atomicLoc;
   SourceLocation FS_inlineLoc, FS_virtualLoc, FS_explicitLoc, FS_noreturnLoc;
   SourceLocation FS_forceinlineLoc;
-  SourceLocation FriendLoc, ModulePrivateLoc, ConstexprLoc, ConceptLoc;
+  SourceLocation FriendLoc, ModulePrivateLoc, ConstexprLoc, GenericLoc, ConceptLoc;
   SourceLocation TQ_pipeLoc;
 
   WrittenBuiltinSpecs writtenBS;
@@ -431,6 +434,7 @@ public:
       FS_noreturn_specified(false),
       Friend_specified(false),
       Constexpr_specified(false),
+      Generic_specified(false),
       Concept_specified(false),
       Attrs(attrFactory),
       writtenBS(),
@@ -686,6 +690,8 @@ public:
                             unsigned &DiagID);
   bool SetConstexprSpec(SourceLocation Loc, const char *&PrevSpec,
                         unsigned &DiagID);
+  bool SetGenericSpec(SourceLocation Loc, const char *&PrevSpec,
+      unsigned &DiagID);
   bool SetConceptSpec(SourceLocation Loc, const char *&PrevSpec,
                       unsigned &DiagID);
 
@@ -697,6 +703,9 @@ public:
   
   bool isConstexprSpecified() const { return Constexpr_specified; }
   SourceLocation getConstexprSpecLoc() const { return ConstexprLoc; }
+    
+  bool isGenericSpecified() const { return Generic_specified; }
+  SourceLocation getGenericSpecLoc() const { return GenericLoc; }
 
   bool isConceptSpecified() const { return Concept_specified; }
   SourceLocation getConceptSpecLoc() const { return ConceptLoc; }

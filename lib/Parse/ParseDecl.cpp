@@ -3211,6 +3211,11 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       isInvalid = DS.SetConstexprSpec(Loc, PrevSpec, DiagID);
       break;
 
+    // generic
+    case tok::kw_generic:
+        isInvalid = DS.SetGenericSpec(Loc, PrevSpec, DiagID);
+        break;
+
     // concept
     case tok::kw_concept:
       isInvalid = DS.SetConceptSpec(Loc, PrevSpec, DiagID);
@@ -4531,6 +4536,9 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
     // C++11 decltype and constexpr.
   case tok::annot_decltype:
   case tok::kw_constexpr:
+
+      // Jamboree
+  case tok::kw_generic:
 
     // C++ Concepts TS - concept
   case tok::kw_concept:

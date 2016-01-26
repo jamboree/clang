@@ -1218,6 +1218,7 @@ Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult,
   case tok::kw_friend:
   case tok::kw_typedef:
   case tok::kw_constexpr:
+  case tok::kw_generic:
   case tok::kw_concept:
     // storage-class-specifier
   case tok::kw_register:

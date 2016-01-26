@@ -2058,6 +2058,18 @@ def warn_private_extern : Warning<
 def note_private_extern : Note<
   "use __attribute__((visibility(\"hidden\"))) attribute instead">;
 
+// Jamboree
+def err_generic_tag : Error<
+  "%select{class|struct|interface|union|enum}0 cannot be marked generic">;
+def err_generic_no_declarators : Error<
+  "generic can only be used in function declarations">;
+def err_generic_wrong_decl_kind : Error<
+  "'generic' can only appear on the definition of a function">;
+def err_generic_dtor : Error<"destructor cannot be marked generic">;
+def err_invalid_generic : Error<
+  "%select{variable|function parameter|typedef|destructor}0 "
+  "cannot be generic">;
+
 // C++ Concepts TS
 def err_concept_wrong_decl_kind : Error<
   "'concept' can only appear on the definition of a function template or variable template">;
