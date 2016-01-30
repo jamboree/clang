@@ -689,6 +689,12 @@ public:
   friend TrailingObjects;
 };
 
+enum class ObjCPropertyQueryKind : uint8_t {
+  OBJC_PR_query_unknown = 0x00,
+  OBJC_PR_query_instance,
+  OBJC_PR_query_class
+};
+
 /// \brief Represents one property declaration in an Objective-C interface.
 ///
 /// For example:
@@ -716,12 +722,13 @@ public:
     /// property attribute rather than a type qualifier.
     OBJC_PR_nullability = 0x1000,
     OBJC_PR_null_resettable = 0x2000,
+    OBJC_PR_class = 0x4000
     // Adding a property should change NumPropertyAttrsBits
   };
 
   enum {
     /// \brief Number of bits fitting all the property attributes.
-    NumPropertyAttrsBits = 14
+    NumPropertyAttrsBits = 15
   };
 
   enum SetterKind { Assign, Retain, Copy, Weak };
@@ -823,6 +830,17 @@ public:
             (OBJC_PR_retain | OBJC_PR_strong | OBJC_PR_copy));
   }
 
+  bool isInstanceProperty() const { return !isClassProperty(); }
+  bool isClassProperty() const { return PropertyAttributes & OBJC_PR_class; }
+  ObjCPropertyQueryKind getQueryKind() const {
+    return isClassProperty() ? ObjCPropertyQueryKind::OBJC_PR_query_class :
+                               ObjCPropertyQueryKind::OBJC_PR_query_instance;
+  }
+  static ObjCPropertyQueryKind getQueryKind(bool isClassProperty) {
+    return isClassProperty ? ObjCPropertyQueryKind::OBJC_PR_query_class :
+                             ObjCPropertyQueryKind::OBJC_PR_query_instance;
+  }
+
   /// getSetterKind - Return the method used for doing assignment in
   /// the property setter. This is only valid if the property has been
   /// defined to have a setter.
@@ -874,7 +892,8 @@ public:
 
   /// Lookup a property by name in the specified DeclContext.
   static ObjCPropertyDecl *findPropertyDecl(const DeclContext *DC,
-                                            const IdentifierInfo *propertyID);
+                                            const IdentifierInfo *propertyID,
+                                            ObjCPropertyQueryKind queryKind);
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == ObjCProperty; }
@@ -899,7 +918,7 @@ public:
                     SourceLocation atStartLoc)
     : NamedDecl(DK, DC, nameLoc, Id), DeclContext(DK), AtStart(atStartLoc) {}
 
-  // Iterator access to properties.
+  // Iterator access to instance/class properties.
   typedef specific_decl_iterator<ObjCPropertyDecl> prop_iterator;
   typedef llvm::iterator_range<specific_decl_iterator<ObjCPropertyDecl>>
     prop_range;
@@ -910,6 +929,36 @@ public:
   }
   prop_iterator prop_end() const {
     return prop_iterator(decls_end());
+  }
+
+  typedef filtered_decl_iterator<ObjCPropertyDecl,
+                                 &ObjCPropertyDecl::isInstanceProperty>
+    instprop_iterator;
+  typedef llvm::iterator_range<instprop_iterator> instprop_range;
+
+  instprop_range instance_properties() const {
+    return instprop_range(instprop_begin(), instprop_end());
+  }
+  instprop_iterator instprop_begin() const {
+    return instprop_iterator(decls_begin());
+  }
+  instprop_iterator instprop_end() const {
+    return instprop_iterator(decls_end());
+  }
+
+  typedef filtered_decl_iterator<ObjCPropertyDecl,
+                                 &ObjCPropertyDecl::isClassProperty>
+    classprop_iterator;
+  typedef llvm::iterator_range<classprop_iterator> classprop_range;
+
+  classprop_range class_properties() const {
+    return classprop_range(classprop_begin(), classprop_end());
+  }
+  classprop_iterator classprop_begin() const {
+    return classprop_iterator(decls_begin());
+  }
+  classprop_iterator classprop_end() const {
+    return classprop_iterator(decls_end());
   }
 
   // Iterator access to instance/class methods.
@@ -971,9 +1020,12 @@ public:
   ObjCIvarDecl *getIvarDecl(IdentifierInfo *Id) const;
 
   ObjCPropertyDecl *
-  FindPropertyDeclaration(const IdentifierInfo *PropertyId) const;
+  FindPropertyDeclaration(const IdentifierInfo *PropertyId,
+                          ObjCPropertyQueryKind QueryKind) const;
 
-  typedef llvm::DenseMap<IdentifierInfo*, ObjCPropertyDecl*> PropertyMap;
+  typedef llvm::DenseMap<std::pair<IdentifierInfo*,
+                                   unsigned/*isClassProperty*/>,
+                         ObjCPropertyDecl*> PropertyMap;
   
   typedef llvm::DenseMap<const ObjCProtocolDecl *, ObjCPropertyDecl*>
             ProtocolPropertyMap;
@@ -1654,7 +1706,8 @@ public:
   }
 
   ObjCPropertyDecl
-    *FindPropertyVisibleInPrimaryClass(IdentifierInfo *PropertyId) const;
+    *FindPropertyVisibleInPrimaryClass(IdentifierInfo *PropertyId,
+                                       ObjCPropertyQueryKind QueryKind) const;
 
   void collectPropertiesToImplement(PropertyMap &PM,
                                     PropertyDeclOrder &PO) const override;
@@ -1720,8 +1773,9 @@ public:
   /// including in all categories except for category passed
   /// as argument.
   ObjCMethodDecl *lookupPropertyAccessor(const Selector Sel,
-                                         const ObjCCategoryDecl *Cat) const {
-    return lookupMethod(Sel, true/*isInstance*/,
+                                         const ObjCCategoryDecl *Cat,
+                                         bool IsClassProperty) const {
+    return lookupMethod(Sel, !IsClassProperty/*isInstance*/,
                         false/*shallowCategoryLookup*/,
                         true /* followsSuper */,
                         Cat);
@@ -2290,7 +2344,8 @@ public:
 
   void addPropertyImplementation(ObjCPropertyImplDecl *property);
 
-  ObjCPropertyImplDecl *FindPropertyImplDecl(IdentifierInfo *propertyId) const;
+  ObjCPropertyImplDecl *FindPropertyImplDecl(IdentifierInfo *propertyId,
+                            ObjCPropertyQueryKind queryKind) const;
   ObjCPropertyImplDecl *FindPropertyImplIvarDecl(IdentifierInfo *ivarId) const;
 
   // Iterator access to properties.

@@ -847,6 +847,7 @@ static void diagnoseRedundantPropertyNullability(Parser &P,
 ///     nullable
 ///     null_unspecified
 ///     null_resettable
+///     class
 ///
 void Parser::ParseObjCPropertyAttribute(ObjCDeclSpec &DS) {
   assert(Tok.getKind() == tok::l_paren);
@@ -962,6 +963,8 @@ void Parser::ParseObjCPropertyAttribute(ObjCDeclSpec &DS) {
 
       // Also set the null_resettable bit.
       DS.setPropertyAttributes(ObjCDeclSpec::DQ_PR_null_resettable);
+    } else if (II->isStr("class")) {
+      DS.setPropertyAttributes(ObjCDeclSpec::DQ_PR_class);
     } else {
       Diag(AttrName, diag::err_objc_expected_property_attr) << II;
       SkipUntil(tok::r_paren, StopAtSemi);
@@ -2327,8 +2330,10 @@ Decl *Parser::ParseObjCPropertySynthesize(SourceLocation atLoc) {
       propertyIvar = Tok.getIdentifierInfo();
       propertyIvarLoc = ConsumeToken(); // consume ivar-name
     }
-    Actions.ActOnPropertyImplDecl(getCurScope(), atLoc, propertyLoc, true,
-                                  propertyId, propertyIvar, propertyIvarLoc);
+    Actions.ActOnPropertyImplDecl(
+        getCurScope(), atLoc, propertyLoc, true,
+        propertyId, propertyIvar, propertyIvarLoc,
+        ObjCPropertyQueryKind::OBJC_PR_query_unknown);
     if (Tok.isNot(tok::comma))
       break;
     ConsumeToken(); // consume ','
@@ -2348,6 +2353,31 @@ Decl *Parser::ParseObjCPropertyDynamic(SourceLocation atLoc) {
   assert(Tok.isObjCAtKeyword(tok::objc_dynamic) &&
          "ParseObjCPropertyDynamic(): Expected '@dynamic'");
   ConsumeToken(); // consume dynamic
+
+  bool isClassProperty = false;
+  if (Tok.is(tok::l_paren)) {
+    ConsumeParen();
+    const IdentifierInfo *II = Tok.getIdentifierInfo();
+
+    if (!II) {
+      Diag(Tok, diag::err_objc_expected_property_attr) << II;
+      SkipUntil(tok::r_paren, StopAtSemi);
+    } else {
+      SourceLocation AttrName = ConsumeToken(); // consume attribute name
+      if (II->isStr("class")) {
+        isClassProperty = true;
+        if (Tok.isNot(tok::r_paren)) {
+          Diag(Tok, diag::err_expected) << tok::r_paren;
+          SkipUntil(tok::r_paren, StopAtSemi);
+        } else
+          ConsumeParen();
+      } else {
+        Diag(AttrName, diag::err_objc_expected_property_attr) << II;
+        SkipUntil(tok::r_paren, StopAtSemi);
+      }
+    }
+  }
+
   while (true) {
     if (Tok.is(tok::code_completion)) {
       Actions.CodeCompleteObjCPropertyDefinition(getCurScope());
@@ -2363,8 +2393,11 @@ Decl *Parser::ParseObjCPropertyDynamic(SourceLocation atLoc) {
     
     IdentifierInfo *propertyId = Tok.getIdentifierInfo();
     SourceLocation propertyLoc = ConsumeToken(); // consume property name
-    Actions.ActOnPropertyImplDecl(getCurScope(), atLoc, propertyLoc, false,
-                                  propertyId, nullptr, SourceLocation());
+    Actions.ActOnPropertyImplDecl(
+        getCurScope(), atLoc, propertyLoc, false,
+        propertyId, nullptr, SourceLocation(),
+        isClassProperty ? ObjCPropertyQueryKind::OBJC_PR_query_class :
+        ObjCPropertyQueryKind::OBJC_PR_query_unknown);
 
     if (Tok.isNot(tok::comma))
       break;

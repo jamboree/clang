@@ -919,6 +919,16 @@ void OMPClausePrinter::VisitOMPDistScheduleClause(OMPDistScheduleClause *Node) {
   }
   OS << ")";
 }
+
+void OMPClausePrinter::VisitOMPDefaultmapClause(OMPDefaultmapClause *Node) {
+  OS << "defaultmap(";
+  OS << getOpenMPSimpleClauseTypeName(OMPC_defaultmap,
+                                      Node->getDefaultmapModifier());
+  OS << ": ";
+  OS << getOpenMPSimpleClauseTypeName(OMPC_defaultmap,
+    Node->getDefaultmapKind());
+  OS << ")";
+}
 }
 
 //===----------------------------------------------------------------------===//
@@ -1070,6 +1080,12 @@ void StmtPrinter::VisitOMPTargetEnterDataDirective(
 void StmtPrinter::VisitOMPTargetExitDataDirective(
     OMPTargetExitDataDirective *Node) {
   Indent() << "#pragma omp target exit data ";
+  PrintOMPExecutableDirective(Node);
+}
+
+void StmtPrinter::VisitOMPTargetParallelDirective(
+    OMPTargetParallelDirective *Node) {
+  Indent() << "#pragma omp target parallel ";
   PrintOMPExecutableDirective(Node);
 }
 
@@ -2446,7 +2462,7 @@ void StmtPrinter::VisitOpaqueValueExpr(OpaqueValueExpr *Node) {
 
 void StmtPrinter::VisitTypoExpr(TypoExpr *Node) {
   // TODO: Print something reasonable for a TypoExpr, if necessary.
-  assert(false && "Cannot print TypoExpr nodes");
+  llvm_unreachable("Cannot print TypoExpr nodes");
 }
 
 void StmtPrinter::VisitAsTypeExpr(AsTypeExpr *Node) {

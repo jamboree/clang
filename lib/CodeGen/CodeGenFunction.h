@@ -2206,6 +2206,8 @@ public:
   void EmitCXXForRangeStmt(const CXXForRangeStmt &S,
                            ArrayRef<const Attr *> Attrs = None);
 
+  /// Returns calculated size of the specified type.
+  llvm::Value *getTypeSize(QualType Ty);
   LValue InitCapturedStruct(const CapturedStmt &S);
   llvm::Function *EmitCapturedStmt(const CapturedStmt &S, CapturedRegionKind K);
   llvm::Function *GenerateCapturedStmtFunction(const CapturedStmt &S);
@@ -2341,6 +2343,7 @@ public:
   void EmitOMPTargetDataDirective(const OMPTargetDataDirective &S);
   void EmitOMPTargetEnterDataDirective(const OMPTargetEnterDataDirective &S);
   void EmitOMPTargetExitDataDirective(const OMPTargetExitDataDirective &S);
+  void EmitOMPTargetParallelDirective(const OMPTargetParallelDirective &S);
   void EmitOMPTeamsDirective(const OMPTeamsDirective &S);
   void
   EmitOMPCancellationPointDirective(const OMPCancellationPointDirective &S);
@@ -2804,19 +2807,25 @@ public:
   llvm::Value *EmitARCAutoreleaseReturnValue(llvm::Value *value);
   llvm::Value *EmitARCRetainAutoreleaseReturnValue(llvm::Value *value);
   llvm::Value *EmitARCRetainAutoreleasedReturnValue(llvm::Value *value);
+  llvm::Value *EmitARCUnsafeClaimAutoreleasedReturnValue(llvm::Value *value);
 
   std::pair<LValue,llvm::Value*>
   EmitARCStoreAutoreleasing(const BinaryOperator *e);
   std::pair<LValue,llvm::Value*>
   EmitARCStoreStrong(const BinaryOperator *e, bool ignored);
+  std::pair<LValue,llvm::Value*>
+  EmitARCStoreUnsafeUnretained(const BinaryOperator *e, bool ignored);
 
   llvm::Value *EmitObjCThrowOperand(const Expr *expr);
   llvm::Value *EmitObjCConsumeObject(QualType T, llvm::Value *Ptr);
   llvm::Value *EmitObjCExtendObjectLifetime(QualType T, llvm::Value *Ptr);
 
   llvm::Value *EmitARCExtendBlockObject(const Expr *expr);
+  llvm::Value *EmitARCReclaimReturnedObject(const Expr *e,
+                                            bool allowUnsafeClaim);
   llvm::Value *EmitARCRetainScalarExpr(const Expr *expr);
   llvm::Value *EmitARCRetainAutoreleaseScalarExpr(const Expr *expr);
+  llvm::Value *EmitARCUnsafeUnretainedScalarExpr(const Expr *expr);
 
   void EmitARCIntrinsicUse(ArrayRef<llvm::Value*> values);
 
