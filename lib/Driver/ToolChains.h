@@ -496,6 +496,8 @@ protected:
     return TargetVersion < VersionTuple(V0, V1, V2);
   }
 
+  StringRef getOSLibraryNameSuffix() const;
+
 public:
   /// }
   /// @name ToolChain Implementation
@@ -510,6 +512,7 @@ public:
   TranslateArgs(const llvm::opt::DerivedArgList &Args,
                 const char *BoundArch) const override;
 
+  CXXStdlibType GetDefaultCXXStdlibType() const override;
   ObjCRuntime getDefaultObjCRuntime(bool isNonFragile) const override;
   bool hasBlocksRuntime() const override;
 
@@ -697,7 +700,7 @@ public:
   bool IsMathErrnoDefault() const override { return false; }
   bool IsObjCNonFragileABIDefault() const override { return true; }
 
-  CXXStdlibType GetCXXStdlibType(const llvm::opt::ArgList &Args) const override;
+  CXXStdlibType GetDefaultCXXStdlibType() const override;
   void AddClangCXXStdlibIncludeArgs(
       const llvm::opt::ArgList &DriverArgs,
       llvm::opt::ArgStringList &CC1Args) const override;
@@ -725,6 +728,8 @@ public:
   void AddClangCXXStdlibIncludeArgs(
       const llvm::opt::ArgList &DriverArgs,
       llvm::opt::ArgStringList &CC1Args) const override;
+  void AddCXXStdlibLibArgs(const llvm::opt::ArgList &Args,
+                           llvm::opt::ArgStringList &CmdArgs) const override;
 
   bool UseSjLjExceptions(const llvm::opt::ArgList &Args) const override;
   bool isPIEDefault() const override;

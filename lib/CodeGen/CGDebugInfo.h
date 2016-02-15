@@ -53,7 +53,7 @@ class CGDebugInfo {
   friend class ApplyDebugLocation;
   friend class SaveAndRestoreLocation;
   CodeGenModule &CGM;
-  const CodeGenOptions::DebugInfoKind DebugKind;
+  const codegenoptions::DebugInfoKind DebugKind;
   bool DebugTypeExtRefs;
   llvm::DIBuilder DBuilder;
   llvm::DICompileUnit *TheCU = nullptr;
@@ -109,7 +109,7 @@ class CGDebugInfo {
   /// compilation.
   std::vector<std::pair<const TagType *, llvm::TrackingMDRef>> ReplaceMap;
 
-  /// Cache of replaceable forward declarartions (functions and
+  /// Cache of replaceable forward declarations (functions and
   /// variables) to RAUW at the end of compilation.
   std::vector<std::pair<const DeclaratorDecl *, llvm::TrackingMDRef>>
       FwdDeclReplaceMap;

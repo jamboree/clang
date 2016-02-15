@@ -88,7 +88,23 @@ if (APPLE)
 endif()
 
 if(CLANG_ORDER_FILE)
-  target_link_libraries(clang "-Wl,-order_file,${CLANG_ORDER_FILE}")
+  include(CMakePushCheckState)
+
+  function(check_linker_flag flag out_var)
+    cmake_push_check_state()
+    set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} ${flag}")
+    check_cxx_compiler_flag("" ${out_var})
+    cmake_pop_check_state()
+  endfunction()
+
+  # This is a test to ensure the actual order file works with the linker.
+  check_linker_flag("-Wl,-order_file,${CLANG_ORDER_FILE}"
+    LINKER_ORDER_FILE_WORKS)
+  
+  if(LINKER_ORDER_FILE_WORKS)
+    target_link_libraries(clang "-Wl,-order_file,${CLANG_ORDER_FILE}")
+    set_target_properties(clang PROPERTIES LINK_DEPENDS ${CLANG_ORDER_FILE})
+  endif()
 endif()
 
 if(WITH_POLLY AND LINK_POLLY_INTO_TOOLS)

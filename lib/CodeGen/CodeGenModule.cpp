@@ -20,6 +20,7 @@
 #include "CGObjCRuntime.h"
 #include "CGOpenCLRuntime.h"
 #include "CGOpenMPRuntime.h"
+#include "CGOpenMPRuntimeNVPTX.h"
 #include "CodeGenFunction.h"
 #include "CodeGenPGO.h"
 #include "CodeGenTBAA.h"
@@ -137,9 +138,8 @@ CodeGenModule::CodeGenModule(ASTContext &C, const HeaderSearchOptions &HSO,
 
   // If debug info or coverage generation is enabled, create the CGDebugInfo
   // object.
-  if (CodeGenOpts.getDebugInfo() != CodeGenOptions::NoDebugInfo ||
-      CodeGenOpts.EmitGcovArcs ||
-      CodeGenOpts.EmitGcovNotes)
+  if (CodeGenOpts.getDebugInfo() != codegenoptions::NoDebugInfo ||
+      CodeGenOpts.EmitGcovArcs || CodeGenOpts.EmitGcovNotes)
     DebugInfo = new CGDebugInfo(*this);
 
   Block.GlobalUniqueCount = 0;
@@ -201,7 +201,20 @@ void CodeGenModule::createOpenCLRuntime() {
 }
 
 void CodeGenModule::createOpenMPRuntime() {
-  OpenMPRuntime = new CGOpenMPRuntime(*this);
+  // Select a specialized code generation class based on the target, if any.
+  // If it does not exist use the default implementation.
+  switch (getTarget().getTriple().getArch()) {
+
+  case llvm::Triple::nvptx:
+  case llvm::Triple::nvptx64:
+    assert(getLangOpts().OpenMPIsDevice &&
+           "OpenMP NVPTX is only prepared to deal with device code.");
+    OpenMPRuntime = new CGOpenMPRuntimeNVPTX(*this);
+    break;
+  default:
+    OpenMPRuntime = new CGOpenMPRuntime(*this);
+    break;
+  }
 }
 
 void CodeGenModule::createCUDARuntime() {
@@ -1703,7 +1716,7 @@ void CodeGenModule::CompleteDIClassType(const CXXMethodDecl* D) {
     return;
 
   if (CGDebugInfo *DI = getModuleDebugInfo())
-    if (getCodeGenOpts().getDebugInfo() >= CodeGenOptions::LimitedDebugInfo) {
+    if (getCodeGenOpts().getDebugInfo() >= codegenoptions::LimitedDebugInfo) {
       const auto *ThisPtr = cast<PointerType>(D->getThisType(getContext()));
       DI->getOrCreateRecordType(ThisPtr->getPointeeType(), D->getLocation());
     }
@@ -2335,18 +2348,13 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D,
   const VarDecl *InitDecl;
   const Expr *InitExpr = D->getAnyInitializer(InitDecl);
 
-  // CUDA E.2.4.1 "__shared__ variables cannot have an initialization as part
-  // of their declaration."
-  if (getLangOpts().CPlusPlus && getLangOpts().CUDAIsDevice
-      && D->hasAttr<CUDASharedAttr>()) {
-    if (InitExpr) {
-      const auto *C = dyn_cast<CXXConstructExpr>(InitExpr);
-      if (C == nullptr || !C->getConstructor()->hasTrivialBody())
-        Error(D->getLocation(),
-              "__shared__ variable cannot have an initialization.");
-    }
+  // CUDA E.2.4.1 "__shared__ variables cannot have an initialization
+  // as part of their declaration."  Sema has already checked for
+  // error cases, so we just need to set Init to UndefValue.
+  if (getLangOpts().CUDA && getLangOpts().CUDAIsDevice &&
+      D->hasAttr<CUDASharedAttr>())
     Init = llvm::UndefValue::get(getTypes().ConvertType(ASTTy));
-  } else if (!InitExpr) {
+  else if (!InitExpr) {
     // This is a tentative definition; tentative definitions are
     // implicitly initialized with { 0 }.
     //
@@ -2507,7 +2515,7 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D,
 
   // Emit global variable debug information.
   if (CGDebugInfo *DI = getModuleDebugInfo())
-    if (getCodeGenOpts().getDebugInfo() >= CodeGenOptions::LimitedDebugInfo)
+    if (getCodeGenOpts().getDebugInfo() >= codegenoptions::LimitedDebugInfo)
       DI->EmitGlobalVariable(GV, D);
 }
 
@@ -3663,7 +3671,7 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
     ObjCRuntime->GenerateClass(OMD);
     // Emit global variable debug information.
     if (CGDebugInfo *DI = getModuleDebugInfo())
-      if (getCodeGenOpts().getDebugInfo() >= CodeGenOptions::LimitedDebugInfo)
+      if (getCodeGenOpts().getDebugInfo() >= codegenoptions::LimitedDebugInfo)
         DI->getOrCreateInterfaceType(getContext().getObjCInterfaceType(
             OMD->getClassInterface()), OMD->getLocation());
     break;
@@ -4027,6 +4035,20 @@ llvm::Metadata *CodeGenModule::CreateMetadataIdentifierForType(QualType T) {
   return InternalId;
 }
 
+/// Returns whether this module needs the "all-vtables" bitset.
+bool CodeGenModule::NeedAllVtablesBitSet() const {
+  // Returns true if at least one of vtable-based CFI checkers is enabled and
+  // is not in the trapping mode.
+  return ((LangOpts.Sanitize.has(SanitizerKind::CFIVCall) &&
+           !CodeGenOpts.SanitizeTrap.has(SanitizerKind::CFIVCall)) ||
+          (LangOpts.Sanitize.has(SanitizerKind::CFINVCall) &&
+           !CodeGenOpts.SanitizeTrap.has(SanitizerKind::CFINVCall)) ||
+          (LangOpts.Sanitize.has(SanitizerKind::CFIDerivedCast) &&
+           !CodeGenOpts.SanitizeTrap.has(SanitizerKind::CFIDerivedCast)) ||
+          (LangOpts.Sanitize.has(SanitizerKind::CFIUnrelatedCast) &&
+           !CodeGenOpts.SanitizeTrap.has(SanitizerKind::CFIUnrelatedCast)));
+}
+
 void CodeGenModule::CreateVTableBitSetEntry(llvm::NamedMDNode *BitsetsMD,
                                             llvm::GlobalVariable *VTable,
                                             CharUnits Offset,
@@ -4048,6 +4070,17 @@ void CodeGenModule::CreateVTableBitSetEntry(llvm::NamedMDNode *BitsetsMD,
               llvm::ConstantInt::get(Int64Ty, Offset.getQuantity()))};
       BitsetsMD->addOperand(llvm::MDTuple::get(getLLVMContext(), BitsetOps2));
     }
+  }
+
+  if (NeedAllVtablesBitSet()) {
+    llvm::Metadata *MD = llvm::MDString::get(getLLVMContext(), "all-vtables");
+    llvm::Metadata *BitsetOps[] = {
+        MD, llvm::ConstantAsMetadata::get(VTable),
+        llvm::ConstantAsMetadata::get(
+            llvm::ConstantInt::get(Int64Ty, Offset.getQuantity()))};
+    // Avoid adding a node to BitsetsMD twice.
+    if (!llvm::MDTuple::getIfExists(getLLVMContext(), BitsetOps))
+      BitsetsMD->addOperand(llvm::MDTuple::get(getLLVMContext(), BitsetOps));
   }
 }
 
