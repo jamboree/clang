@@ -3769,6 +3769,13 @@ Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS, DeclSpec &DS,
       // Don't emit warnings after this error.
       return TagD;
   }
+  else if (DS.getContextSpecifiers()) {
+      if (Tag)
+          Diag(DS.getTypeSpecTypeNameLoc(), diag::err_context_spec_tag)
+          << GetDiagnosticTypeSpecifierID(DS.getTypeSpecType());
+      // Don't emit warnings after this error.
+      return TagD;
+  }
 
   if (DS.isConceptSpecified()) {
     // C++ Concepts TS [dcl.spec.concept]p1: A concept definition refers to
@@ -7688,11 +7695,6 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       // destructors cannot be declared constexpr.
       if (isa<CXXDestructorDecl>(NewFD))
         Diag(D.getDeclSpec().getConstexprSpecLoc(), diag::err_constexpr_dtor);
-    }
-
-    if (isGeneric) {
-      if (isa<CXXDestructorDecl>(NewFD))
-        Diag(D.getDeclSpec().getConstexprSpecLoc(), diag::err_invalid_generic) << 3;
     }
 
     if (isConcept) {

@@ -942,6 +942,11 @@ bool DeclSpec::SetConstexprSpec(SourceLocation Loc, const char *&PrevSpec,
 
 bool DeclSpec::SetGenericSpec(SourceLocation Loc, const char *&PrevSpec,
                                 unsigned &DiagID) {
+  if (ContextSpecifiers) {
+    DiagID = diag::err_invalid_context_spec_combination;
+    PrevSpec = "";
+    return true;
+  }
   if (Generic_specified) {
     DiagID = diag::ext_duplicate_declspec;
     PrevSpec = "generic";
