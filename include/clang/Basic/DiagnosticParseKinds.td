@@ -681,6 +681,12 @@ def err_fold_operator_mismatch : Error<
 def err_ctor_init_missing_comma : Error<
   "missing ',' between base or member initializers">;
 
+def err_expected_context_name : Error<
+  "expected context name">;
+
+def err_unsupported_context : Error<
+  "unsupported context '%0'">;
+
 // C++ declarations
 def err_friend_decl_defines_type : Error<
   "cannot define a type in a friend declaration">;

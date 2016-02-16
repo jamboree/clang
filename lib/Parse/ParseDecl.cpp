@@ -2593,6 +2593,40 @@ Parser::DiagnoseMissingSemiAfterTagDefinition(DeclSpec &DS, AccessSpecifier AS,
   return false;
 }
 
+void Parser::ParseContextSpecifier(DeclSpec &DS)
+{
+    assert(Tok.is(tok::at));
+    const char *PrevSpec = nullptr;
+    unsigned DiagID = 0;
+    SourceLocation atLoc(Tok.getLocation());
+    ConsumeToken();
+    if (Tok.is(tok::identifier)) {
+        IdentifierInfo* id(Tok.getIdentifierInfo());
+        bool isInvalid = false;
+        if (id->getName() == "async") {
+            isInvalid = DS.SetContextSpec(DeclSpec::CS_async, atLoc, PrevSpec, DiagID);
+        }
+        else if (id->getName() == "plain") {
+            isInvalid = DS.SetContextSpec(DeclSpec::CS_plain, atLoc, PrevSpec, DiagID);
+        }
+        else {
+            Diag(diag::err_unsupported_context) << id->getNameStart();
+        }
+        if (isInvalid) {
+            if (DiagID == diag::ext_duplicate_declspec)
+                Diag(atLoc, DiagID)
+                << PrevSpec << FixItHint::CreateRemoval(SourceRange(atLoc, Tok.getEndLoc()));
+            else
+                Diag(atLoc, DiagID) << PrevSpec;
+        }
+        ConsumeToken();
+    }
+    else {
+        Diag(diag::err_expected_context_name);
+    }
+}
+
+
 /// ParseDeclarationSpecifiers
 ///       declaration-specifiers: [C99 6.7]
 ///         storage-class-specifier declaration-specifiers[opt]
@@ -2692,6 +2726,10 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       ParseCXX11Attributes(attrs);
       AttrsLastTime = true;
       continue;
+
+    case tok::at:
+        ParseContextSpecifier(DS);
+        continue;
 
     case tok::code_completion: {
       Sema::ParserCompletionContext CCC = Sema::PCC_Namespace;

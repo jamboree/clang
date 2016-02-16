@@ -1569,6 +1569,8 @@ private:
 
   bool ParseCXXTypeSpecifierSeq(DeclSpec &DS);
 
+  void ParseContextSpecifier(DeclSpec &DS);
+
   //===--------------------------------------------------------------------===//
   // C++ 5.3.4 and 5.3.5: C++ new and delete
   bool ParseExpressionListOrTypeId(SmallVectorImpl<Expr*> &Exprs,

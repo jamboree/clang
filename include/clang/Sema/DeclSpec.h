@@ -322,6 +322,13 @@ public:
     PQ_FunctionSpecifier     = 8
   };
 
+  // context-specifiers
+  enum CS {
+    CS_unspecified  = 0,
+    CS_plain        = 1,
+    CS_async        = 2
+  };
+
 private:
   // storage-class-specifier
   /*SCS*/unsigned StorageClassSpec : 3;
@@ -341,6 +348,9 @@ private:
 
   // type-qualifiers
   unsigned TypeQualifiers : 4;  // Bitwise OR of TQ.
+
+  // context-specifiers
+  unsigned ContextSpecifiers : 3;  // Bitwise OR of CS.
 
   // function-specifier
   unsigned FS_inline_specified : 1;
@@ -390,6 +400,7 @@ private:
   SourceLocation FS_forceinlineLoc;
   SourceLocation FriendLoc, ModulePrivateLoc, ConstexprLoc, GenericLoc, ConceptLoc;
   SourceLocation TQ_pipeLoc;
+  SourceLocation CS_plainLoc, CS_asyncLoc;
 
   WrittenBuiltinSpecs writtenBS;
   void SaveWrittenBuiltinSpecs();
@@ -427,6 +438,7 @@ public:
       TypeSpecOwned(false),
       TypeSpecPipe(false),
       TypeQualifiers(TQ_unspecified),
+      ContextSpecifiers(CS_unspecified),
       FS_inline_specified(false),
       FS_forceinline_specified(false),
       FS_virtual_specified(false),
@@ -531,6 +543,7 @@ public:
   static const char *getSpecifierName(DeclSpec::TSW W);
   static const char *getSpecifierName(DeclSpec::SCS S);
   static const char *getSpecifierName(DeclSpec::TSCS S);
+  static const char *getSpecifierName(DeclSpec::CS C);
 
   // type-qualifiers
 
@@ -550,6 +563,15 @@ public:
     TQ_volatileLoc = SourceLocation();
     TQ_atomicLoc = SourceLocation();
     TQ_pipeLoc = SourceLocation();
+  }
+
+
+  unsigned getContextSpecifiers() const { return ContextSpecifiers; }
+
+  void ClearContextSpecifiers() {
+      TypeQualifiers = 0;
+      CS_plainLoc = SourceLocation();
+      CS_asyncLoc = SourceLocation();
   }
 
   // function-specifier
@@ -694,6 +716,10 @@ public:
       unsigned &DiagID);
   bool SetConceptSpec(SourceLocation Loc, const char *&PrevSpec,
                       unsigned &DiagID);
+
+
+  bool SetContextSpec(CS C, SourceLocation Loc, const char *&PrevSpec,
+      unsigned &DiagID);
 
   bool isFriendSpecified() const { return Friend_specified; }
   SourceLocation getFriendSpecLoc() const { return FriendLoc; }

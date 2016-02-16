@@ -441,6 +441,15 @@ const char *DeclSpec::getSpecifierName(TSS S) {
   llvm_unreachable("Unknown typespec!");
 }
 
+const char *DeclSpec::getSpecifierName(CS C) {
+    switch (C) {
+    case CS_unspecified: return "unspecified";
+    case CS_plain:    return "@plain";
+    case CS_async:      return "@async";
+    }
+    llvm_unreachable("Unknown typespec!");
+}
+
 const char *DeclSpec::getSpecifierName(DeclSpec::TST T,
                                        const PrintingPolicy &Policy) {
   switch (T) {
@@ -791,6 +800,29 @@ bool DeclSpec::SetTypeQual(TQ T, SourceLocation Loc, const char *&PrevSpec,
   }
 
   llvm_unreachable("Unknown type qualifier!");
+}
+
+bool DeclSpec::SetContextSpec(CS C, SourceLocation Loc, const char *&PrevSpec,
+    unsigned &DiagID) {
+    if (isGenericSpecified()) {
+        DiagID = diag::err_invalid_decl_spec_combination;
+        PrevSpec = "generic";
+        return true;
+    }
+    else {
+        if (ContextSpecifiers & C) {
+            DiagID = diag::ext_duplicate_declspec;
+            PrevSpec = getSpecifierName(C);
+            return true;
+        }
+        ContextSpecifiers |= C;
+        switch (C) {
+        case CS_unspecified: break;
+        case CS_plain: CS_plainLoc = Loc; return false;
+        case CS_async: CS_asyncLoc = Loc; return false;
+        }
+        return false;
+    }
 }
 
 bool DeclSpec::setFunctionSpecInline(SourceLocation Loc, const char *&PrevSpec,
