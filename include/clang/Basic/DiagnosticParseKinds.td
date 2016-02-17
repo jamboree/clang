@@ -684,8 +684,8 @@ def err_ctor_init_missing_comma : Error<
 def err_expected_context_name : Error<
   "expected context name">;
 
-def err_unsupported_context : Error<
-  "unsupported context '%0'">;
+def err_unknown_context : Error<
+  "unknown context '%0'">;
 
 // C++ declarations
 def err_friend_decl_defines_type : Error<

@@ -283,6 +283,12 @@ namespace clang {
   /// Retrieve the spelling of the given nullability kind.
   llvm::StringRef getNullabilitySpelling(NullabilityKind kind,
                                          bool isContextSensitive = false);
+
+  enum ContextType {
+      CT_unknown,
+      CT_plain,
+      CT_async
+  };
 } // end namespace clang
 
 #endif // LLVM_CLANG_BASIC_SPECIFIERS_H

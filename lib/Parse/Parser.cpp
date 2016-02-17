@@ -717,7 +717,10 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
     break;
   }
   case tok::at:
-    return ParseObjCAtDirectives();
+    if (getLangOpts().ObjC1)
+      return ParseObjCAtDirectives();
+    else
+       goto dont_know;
   case tok::minus:
   case tok::plus:
     if (!getLangOpts().ObjC1) {
@@ -840,11 +843,16 @@ bool Parser::isStartOfFunctionDefinition(const ParsingDeclarator &Declarator) {
       Declarator.getFunctionTypeInfo().isKNRPrototype()) 
     return isDeclarationSpecifier();
 
-  if (getLangOpts().CPlusPlus && Tok.is(tok::equal)) {
-    const Token &KW = NextToken();
-    return KW.is(tok::kw_default) || KW.is(tok::kw_delete);
+  if (getLangOpts().CPlusPlus) {
+      if (Tok.is(tok::equal)) {
+          const Token &KW = NextToken();
+          return KW.is(tok::kw_default) || KW.is(tok::kw_delete);
+      }
+      if (Tok.is(tok::at)) { // context-provider
+          return true;
+      }
   }
-  
+
   return Tok.is(tok::colon) ||         // X() : Base() {} (used for ctors)
          Tok.is(tok::kw_try);          // X() try { ... }
 }
@@ -999,7 +1007,7 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
   if (Tok.isNot(tok::l_brace) && 
       (!getLangOpts().CPlusPlus ||
        (Tok.isNot(tok::colon) && Tok.isNot(tok::kw_try) &&
-        Tok.isNot(tok::equal)))) {
+        Tok.isNot(tok::equal) && Tok.isNot(tok::at)))) {
     Diag(Tok, diag::err_expected_fn_body);
 
     // Skip over garbage, until we get to '{'.  Don't eat the '{'.
@@ -1131,6 +1139,12 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
     Actions.ActOnFinishFunctionBody(Res, GeneratedBody, false);
     return Res;
   }
+  
+  if (TryConsumeToken(tok::at)) {
+      if (ContextType CT = ParseContextType(nullptr)) {
+          //return ParseFunctionContextBlock(Res, BodyScope);
+      }
+  }
 
   if (Tok.is(tok::kw_try))
     return ParseFunctionTryBlock(Res, BodyScope);
@@ -1154,6 +1168,30 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
     ParseLexedAttributeList(*LateParsedAttrs, Res, false, true);
 
   return ParseFunctionStatementBody(Res, BodyScope);
+}
+
+ContextType Parser::ParseContextType(SourceLocation *EndLoc) {
+    if (Tok.is(tok::identifier)) {
+        StringRef id(Tok.getIdentifierInfo()->getName());
+        if (EndLoc)
+            *EndLoc = Tok.getEndLoc();
+        if (id == "async") {
+            ConsumeToken();
+            return CT_async;
+        }
+        else if (id == "plain") {
+            ConsumeToken();
+            return CT_plain;
+        }
+        else {
+            Diag(diag::err_unknown_context) << id;
+            ConsumeToken();
+        }
+    }
+    else {
+        Diag(diag::err_expected_context_name);
+    }
+    return CT_unknown;
 }
 
 void Parser::SkipFunctionBody() {

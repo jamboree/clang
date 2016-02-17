@@ -1910,6 +1910,10 @@ StmtResult Parser::ParsePragmaLoopHint(StmtVector &Stmts,
   return S;
 }
 
+Decl *Parser::ParseFunctionContextBlock(Decl *Decl, ParseScope &BodyScope) {
+    return nullptr;
+}
+
 Decl *Parser::ParseFunctionStatementBody(Decl *Decl, ParseScope &BodyScope) {
   assert(Tok.is(tok::l_brace));
   SourceLocation LBraceLoc = Tok.getLocation();

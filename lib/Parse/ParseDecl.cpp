@@ -2599,30 +2599,23 @@ void Parser::ParseContextSpecifier(DeclSpec &DS)
     const char *PrevSpec = nullptr;
     unsigned DiagID = 0;
     SourceLocation atLoc(Tok.getLocation());
+    SourceLocation endLoc;
     ConsumeToken();
-    if (Tok.is(tok::identifier)) {
-        IdentifierInfo* id(Tok.getIdentifierInfo());
-        bool isInvalid = false;
-        if (id->getName() == "async") {
-            isInvalid = DS.SetContextSpec(DeclSpec::CS_async, atLoc, PrevSpec, DiagID);
-        }
-        else if (id->getName() == "plain") {
-            isInvalid = DS.SetContextSpec(DeclSpec::CS_plain, atLoc, PrevSpec, DiagID);
-        }
-        else {
-            Diag(diag::err_unsupported_context) << id->getNameStart();
-        }
-        if (isInvalid) {
-            if (DiagID == diag::ext_duplicate_declspec)
-                Diag(atLoc, DiagID)
-                << PrevSpec << FixItHint::CreateRemoval(SourceRange(atLoc, Tok.getEndLoc()));
-            else
-                Diag(atLoc, DiagID) << PrevSpec;
-        }
-        ConsumeToken();
+    bool isInvalid = false;
+    switch (ParseContextType(&endLoc)) {
+    case CT_plain:
+        isInvalid = DS.SetContextSpec(DeclSpec::CS_plain, atLoc, PrevSpec, DiagID);
+        break;
+    case CT_async:
+        isInvalid = DS.SetContextSpec(DeclSpec::CS_async, atLoc, PrevSpec, DiagID);
+        break;
     }
-    else {
-        Diag(diag::err_expected_context_name);
+    if (isInvalid) {
+        if (DiagID == diag::ext_duplicate_declspec)
+            Diag(atLoc, DiagID)
+            << PrevSpec << FixItHint::CreateRemoval(SourceRange(atLoc, endLoc));
+        else
+            Diag(atLoc, DiagID) << PrevSpec;
     }
 }
 
