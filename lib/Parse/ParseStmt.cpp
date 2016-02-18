@@ -262,8 +262,14 @@ Retry:
     SemiError = "break";
     break;
   case tok::kw_return:              // C99 6.8.6.4: return-statement
-    Res = ParseReturnStatement();
-    SemiError = "return";
+    if (NextToken().is(tok::kw_break)) {
+      Res = ParseReturnBreakStatement();
+      SemiError = "return break";
+    }
+    else {
+      Res = ParseReturnStatement();
+      SemiError = "return";
+    }
     break;
   case tok::kw_co_return:            // C++ Coroutines: co_return statement
     Res = ParseReturnStatement();
@@ -1878,6 +1884,32 @@ StmtResult Parser::ParseReturnStatement() {
   if (IsCoreturn)
     return Actions.ActOnCoreturnStmt(ReturnLoc, R.get());
   return Actions.ActOnReturnStmt(ReturnLoc, R.get(), getCurScope());
+}
+
+/// ParseReturnBreakStatement
+///       jump-statement:
+///         'return break' expression[opt] ';'
+StmtResult Parser::ParseReturnBreakStatement() {
+    assert(Tok.is(tok::kw_return) && NextToken().is(tok::kw_break) &&
+        "Not a return break stmt!");
+    SourceLocation ReturnLoc = ConsumeToken();  // eat the 'return'.
+    ConsumeToken(); // eat the 'break'.
+
+    ExprResult R;
+    if (Tok.isNot(tok::semi)) {
+        if (Tok.is(tok::code_completion)) {
+            Actions.CodeCompleteReturn(getCurScope());
+            cutOffParsing();
+            return StmtError();
+        }
+
+        R = ParseExpression();
+        if (R.isInvalid()) {
+            SkipUntil(tok::r_brace, StopAtSemi | StopBeforeMatch);
+            return StmtError();
+        }
+    }
+    return Actions.ActOnReturnStmt(ReturnLoc, R.get(), getCurScope());
 }
 
 StmtResult Parser::ParsePragmaLoopHint(StmtVector &Stmts,
