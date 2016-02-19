@@ -74,6 +74,10 @@ def warn_infinite_recursive_function : Warning<
   "all paths through this function will call itself">,
   InGroup<InfiniteRecursion>, DefaultIgnore;
 
+def warn_comma_operator : Warning<"possible misuse of comma operator here">,
+  InGroup<DiagGroup<"comma">>, DefaultIgnore;
+def note_cast_to_void : Note<"cast expression to void to silence warning">;
+
 // Constant expressions
 def err_expr_not_ice : Error<
   "expression is not an %select{integer|integral}0 constant expression">;
@@ -124,6 +128,8 @@ def warn_float_underflow : Warning<
   InGroup<LiteralRange>;
 def warn_double_const_requires_fp64 : Warning<
   "double precision constant requires cl_khr_fp64, casting to single precision">;
+def err_half_const_requires_fp16 : Error<
+  "half precision constant requires cl_khr_fp16">;
 
 // C99 variable-length arrays
 def ext_vla : Extension<"variable length arrays are a C99 feature">,
@@ -835,7 +841,7 @@ def warn_accessor_property_type_mismatch : Warning<
 def not_conv_function_declared_at : Note<"type conversion function declared here">;
 def note_method_declared_at : Note<"method %0 declared here">;
 def note_property_attribute : Note<"property %0 is declared "
-  "%select{deprecated|unavailable|partial}1 here">;
+  "%select{deprecated|unavailable|partial|not-yet-introduced}1 here">;
 def err_setter_type_void : Error<"type of setter must be void">;
 def err_duplicate_method_decl : Error<"duplicate declaration of method %0">;
 def warn_duplicate_method_decl : 
@@ -4134,9 +4140,14 @@ def err_unavailable_message : Error<"%0 is unavailable: %1">;
 def warn_unavailable_fwdclass_message : Warning<
     "%0 may be unavailable because the receiver type is unknown">,
     InGroup<UnavailableDeclarations>;
+def err_notyetintroduced : Error<"%0 is not introduced yet">;
+def err_notyetintroduced_message : Error<"%0 is not introduced yet: %1">;
+def warn_notyetintroduced_fwdclass_message : Warning<
+    "%0 may not be introduced because the receiver type is unknown">,
+    InGroup<NotYetIntroducedDeclarations>;
 def note_availability_specified_here : Note<
   "%0 has been explicitly marked "
-  "%select{unavailable|deleted|deprecated|partial}1 here">;
+  "%select{unavailable|deleted|deprecated|partial|not-yet-introduced}1 here">;
 def note_implicitly_deleted : Note<
   "explicitly defaulted function was implicitly deleted here">;
 def note_inherited_deleted_here : Note<
@@ -6902,9 +6913,16 @@ def err_literal_operator_id_outside_namespace : Error<
   "non-namespace scope '%0' cannot have a literal operator member">;
 def err_literal_operator_default_argument : Error<
   "literal operator cannot have a default argument">;
-// FIXME: This diagnostic sucks
-def err_literal_operator_params : Error<
-  "parameter declaration for literal operator %0 is not valid">;
+def err_literal_operator_bad_param_count : Error<
+  "non-template literal operator must have one or two parameters">;
+def err_literal_operator_invalid_param : Error<
+  "parameter of literal operator must have type 'unsigned long long', 'long double', 'char', 'wchar_t', 'char16_t', 'char32_t', or 'const char *'">;
+def err_literal_operator_param : Error<
+  "invalid literal operator parameter type %0, did you mean %1?">;
+def err_literal_operator_template_with_params : Error<
+  "literal operator template cannot have any parameters">;
+def err_literal_operator_template : Error<
+  "template parameter list for literal operator must be either 'char...' or 'typename T, T...'">;
 def err_literal_operator_extern_c : Error<
   "literal operator must have C++ linkage">;
 def ext_string_literal_operator_template : ExtWarn<

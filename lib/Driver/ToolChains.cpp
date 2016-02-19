@@ -1060,7 +1060,7 @@ DerivedArgList *Darwin::TranslateArgs(const DerivedArgList &Args,
   }
 
   if (!Args.getLastArg(options::OPT_stdlib_EQ) &&
-      GetDefaultCXXStdlibType() == ToolChain::CST_Libcxx)
+      GetCXXStdlibType(Args) == ToolChain::CST_Libcxx)
     DAL->AddJoinedArg(nullptr, Opts.getOption(options::OPT_stdlib_EQ),
                       "libc++");
 
@@ -2998,6 +2998,12 @@ void CloudABI::AddCXXStdlibLibArgs(const ArgList &Args,
 
 Tool *CloudABI::buildLinker() const {
   return new tools::cloudabi::Linker(*this);
+}
+
+SanitizerMask CloudABI::getSupportedSanitizers() const {
+  SanitizerMask Res = ToolChain::getSupportedSanitizers();
+  Res |= SanitizerKind::SafeStack;
+  return Res;
 }
 
 /// OpenBSD - OpenBSD tool chain which can call as(1) and ld(1) directly.

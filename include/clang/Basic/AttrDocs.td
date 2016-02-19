@@ -685,9 +685,14 @@ are:
   Apple's watchOS operating system.  The minimum deployment target is specified by
   the ``-mwatchos-version-min=*version*`` command-line argument.
 
-A declaration can be used even when deploying back to a platform version prior
-to when the declaration was introduced.  When this happens, the declaration is
-`weakly linked
+An optional nopartial can be placed after the platform name.
+With the optional nopartial, when deploying back to a platform version prior to
+when the declaration was introduced, Clang emits an error specifying that the
+function is not introduced yet.
+
+Without the optional nopartial, a declaration can be used even when deploying back
+to a platform version prior to when the declaration was introduced.  When this
+happens, the declaration is `weakly linked
 <https://developer.apple.com/library/mac/#documentation/MacOSX/Conceptual/BPFrameworks/Concepts/WeakLinking.html>`_,
 as if the ``weak_import`` attribute were added to the declaration.  A
 weakly-linked declaration may or may not be present a run-time, and a program
@@ -1765,7 +1770,7 @@ The ``not_tail_called`` attribute prevents tail-call optimization on statically 
 
 For example, it prevents tail-call optimization in the following case:
 
-  .. code-block: c
+  .. code-block:: c
 
     int __attribute__((not_tail_called)) foo1(int);
 
@@ -1775,7 +1780,7 @@ For example, it prevents tail-call optimization in the following case:
 
 However, it doesn't prevent tail-call optimization in this case:
 
-  .. code-block: c
+  .. code-block:: c
 
     int __attribute__((not_tail_called)) foo1(int);
 
@@ -1789,7 +1794,7 @@ However, it doesn't prevent tail-call optimization in this case:
 
 Marking virtual functions as ``not_tail_called`` is an error:
 
-  .. code-block: c++
+  .. code-block:: c++
 
     class Base {
     public:
@@ -1839,7 +1844,7 @@ For example:
 
 Marking virtual functions as ``disable_tail_calls`` is legal.
 
-  .. code-block: c++
+  .. code-block:: c++
 
     int callee(int);
 

@@ -3961,6 +3961,19 @@ AST_TYPE_MATCHER(ArrayType, arrayType);
 ///   matches "_Complex float f"
 AST_TYPE_MATCHER(ComplexType, complexType);
 
+/// \brief Matches any real floating-point type (float, double, long double).
+///
+/// Given
+/// \code
+///   int i;
+///   float f;
+/// \endcode
+/// realFloatingPointType()
+///   matches "float f" but not "int i"
+AST_MATCHER(Type, realFloatingPointType) {
+  return Node.isRealFloatingType();
+}
+
 /// \brief Matches arrays and C99 complex types that have a specific element
 /// type.
 ///
@@ -4816,6 +4829,27 @@ const internal::VariadicDynCastAllOfMatcher<
   Stmt,
   CUDAKernelCallExpr> cudaKernelCallExpr;
 
+
+/// \brief Matches expressions that resolve to a null pointer constant, such as
+/// GNU's __null, C++11's nullptr, or C's NULL macro.
+///
+/// Given:
+/// \code
+///   void *v1 = NULL;
+///   void *v2 = nullptr;
+///   void *v3 = __null; // GNU extension
+///   char *cp = (char *)0;
+///   int *ip = 0;
+///   int i = 0;
+/// \endcode
+/// expr(nullPointerConstant())
+///   matches the initializer for v1, v2, v3, cp, and ip. Does not match the
+///   initializer for i.
+AST_MATCHER_FUNCTION(internal::Matcher<Expr>, nullPointerConstant) {
+  return anyOf(
+      gnuNullExpr(), cxxNullPtrLiteralExpr(),
+      integerLiteral(equals(0), hasParent(expr(hasType(pointerType())))));
+}
 } // end namespace ast_matchers
 } // end namespace clang
 
