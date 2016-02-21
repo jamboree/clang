@@ -322,11 +322,12 @@ public:
     PQ_FunctionSpecifier     = 8
   };
 
-  // context-specifiers
-  enum CS {
-    CS_unspecified  = 0,
-    CS_plain        = 1,
-    CS_async        = 2
+  // context-specifier
+  enum ContextSpecifier {
+    CS_unspecified = 0,
+    CS_generic,
+    CS_plain,
+    CS_async,
   };
 
 private:
@@ -350,7 +351,7 @@ private:
   unsigned TypeQualifiers : 4;  // Bitwise OR of TQ.
 
   // context-specifiers
-  unsigned ContextSpecifiers : 3;  // Bitwise OR of CS.
+  ContextSpecifier ContextSpec : 2;
 
   // function-specifier
   unsigned FS_inline_specified : 1;
@@ -364,9 +365,6 @@ private:
 
   // constexpr-specifier
   unsigned Constexpr_specified : 1;
-
-  // generic-specifier
-  unsigned Generic_specified : 1;
 
   // concept-specifier
   unsigned Concept_specified : 1;
@@ -398,9 +396,8 @@ private:
   SourceLocation TQ_constLoc, TQ_restrictLoc, TQ_volatileLoc, TQ_atomicLoc;
   SourceLocation FS_inlineLoc, FS_virtualLoc, FS_explicitLoc, FS_noreturnLoc;
   SourceLocation FS_forceinlineLoc;
-  SourceLocation FriendLoc, ModulePrivateLoc, ConstexprLoc, GenericLoc, ConceptLoc;
+  SourceLocation FriendLoc, ModulePrivateLoc, ConstexprLoc, ContextSpecLoc, ConceptLoc;
   SourceLocation TQ_pipeLoc;
-  SourceLocation CS_plainLoc, CS_asyncLoc;
 
   WrittenBuiltinSpecs writtenBS;
   void SaveWrittenBuiltinSpecs();
@@ -438,7 +435,7 @@ public:
       TypeSpecOwned(false),
       TypeSpecPipe(false),
       TypeQualifiers(TQ_unspecified),
-      ContextSpecifiers(CS_unspecified),
+      ContextSpec(CS_unspecified),
       FS_inline_specified(false),
       FS_forceinline_specified(false),
       FS_virtual_specified(false),
@@ -446,7 +443,6 @@ public:
       FS_noreturn_specified(false),
       Friend_specified(false),
       Constexpr_specified(false),
-      Generic_specified(false),
       Concept_specified(false),
       Attrs(attrFactory),
       writtenBS(),
@@ -543,7 +539,7 @@ public:
   static const char *getSpecifierName(DeclSpec::TSW W);
   static const char *getSpecifierName(DeclSpec::SCS S);
   static const char *getSpecifierName(DeclSpec::TSCS S);
-  static const char *getSpecifierName(DeclSpec::CS C);
+  static const char *getSpecifierName(DeclSpec::ContextSpecifier C);
 
   // type-qualifiers
 
@@ -566,12 +562,13 @@ public:
   }
 
 
-  unsigned getContextSpecifiers() const { return ContextSpecifiers; }
+  ContextSpecifier getContextSpec() const { return ContextSpec; }
 
-  void ClearContextSpecifiers() {
-      TypeQualifiers = 0;
-      CS_plainLoc = SourceLocation();
-      CS_asyncLoc = SourceLocation();
+  SourceLocation getContextSpecLoc() const { return ContextSpecLoc; }
+
+  void ClearContextSpec() {
+      ContextSpec = CS_unspecified;
+      ContextSpecLoc = SourceLocation();
   }
 
   // function-specifier
@@ -712,13 +709,10 @@ public:
                             unsigned &DiagID);
   bool SetConstexprSpec(SourceLocation Loc, const char *&PrevSpec,
                         unsigned &DiagID);
-  bool SetGenericSpec(SourceLocation Loc, const char *&PrevSpec,
-      unsigned &DiagID);
   bool SetConceptSpec(SourceLocation Loc, const char *&PrevSpec,
                       unsigned &DiagID);
 
-
-  bool SetContextSpec(CS C, SourceLocation Loc, const char *&PrevSpec,
+  bool SetContextSpec(ContextSpecifier C, SourceLocation Loc, const char *&PrevSpec,
       unsigned &DiagID);
 
   bool isFriendSpecified() const { return Friend_specified; }
@@ -729,9 +723,6 @@ public:
   
   bool isConstexprSpecified() const { return Constexpr_specified; }
   SourceLocation getConstexprSpecLoc() const { return ConstexprLoc; }
-    
-  bool isGenericSpecified() const { return Generic_specified; }
-  SourceLocation getGenericSpecLoc() const { return GenericLoc; }
 
   bool isConceptSpecified() const { return Concept_specified; }
   SourceLocation getConceptSpecLoc() const { return ConceptLoc; }

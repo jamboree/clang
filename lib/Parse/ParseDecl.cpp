@@ -2191,6 +2191,12 @@ void Parser::ParseSpecifierQualifierList(DeclSpec &DS, AccessSpecifier AS,
     Diag(DS.getConstexprSpecLoc(), diag::err_typename_invalid_constexpr);
     DS.ClearConstexprSpec();
   }
+
+  // Issue diagnostic and remove generic specfier if present.
+  if (DS.getContextSpec() == DeclSpec::CS_generic && DSC != DSC_condition) {
+    Diag(DS.getContextSpecLoc(), diag::err_typename_invalid_generic);
+    DS.ClearContextSpec();
+  }
 }
 
 /// isValidAfterIdentifierInDeclaratorAfterDeclSpec - Return true if the
@@ -2623,6 +2629,8 @@ void Parser::ParseContextSpecifier(DeclSpec &DS)
     case CT_async:
         isInvalid = DS.SetContextSpec(DeclSpec::CS_async, atLoc, PrevSpec, DiagID);
         break;
+    default:
+        return;
     }
     if (isInvalid) {
         if (DiagID == diag::ext_duplicate_declspec)
@@ -3263,7 +3271,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
 
     // generic
     case tok::kw_generic:
-        isInvalid = DS.SetGenericSpec(Loc, PrevSpec, DiagID);
+        isInvalid = DS.SetContextSpec(DeclSpec::CS_generic, Loc, PrevSpec, DiagID);
         break;
 
     // concept

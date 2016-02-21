@@ -441,11 +441,12 @@ const char *DeclSpec::getSpecifierName(TSS S) {
   llvm_unreachable("Unknown typespec!");
 }
 
-const char *DeclSpec::getSpecifierName(CS C) {
+const char *DeclSpec::getSpecifierName(ContextSpecifier C) {
     switch (C) {
-    case CS_unspecified: return "unspecified";
-    case CS_plain:    return "@plain";
-    case CS_async:      return "@async";
+    case CS_unspecified:    return "unspecified";
+    case CS_generic:        return "generic";
+    case CS_plain:          return "@plain";
+    case CS_async:          return "@async";
     }
     llvm_unreachable("Unknown typespec!");
 }
@@ -802,25 +803,21 @@ bool DeclSpec::SetTypeQual(TQ T, SourceLocation Loc, const char *&PrevSpec,
   llvm_unreachable("Unknown type qualifier!");
 }
 
-bool DeclSpec::SetContextSpec(CS C, SourceLocation Loc, const char *&PrevSpec,
+bool DeclSpec::SetContextSpec(ContextSpecifier C, SourceLocation Loc, const char *&PrevSpec,
     unsigned &DiagID) {
-    if (isGenericSpecified()) {
+    if (ContextSpec != CS_unspecified) {
         DiagID = diag::err_invalid_decl_spec_combination;
-        PrevSpec = "generic";
+        PrevSpec = getSpecifierName(C);
         return true;
     }
     else {
-        if (ContextSpecifiers & C) {
+        if (ContextSpec == C) {
             DiagID = diag::ext_duplicate_declspec;
             PrevSpec = getSpecifierName(C);
             return true;
         }
-        ContextSpecifiers |= C;
-        switch (C) {
-        case CS_unspecified: break;
-        case CS_plain: CS_plainLoc = Loc; return false;
-        case CS_async: CS_asyncLoc = Loc; return false;
-        }
+        ContextSpec = C;
+        ContextSpecLoc = Loc;
         return false;
     }
 }
@@ -937,23 +934,6 @@ bool DeclSpec::SetConstexprSpec(SourceLocation Loc, const char *&PrevSpec,
   }
   Constexpr_specified = true;
   ConstexprLoc = Loc;
-  return false;
-}
-
-bool DeclSpec::SetGenericSpec(SourceLocation Loc, const char *&PrevSpec,
-                                unsigned &DiagID) {
-  if (ContextSpecifiers) {
-    DiagID = diag::err_invalid_context_spec_combination;
-    PrevSpec = "";
-    return true;
-  }
-  if (Generic_specified) {
-    DiagID = diag::ext_duplicate_declspec;
-    PrevSpec = "generic";
-    return true;
-  }
-  Generic_specified = true;
-  GenericLoc = Loc;
   return false;
 }
 

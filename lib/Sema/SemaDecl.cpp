@@ -3760,19 +3760,11 @@ Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS, DeclSpec &DS,
     return TagD;
   }
 
-  if (DS.isGenericSpecified()) {
+  if (DS.getContextSpec() != DeclSpec::CS_unspecified) {
       if (Tag)
-          Diag(DS.getGenericSpecLoc(), diag::err_generic_tag)
-          << GetDiagnosticTypeSpecifierID(DS.getTypeSpecType());
-      else
-          Diag(DS.getGenericSpecLoc(), diag::err_generic_no_declarators);
-      // Don't emit warnings after this error.
-      return TagD;
-  }
-  else if (DS.getContextSpecifiers()) {
-      if (Tag)
-          Diag(DS.getTypeSpecTypeNameLoc(), diag::err_context_spec_tag)
-          << GetDiagnosticTypeSpecifierID(DS.getTypeSpecType());
+          Diag(DS.getContextSpecLoc(), diag::err_context_spec_tag)
+          << GetDiagnosticTypeSpecifierID(DS.getTypeSpecType())
+          << DeclSpec::getSpecifierName(DS.getContextSpec());
       // Don't emit warnings after this error.
       return TagD;
   }
@@ -5217,8 +5209,9 @@ Sema::ActOnTypedefDeclarator(Scope* S, Declarator& D, DeclContext* DC,
   if (D.getDeclSpec().isConstexprSpecified())
     Diag(D.getDeclSpec().getConstexprSpecLoc(), diag::err_invalid_constexpr)
       << 1;
-  if (D.getDeclSpec().isGenericSpecified())
-    Diag(D.getDeclSpec().getGenericSpecLoc(),
+
+  if (D.getDeclSpec().getContextSpec() == DeclSpec::CS_generic)
+    Diag(D.getDeclSpec().getContextSpecLoc(),
          diag::err_invalid_generic) << 2;
 
   if (D.getDeclSpec().isConceptSpecified())
@@ -5997,8 +5990,8 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     if (D.getDeclSpec().isConstexprSpecified())
       NewVD->setConstexpr(true);
 
-    if (D.getDeclSpec().isGenericSpecified()) {
-        Diag(D.getDeclSpec().getGenericSpecLoc(),
+    if (D.getDeclSpec().getContextSpec() == DeclSpec::CS_generic) {
+        Diag(D.getDeclSpec().getContextSpecLoc(),
             diag::err_invalid_generic) << 0;
         NewVD->setInvalidDecl(true);
     }
@@ -7485,7 +7478,6 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     bool isVirtual = D.getDeclSpec().isVirtualSpecified();
     bool isExplicit = D.getDeclSpec().isExplicitSpecified();
     bool isConstexpr = D.getDeclSpec().isConstexprSpecified();
-    bool isGeneric = D.getDeclSpec().isGenericSpecified();
     bool isConcept = D.getDeclSpec().isConceptSpecified();
     isFriend = D.getDeclSpec().isFriendSpecified();
     if (isFriend && !isInline && D.isFunctionDefinition()) {
@@ -10539,9 +10531,9 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   if (DS.isConstexprSpecified())
     Diag(DS.getConstexprSpecLoc(), diag::err_invalid_constexpr)
       << 0;
-  if (DS.isGenericSpecified())
-    Diag(DS.getGenericSpecLoc(), diag::err_invalid_generic)
-      << 1;
+  if (DS.getContextSpec() == DeclSpec::CS_generic)
+      Diag(DS.getContextSpecLoc(),
+          diag::err_invalid_generic) << 1;
   if (DS.isConceptSpecified())
     Diag(DS.getConceptSpecLoc(), diag::err_concept_wrong_decl_kind);
 

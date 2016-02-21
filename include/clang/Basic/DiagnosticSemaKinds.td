@@ -2067,19 +2067,11 @@ def note_private_extern : Note<
   "use __attribute__((visibility(\"hidden\"))) attribute instead">;
 
 // Jamboree
-def err_generic_tag : Error<
-  "%select{class|struct|interface|union|enum}0 cannot be marked generic">;
-def err_generic_no_declarators : Error<
-  "generic can only be used in function declarations">;
-def err_generic_wrong_decl_kind : Error<
-  "'generic' can only appear on the definition of a function">;
 def err_invalid_generic : Error<
   "%select{variable|function parameter|typedef}0 "
   "cannot be generic">;
-def err_invalid_context_spec_combination : Error<
-  "cannot combine with previous context specifiers">;
 def err_context_spec_tag : Error<
-  "%select{class|struct|interface|union|enum}0 cannot have context specifiers">;
+  "%select{class|struct|interface|union|enum}0 cannot  be marked '%1'">;
 //def note_context_spec : Note<"context specifier is here">;
 
 // C++ Concepts TS
