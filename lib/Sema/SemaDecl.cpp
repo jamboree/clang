@@ -11605,6 +11605,13 @@ void Sema::AddKnownFunctionAttributes(FunctionDecl *FD) {
     }
   }
 
+  // If C++ exceptions are enabled but we are told extern "C" functions cannot
+  // throw, add an implicit nothrow attribute to any extern "C" function we come
+  // across.
+  if (getLangOpts().CXXExceptions && getLangOpts().ExternCNoUnwind &&
+      FD->isExternC() && !FD->hasAttr<NoThrowAttr>())
+    FD->addAttr(NoThrowAttr::CreateImplicit(Context, FD->getLocation()));
+
   IdentifierInfo *Name = FD->getIdentifier();
   if (!Name)
     return;
@@ -14775,11 +14782,10 @@ DeclResult Sema::ActOnModuleImport(SourceLocation AtLoc,
   // of the same top-level module. Until we do, make it an error rather than
   // silently ignoring the import.
   if (Mod->getTopLevelModuleName() == getLangOpts().CurrentModule)
-    Diag(ImportLoc, diag::err_module_self_import)
+    Diag(ImportLoc, getLangOpts().CompilingModule
+                        ? diag::err_module_self_import
+                        : diag::err_module_import_in_implementation)
         << Mod->getFullModuleName() << getLangOpts().CurrentModule;
-  else if (Mod->getTopLevelModuleName() == getLangOpts().ImplementationOfModule)
-    Diag(ImportLoc, diag::err_module_import_in_implementation)
-        << Mod->getFullModuleName() << getLangOpts().ImplementationOfModule;
 
   SmallVector<SourceLocation, 2> IdentifierLocs;
   Module *ModCheck = Mod;
@@ -14813,11 +14819,13 @@ void Sema::ActOnModuleInclude(SourceLocation DirectiveLoc, Module *Mod) {
       TUKind == TU_Module &&
       getSourceManager().isWrittenInMainFile(DirectiveLoc);
 
-  // Similarly, if this module is specified by -fmodule-implementation-of
-  // don't actually synthesize an illegal module import.
-  bool ShouldAddImport = !IsInModuleIncludes &&
-    (getLangOpts().ImplementationOfModule.empty() ||
-     getLangOpts().ImplementationOfModule != Mod->getTopLevelModuleName());
+  // Similarly, if we're in the implementation of a module, don't
+  // synthesize an illegal module import. FIXME: Why not?
+  bool ShouldAddImport =
+      !IsInModuleIncludes &&
+      (getLangOpts().CompilingModule ||
+       getLangOpts().CurrentModule.empty() ||
+       getLangOpts().CurrentModule != Mod->getTopLevelModuleName());
 
   // If this module import was due to an inclusion directive, create an 
   // implicit import declaration to capture it in the AST.
