@@ -1570,11 +1570,6 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
   if (declarator.getContext() == Declarator::BlockLiteralContext)
     maybeSynthesizeBlockSignature(state, Result);
 
-  if (!Result->isFunctionType()) {
-      if (DS.getContextSpec() != DeclSpec::CS_unspecified)
-          //error
-  }
-
   // Apply any type attributes from the decl spec.  This may cause the
   // list of type attributes to be temporarily saved while the type
   // attributes are pushed around.

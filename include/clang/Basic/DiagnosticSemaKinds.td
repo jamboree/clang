@@ -2073,6 +2073,8 @@ def err_invalid_generic : Error<
 def err_context_spec_tag : Error<
   "%select{class|struct|interface|union|enum}0 cannot  be marked '%1'">;
 //def note_context_spec : Note<"context specifier is here">;
+def err_invalid_context_spec : Error<
+  "context_spec error!">;
 
 // C++ Concepts TS
 def err_concept_wrong_decl_kind : Error<
