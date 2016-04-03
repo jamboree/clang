@@ -2246,10 +2246,15 @@ InitListChecker::CheckDesignatedInitializer(const InitializedEntity &Entity,
           assert(StructuredList->getNumInits() == 1
                  && "A union should never have more than one initializer!");
 
-          // we're about to throw away an initializer, emit warning
-          SemaRef.Diag(D->getFieldLoc(),
-                       diag::warn_initializer_overrides)
-            << D->getSourceRange();
+          // It's an error in C++ to multi-initialize a union.
+          if (SemaRef.getLangOpts().CPlusPlus) {
+            SemaRef.Diag(D->getFieldLoc(),
+                         diag::err_multiple_mem_union_initialization);
+          } else {
+            // we're about to throw away an initializer, emit warning
+            SemaRef.Diag(D->getFieldLoc(), diag::warn_initializer_overrides)
+                << D->getSourceRange();
+          }
           Expr *ExistingInit = StructuredList->getInit(0);
           SemaRef.Diag(ExistingInit->getLocStart(),
                        diag::note_previous_initializer)
