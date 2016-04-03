@@ -312,7 +312,8 @@ class InitListChecker {
                                            unsigned StructuredIndex,
                                            SourceRange InitRange,
                                            bool IsFullyOverwritten = false);
-  void UpdateStructuredListElement(InitListExpr *StructuredList,
+  void UpdateStructuredListElement(const InitializedEntity &Entity,
+                                   InitListExpr *StructuredList,
                                    unsigned &StructuredIndex,
                                    Expr *expr);
   int numArrayElements(QualType DeclType);
@@ -1133,7 +1134,7 @@ void InitListChecker::CheckSubElementType(const InitializedEntity &Entity,
     assert(SemaRef.Context.hasSameType(expr->getType(), ElemType) &&
            "found implicit initialization for the wrong type");
     if (!VerifyOnly)
-      UpdateStructuredListElement(StructuredList, StructuredIndex, expr);
+      UpdateStructuredListElement(Entity, StructuredList, StructuredIndex, expr);
     ++Index;
     return;
   }
@@ -1162,7 +1163,7 @@ void InitListChecker::CheckSubElementType(const InitializedEntity &Entity,
         if (Result.isInvalid())
           hadError = true;
 
-        UpdateStructuredListElement(StructuredList, StructuredIndex,
+        UpdateStructuredListElement(Entity, StructuredList, StructuredIndex,
                                     Result.getAs<Expr>());
       } else if (!Seq)
         hadError = true;
@@ -1184,7 +1185,7 @@ void InitListChecker::CheckSubElementType(const InitializedEntity &Entity,
     if (IsStringInit(expr, arrayType, SemaRef.Context) == SIF_None) {
       if (!VerifyOnly) {
         CheckStringInit(expr, ElemType, arrayType, SemaRef);
-        UpdateStructuredListElement(StructuredList, StructuredIndex, expr);
+        UpdateStructuredListElement(Entity, StructuredList, StructuredIndex, expr);
       }
       ++Index;
       return;
@@ -1214,7 +1215,7 @@ void InitListChecker::CheckSubElementType(const InitializedEntity &Entity,
           if (ExprRes.isInvalid())
             hadError = true;
       }
-      UpdateStructuredListElement(StructuredList, StructuredIndex,
+      UpdateStructuredListElement(Entity, StructuredList, StructuredIndex,
                                   ExprRes.getAs<Expr>());
       ++Index;
       return;
@@ -1350,7 +1351,7 @@ void InitListChecker::CheckScalarType(const InitializedEntity &Entity,
   if (hadError)
     ++StructuredIndex;
   else
-    UpdateStructuredListElement(StructuredList, StructuredIndex, ResultExpr);
+    UpdateStructuredListElement(Entity, StructuredList, StructuredIndex, ResultExpr);
   ++Index;
 }
 
@@ -1406,7 +1407,7 @@ void InitListChecker::CheckReferenceType(const InitializedEntity &Entity,
   if (hadError)
     ++StructuredIndex;
   else
-    UpdateStructuredListElement(StructuredList, StructuredIndex, expr);
+    UpdateStructuredListElement(Entity, StructuredList, StructuredIndex, expr);
   ++Index;
 }
 
@@ -1459,7 +1460,7 @@ void InitListChecker::CheckVectorType(const InitializedEntity &Entity,
       if (hadError)
         ++StructuredIndex;
       else
-        UpdateStructuredListElement(StructuredList, StructuredIndex,
+        UpdateStructuredListElement(Entity, StructuredList, StructuredIndex,
                                     ResultExpr);
       ++Index;
       return;
@@ -1585,7 +1586,7 @@ void InitListChecker::CheckArrayType(const InitializedEntity &Entity,
       // constant for each string.
       if (!VerifyOnly) {
         CheckStringInit(IList->getInit(Index), DeclType, arrayType, SemaRef);
-        UpdateStructuredListElement(StructuredList, StructuredIndex,
+        UpdateStructuredListElement(Entity, StructuredList, StructuredIndex,
                                     IList->getInit(Index));
         StructuredList->resizeInits(SemaRef.Context, StructuredIndex);
       }
@@ -2692,7 +2693,8 @@ InitListChecker::getStructuredSubobjectInit(InitListExpr *IList, unsigned Index,
 
 /// Update the initializer at index @p StructuredIndex within the
 /// structured initializer list to the value @p expr.
-void InitListChecker::UpdateStructuredListElement(InitListExpr *StructuredList,
+void InitListChecker::UpdateStructuredListElement(const InitializedEntity &Entity,
+                                                  InitListExpr *StructuredList,
                                                   unsigned &StructuredIndex,
                                                   Expr *expr) {
   // No structured initializer list to update
@@ -2709,14 +2711,16 @@ void InitListChecker::UpdateStructuredListElement(InitListExpr *StructuredList,
     // There is an overwrite taking place because the first braced initializer
     // list "{ .a = 2 }' already provides value for .p.b (which is zero).
     if (PrevInit->getSourceRange().isValid()) {
-      SemaRef.Diag(expr->getLocStart(),
-                   diag::warn_initializer_overrides)
-        << expr->getSourceRange();
+      if (SemaRef.getLangOpts().CPlusPlus) {
+        SemaRef.Diag(expr->getLocStart(), diag::err_multiple_mem_initialization)
+            << Entity.getName();
+      } else {
+        SemaRef.Diag(expr->getLocStart(), diag::warn_initializer_overrides)
+            << expr->getSourceRange();
+      }
 
-      SemaRef.Diag(PrevInit->getLocStart(),
-                   diag::note_previous_initializer)
-        << /*FIXME:has side effects=*/0
-        << PrevInit->getSourceRange();
+      SemaRef.Diag(PrevInit->getLocStart(), diag::note_previous_initializer)
+          << /*FIXME:has side effects=*/0 << PrevInit->getSourceRange();
     }
   }
 
@@ -3445,6 +3449,8 @@ ResolveConstructorOverload(Sema &S, SourceLocation DeclLoc,
                            bool CopyInitializing, bool AllowExplicit,
                            bool OnlyListConstructors, bool IsListInit) {
   CandidateSet.clear();
+  bool HasDesig = Sema::AnyDesignated(Args);
+  SmallVector<Expr *, 32> MappedArgs;
 
   for (NamedDecl *D : Ctors) {
     DeclAccessPair FoundDecl = DeclAccessPair::make(D, D->getAccess());
@@ -3484,8 +3490,9 @@ ResolveConstructorOverload(Sema &S, SourceLocation DeclLoc,
         (!OnlyListConstructors || S.isInitListConstructor(Constructor))) {
       if (ConstructorTmpl)
         S.AddTemplateOverloadCandidate(ConstructorTmpl, FoundDecl,
-                                       /*ExplicitArgs*/ nullptr, Args,
-                                       CandidateSet, SuppressUserConversions);
+                                       /*ExplicitArgs*/ nullptr,
+                                       Args, MappedArgs,
+                                       CandidateSet, HasDesig, SuppressUserConversions);
       else {
         // C++ [over.match.copy]p1:
         //   - When initializing a temporary to be bound to the first parameter 
@@ -3496,11 +3503,13 @@ ResolveConstructorOverload(Sema &S, SourceLocation DeclLoc,
         bool AllowExplicitConv = AllowExplicit && !CopyInitializing && 
                                  Args.size() == 1 &&
                                  Constructor->isCopyOrMoveConstructor();
-        S.AddOverloadCandidate(Constructor, FoundDecl, Args, CandidateSet,
-                               SuppressUserConversions,
+        S.AddOverloadCandidate(Constructor, FoundDecl, Args,
+                               MappedArgs, CandidateSet,
+                               HasDesig, SuppressUserConversions, 
                                /*PartialOverloading=*/false,
                                /*AllowExplicit=*/AllowExplicitConv);
       }
+      MappedArgs.clear();
     }
   }
 
@@ -3630,6 +3639,12 @@ static void TryConstructorInitialization(Sema &S,
   // Add the constructor initialization step. Any cv-qualification conversion is
   // subsumed by the initialization.
   bool HadMultipleCandidates = (CandidateSet.size() > 1);
+
+  // If the Candidate has processed the designated args, use it.
+  if (auto NumMappedArgs = Best->NumMappedArgs)
+    Sequence.SetConstructorMappedArgs(
+        MultiExprArg(Best->MappedArgs, NumMappedArgs));
+
   Sequence.AddConstructorInitializationStep(
       CtorDecl, Best->FoundDecl.getAccess(), DestType, HadMultipleCandidates,
       IsListInit | IsInitListCopy, AsInitializerList);
@@ -3988,6 +4003,8 @@ static OverloadingResult TryRefInitWithConversionFunction(Sema &S,
     // to see if there is a suitable conversion.
     CXXRecordDecl *T1RecordDecl = cast<CXXRecordDecl>(T1RecordType->getDecl());
 
+    SmallVector<Expr *, 1> NoMappedArgs; // Dummy
+
     for (NamedDecl *D : S.LookupConstructors(T1RecordDecl)) {
       DeclAccessPair FoundDecl = DeclAccessPair::make(D, D->getAccess());
 
@@ -4005,11 +4022,13 @@ static OverloadingResult TryRefInitWithConversionFunction(Sema &S,
         if (ConstructorTmpl)
           S.AddTemplateOverloadCandidate(ConstructorTmpl, FoundDecl,
                                          /*ExplicitArgs*/ nullptr,
-                                         Initializer, CandidateSet,
+                                         Initializer, NoMappedArgs,
+                                         CandidateSet, /*HasDesig*/false,
                                          /*SuppressUserConversions=*/true);
         else
           S.AddOverloadCandidate(Constructor, FoundDecl,
-                                 Initializer, CandidateSet,
+                                 Initializer, NoMappedArgs,
+                                 CandidateSet, /*HasDesig*/false,
                                  /*SuppressUserConversions=*/true);
       }
     }
@@ -4608,6 +4627,8 @@ static void TryUserDefinedConversion(Sema &S,
       // be changed while iterating. To be safe we copy the lookup results
       // to a new container.
       SmallVector<NamedDecl*, 8> CopyOfCon(R.begin(), R.end());
+      SmallVector<Expr *, 1> NoMappedArgs; // Dummy
+
       for (SmallVectorImpl<NamedDecl *>::iterator
              Con = CopyOfCon.begin(), ConEnd = CopyOfCon.end();
            Con != ConEnd; ++Con) {
@@ -4629,11 +4650,13 @@ static void TryUserDefinedConversion(Sema &S,
           if (ConstructorTmpl)
             S.AddTemplateOverloadCandidate(ConstructorTmpl, FoundDecl,
                                            /*ExplicitArgs*/ nullptr,
-                                           Initializer, CandidateSet,
+                                           Initializer, NoMappedArgs,
+                                           CandidateSet, /*HasDesig*/false,
                                            /*SuppressUserConversions=*/true);
           else
             S.AddOverloadCandidate(Constructor, FoundDecl,
-                                   Initializer, CandidateSet,
+                                   Initializer, NoMappedArgs,
+                                   CandidateSet, /*HasDesig*/false,
                                    /*SuppressUserConversions=*/true);
         }
       }
@@ -5373,6 +5396,8 @@ static void LookupCopyAndMoveConstructors(Sema &S,
   // be changed while iterating (e.g. because of deserialization).
   // To be safe we copy the lookup results to a new container.
   SmallVector<NamedDecl*, 16> Ctors(R.begin(), R.end());
+  SmallVector<Expr *, 1> NoMappedArgs; // Dummy
+
   for (SmallVectorImpl<NamedDecl *>::iterator
          CI = Ctors.begin(), CE = Ctors.end(); CI != CE; ++CI) {
     NamedDecl *D = *CI;
@@ -5387,8 +5412,8 @@ static void LookupCopyAndMoveConstructors(Sema &S,
 
       DeclAccessPair FoundDecl
         = DeclAccessPair::make(Constructor, Constructor->getAccess());
-      S.AddOverloadCandidate(Constructor, FoundDecl,
-                             CurInitExpr, CandidateSet);
+      S.AddOverloadCandidate(Constructor, FoundDecl, CurInitExpr,
+                             NoMappedArgs, CandidateSet, /*HasDesig*/false);
       continue;
     }
 
@@ -5407,7 +5432,8 @@ static void LookupCopyAndMoveConstructors(Sema &S,
     DeclAccessPair FoundDecl
       = DeclAccessPair::make(ConstructorTmpl, ConstructorTmpl->getAccess());
     S.AddTemplateOverloadCandidate(ConstructorTmpl, FoundDecl, nullptr,
-                                   CurInitExpr, CandidateSet, true);
+                                   CurInitExpr, NoMappedArgs,
+                                   CandidateSet, /*HasDesig*/false, true);
   }
 }
 
@@ -6689,7 +6715,11 @@ InitializationSequence::Perform(Sema &S,
       InitListExpr *InitList = cast<InitListExpr>(Args[0]);
       S.Diag(InitList->getExprLoc(), diag::warn_cxx98_compat_ctor_list_init)
         << InitList->getSourceRange();
-      MultiExprArg Arg(InitList->getInits(), InitList->getNumInits());
+      MultiExprArg Arg;
+      if (CtorMappedArgs.empty())
+        Arg = MultiExprArg(InitList->getInits(), InitList->getNumInits());
+      else
+        Arg = CtorMappedArgs;
       CurInit = PerformConstructorInitialization(S, UseTemporary ? TempEntity :
                                                                    Entity,
                                                  Kind, Arg, *Step,
@@ -6731,7 +6761,9 @@ InitializationSequence::Perform(Sema &S,
       bool IsStdInitListInit =
           Step->Kind == SK_StdInitializerListConstructorCall;
       CurInit = PerformConstructorInitialization(
-          S, UseTemporary ? TempEntity : Entity, Kind, Args, *Step,
+          S, UseTemporary ? TempEntity : Entity, Kind,
+          CtorMappedArgs.empty() ? Args : CtorMappedArgs,
+          *Step,
           ConstructorInitRequiresZeroInit,
           /*IsListInitialization*/IsStdInitListInit,
           /*IsStdInitListInitialization*/IsStdInitListInit,

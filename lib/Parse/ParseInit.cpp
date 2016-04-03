@@ -24,7 +24,7 @@ using namespace clang;
 /// MayBeDesignationStart - Return true if the current token might be the start 
 /// of a designator.  If we can tell it is impossible that it is a designator, 
 /// return false.
-bool Parser::MayBeDesignationStart() {
+bool Parser::MayBeDesignationStart(bool InInitList) {
   switch (Tok.getKind()) {
   default: 
     return false;
@@ -35,6 +35,9 @@ bool Parser::MayBeDesignationStart() {
   case tok::l_square: {  // designator: array-designator
     if (!PP.getLangOpts().CPlusPlus11)
       return true;
+
+    if (!InInitList)
+      return false;
     
     // C++11 lambda expressions and C99 designators can be ambiguous all the
     // way through the closing ']' and to the next character. Handle the easy

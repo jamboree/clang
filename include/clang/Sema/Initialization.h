@@ -761,7 +761,10 @@ private:
   
   /// \brief Steps taken by this initialization.
   SmallVector<Step, 4> Steps;
-  
+
+  /// \brief The mapped args for constructor.
+  MultiExprArg CtorMappedArgs;
+
 public:
   /// \brief Describes why initialization failed.
   enum FailureKind {
@@ -973,6 +976,8 @@ public:
   bool endsWithNarrowing(ASTContext &Ctx, const Expr *Initializer,
                          bool *isInitializerConstant,
                          APValue *ConstantValue) const;
+
+  void SetConstructorMappedArgs(MultiExprArg Args) { CtorMappedArgs = Args; }
 
   /// \brief Add a new step in the initialization that resolves the address
   /// of an overloaded function to a specific function declaration.

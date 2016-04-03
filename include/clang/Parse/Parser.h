@@ -1606,9 +1606,11 @@ private:
       return ParseAssignmentExpression();
     return ParseBraceInitializer();
   }
-  bool MayBeDesignationStart();
+  bool MayBeDesignationStart(bool InInitList = true);
   ExprResult ParseBraceInitializer();
   ExprResult ParseInitializerWithPotentialDesignator();
+
+  ExprResult ParseArgument();
 
   //===--------------------------------------------------------------------===//
   // clang Expressions

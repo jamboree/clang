@@ -801,6 +801,10 @@ Parser::TPResult Parser::TryParseDeclarator(bool mayBeAbstract,
   if (Tok.is(tok::ellipsis))
     ConsumeToken();
 
+  // designator
+  if (Tok.is(tok::period))
+    ConsumeToken();
+
   if ((Tok.isOneOf(tok::identifier, tok::kw_operator) ||
        (Tok.is(tok::annot_cxxscope) && (NextToken().is(tok::identifier) ||
                                         NextToken().is(tok::kw_operator)))) &&

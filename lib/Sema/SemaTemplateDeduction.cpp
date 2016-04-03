@@ -3317,33 +3317,76 @@ DeduceTemplateArgumentByListElement(Sema &S,
 /// about template argument deduction.
 ///
 /// \returns the result of template argument deduction.
-Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
-    FunctionTemplateDecl *FunctionTemplate,
-    TemplateArgumentListInfo *ExplicitTemplateArgs, ArrayRef<Expr *> Args,
-    FunctionDecl *&Specialization, TemplateDeductionInfo &Info,
-    bool PartialOverloading) {
+Sema::TemplateDeductionResult
+Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
+                              TemplateArgumentListInfo *ExplicitTemplateArgs,
+                              ArrayRef<Expr *> Args,
+                              SmallVectorImpl<Expr *> &MappedArgs,
+                              FunctionDecl *&Specialization,
+                              TemplateDeductionInfo &Info,
+                              bool HasDesig,
+                              bool PartialOverloading) {
   if (FunctionTemplate->isInvalidDecl())
     return TDK_Invalid;
 
   FunctionDecl *Function = FunctionTemplate->getTemplatedDecl();
+  const FunctionProtoType *Proto =
+      Function->getType()->getAs<FunctionProtoType>();
   unsigned NumParams = Function->getNumParams();
 
   // C++ [temp.deduct.call]p1:
   //   Template argument deduction is done by comparing each function template
   //   parameter type (call it P) with the type of the corresponding argument
   //   of the call (call it A) as described below.
-  unsigned CheckArgs = Args.size();
-  if (Args.size() < Function->getMinRequiredArguments() && !PartialOverloading)
+  unsigned MinRequiredArgs = Function->getMinRequiredArguments();
+  if (Args.size() < MinRequiredArgs && !PartialOverloading)
     return TDK_TooFewArguments;
   else if (TooManyArguments(NumParams, Args.size(), PartialOverloading)) {
-    const FunctionProtoType *Proto
-      = Function->getType()->getAs<FunctionProtoType>();
-    if (Proto->isTemplateVariadic())
-      /* Do nothing */;
-    else if (Proto->isVariadic())
-      CheckArgs = NumParams;
-    else
+    if (!Proto->isTemplateVariadic() && !Proto->isVariadic())
       return TDK_TooManyArguments;
+  }
+
+  if (HasDesig) {
+    // Build mapped arg-list
+    FunctionDecl::DesigParamFinder DesigParamFinder(Function, NumParams);
+    unsigned MaxArgs = NumParams;
+    if (!Args.size())
+      MaxArgs = 0;
+    else if (Proto->isTemplateVariadic())
+      MaxArgs += Args.size() - (1 + (NumParams != 1));
+    else if (Proto->isVariadic())
+      MaxArgs += Args.size() - !!NumParams;
+    MappedArgs.resize(MaxArgs);
+    unsigned NumArgs = 0;
+    unsigned Index = 0;
+    for (auto Arg : Args) {
+      auto DIE = dyn_cast<DesignatedInitExpr>(Arg);
+      if (DIE) {
+        auto I = DesigParamFinder.Find(DIE->getDesignator(0)->getFieldName());
+        if (I == DesigParamFinder.NumParams) {
+          Info.DesignationFailure = {Arg, 0};
+          return TDK_DesignatorNotFound;
+        }
+        Index = I++;
+        if (I > NumArgs)
+          NumArgs = I;
+      }
+      if (Index >= MaxArgs) {
+        Info.DesignationFailure = {Arg, Index};
+        return TDK_ArgumentOutOfBound;
+      }
+      if (MappedArgs[Index]) {
+        Info.DesignationFailure = {Arg, Index};
+        return TDK_OverlappedArguments;
+      }
+      MappedArgs[Index] = DIE ? DIE->getInit() : Arg;
+      ++Index;
+    }
+    if (Index > NumArgs)
+      NumArgs = Index;
+    if (NumArgs < NumParams)
+      MappedArgs.resize(NumArgs);
+    Args = MappedArgs;
   }
 
   // The types of the parameters from which we will perform template argument
@@ -3385,10 +3428,22 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
       = dyn_cast<PackExpansionType>(ParamType);
     if (!ParamExpansion) {
       // Simple case: matching a function parameter to a function argument.
-      if (ArgIdx >= CheckArgs)
+      if (ArgIdx >= Args.size())
         break;
 
-      Expr *Arg = Args[ArgIdx++];
+      Expr *Arg = Args[ArgIdx];
+
+      if (!Arg) {
+        if (ArgIdx < MinRequiredArgs) {
+          Info.DesignationFailure = {nullptr, ArgIdx};
+          return TDK_MissingArgument;
+        }
+        ++ArgIdx;
+        continue;
+      }
+
+      ++ArgIdx;
+
       QualType ArgType = Arg->getType();
       
       unsigned TDF = 0;

@@ -856,6 +856,8 @@ protected:
     /// The number of parameters preceding this parameter in the
     /// function parameter scope in which it was declared.
     unsigned ParameterIndex : NumParameterIndexBits;
+
+    unsigned IsDesignatable : 1;
   };
 
   class NonParmVarDeclBitfields {
@@ -1500,6 +1502,9 @@ public:
   /// the DeclContext appropriately.
   void setOwningFunction(DeclContext *FD) { setDeclContext(FD); }
 
+  bool isDesignatable() const { return ParmVarDeclBits.IsDesignatable; }
+  void setDesignatable(bool value) { ParmVarDeclBits.IsDesignatable = value; }
+
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == ParmVar; }
@@ -1546,6 +1551,36 @@ public:
     TK_MemberSpecialization,
     TK_FunctionTemplateSpecialization,
     TK_DependentFunctionTemplateSpecialization
+  };
+
+  /// DesigParamFinder - A one-time finder used to find designated param index,
+  /// `Find` should not be called with the same `Id` more than once.
+  class DesigParamFinder {
+    llvm::SmallDenseMap<IdentifierInfo *, unsigned> Cache;
+    FunctionDecl *Function;
+    unsigned Index;
+
+  public:
+    const unsigned NumParams;
+
+    DesigParamFinder(FunctionDecl *Function, unsigned NumParams)
+        : Function(Function), Index(0), NumParams(NumParams) {}
+
+    unsigned Find(IdentifierInfo *Id) {
+      auto I = Cache.find(Id);
+      if (I != Cache.end())
+        return I->second;
+      for (; Index != NumParams; ++Index) {
+        auto Param = Function->getParamDecl(Index);
+        if (Param->isDesignatable()) {
+          auto PId = Param->getIdentifier();
+          if (Id == PId)
+            return Index++;
+          Cache[PId] = Index;
+        }
+      }
+      return NumParams;
+    }
   };
 
 private:

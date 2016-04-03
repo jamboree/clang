@@ -1154,7 +1154,8 @@ CallExpr::CallExpr(const ASTContext &C, StmtClass SC, Expr *fn,
     SubExprs[i+PREARGS_START] = preargs[i];
   }
   for (unsigned i = 0; i != args.size(); ++i) {
-    updateDependenciesFromArg(args[i]);
+    if (args[i]) // designated args may leave some args null
+      updateDependenciesFromArg(args[i]);
     SubExprs[i+PREARGS_START+NumPreArgs] = args[i];
   }
 

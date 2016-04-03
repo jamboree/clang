@@ -475,6 +475,11 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old,
     break;
   }
 
+  bool OldHasDesig = false;
+  bool NewHasDesig = false;
+  bool OldHasDfl = false;
+  bool NewHasDfl = false;
+
   // C++ [dcl.fct.default]p4:
   //   For non-template functions, default arguments can be added in
   //   later declarations of a function in the same
@@ -502,6 +507,16 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old,
 
     bool OldParamHasDfl = OldParam ? OldParam->hasDefaultArg() : false;
     bool NewParamHasDfl = NewParam->hasDefaultArg();
+
+    OldHasDesig |= OldParam ? OldParam->isDesignatable() : false;
+    NewHasDesig |= NewParam->isDesignatable();
+    OldHasDfl |= OldParamHasDfl;
+    NewHasDfl |= NewParamHasDfl;
+
+    if (OldHasDesig && !NewHasDesig) {
+      NewParam->setDeclName(OldParam->getDeclName());
+      NewParam->setDesignatable(true);
+    }
 
     if (OldParamHasDfl && NewParamHasDfl) {
       unsigned DiagDefaultParamID =
@@ -610,6 +625,13 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old,
           << NewParam->getDefaultArgRange();
       }
     }
+  }
+
+  if ((NewHasDesig && (OldHasDesig || OldHasDfl)) ||
+      (OldHasDesig && (NewHasDesig || NewHasDfl))) {
+    Invalid = true;
+    Diag(New->getLocation(), diag::err_param_prototype_redefinition);
+    Diag(Old->getLocation(), diag::note_previous_definition);
   }
 
   // DR1344: If a default argument is added outside a class definition and that

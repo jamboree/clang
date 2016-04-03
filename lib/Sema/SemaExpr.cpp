@@ -1928,16 +1928,18 @@ Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
         OverloadCandidateSet OCS(R.getNameLoc(),
                                  OverloadCandidateSet::CSK_Normal);
         OverloadCandidateSet::iterator Best;
+        bool HasDesig = AnyDesignated(Args);
+        SmallVector<Expr *, 32> MappedArgs;
         for (NamedDecl *CD : Corrected) {
-          if (FunctionTemplateDecl *FTD =
-                   dyn_cast<FunctionTemplateDecl>(CD))
+          if (FunctionTemplateDecl *FTD = dyn_cast<FunctionTemplateDecl>(CD))
             AddTemplateOverloadCandidate(
                 FTD, DeclAccessPair::make(FTD, AS_none), ExplicitTemplateArgs,
-                Args, OCS);
+                Args, MappedArgs, OCS, HasDesig);
           else if (FunctionDecl *FD = dyn_cast<FunctionDecl>(CD))
             if (!ExplicitTemplateArgs || ExplicitTemplateArgs->size() == 0)
-              AddOverloadCandidate(FD, DeclAccessPair::make(FD, AS_none),
-                                   Args, OCS);
+              AddOverloadCandidate(FD, DeclAccessPair::make(FD, AS_none), Args,
+                                   MappedArgs, OCS, HasDesig);
+          MappedArgs.clear();
         }
         switch (OCS.BestViableFunction(*this, R.getNameLoc(), Best)) {
         case OR_Success:
@@ -4601,10 +4603,14 @@ static TypoCorrection TryTypoCorrectionForCall(Sema &S, Expr *Fn,
       if (Corrected.isOverloaded()) {
         OverloadCandidateSet OCS(NameLoc, OverloadCandidateSet::CSK_Normal);
         OverloadCandidateSet::iterator Best;
+        bool HasDesig = Sema::AnyDesignated(Args);
+        SmallVector<Expr *, 32> MappedArgs;
         for (NamedDecl *CD : Corrected) {
-          if (FunctionDecl *FD = dyn_cast<FunctionDecl>(CD))
+          if (FunctionDecl *FD = dyn_cast<FunctionDecl>(CD)) {
             S.AddOverloadCandidate(FD, DeclAccessPair::make(FD, AS_none), Args,
-                                   OCS);
+                                   MappedArgs, OCS, HasDesig);
+            MappedArgs.clear();
+          }
         }
         switch (OCS.BestViableFunction(S, NameLoc, Best)) {
         case OR_Success:
@@ -4760,9 +4766,7 @@ bool Sema::GatherArgumentsForCall(SourceLocation CallLoc, FunctionDecl *FDecl,
 
     Expr *Arg;
     ParmVarDecl *Param = FDecl ? FDecl->getParamDecl(i) : nullptr;
-    if (ArgIx < Args.size()) {
-      Arg = Args[ArgIx++];
-
+    if (ArgIx < Args.size() && (Arg = Args[ArgIx++])) {
       if (RequireCompleteType(Arg->getLocStart(),
                               ProtoArgType,
                               diag::err_call_incomplete_argument, Arg))
@@ -4951,11 +4955,25 @@ static bool isPlaceholderToRemoveAsArg(QualType type) {
 
 /// Check an argument list for placeholders that we won't try to
 /// handle later.
-static bool checkArgsForPlaceholders(Sema &S, MultiExprArg args) {
+static bool checkDuplicateArgsAndPlaceholders(Sema &S, MultiExprArg args) {
+  llvm::DenseMap<IdentifierInfo *, DesignatedInitExpr *> Desigs;
   // Apply this processing to all the arguments at once instead of
   // dying at the first failure.
   bool hasInvalid = false;
   for (size_t i = 0, e = args.size(); i != e; i++) {
+    if (auto DIE = dyn_cast<DesignatedInitExpr>(args[i])) {
+      auto name = DIE->getDesignator(0)->getFieldName();
+      auto Prev = Desigs[name];
+      Desigs[name] = DIE;
+      if (Prev) {
+        hasInvalid = true;
+        S.Diag(DIE->getLocStart(), diag::err_duplicate_designators)
+            << name << DIE->getDesignator(0)->getSourceRange();
+        S.Diag(Prev->getLocStart(), diag::note_previous_designator)
+            << Prev->getDesignator(0)->getSourceRange();
+        continue;
+      }
+    }
     if (isPlaceholderToRemoveAsArg(args[i]->getType())) {
       ExprResult result = S.CheckPlaceholderExpr(args[i]);
       if (result.isInvalid()) hasInvalid = true;
@@ -5064,7 +5082,7 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
   if (Result.isInvalid()) return ExprError();
   Fn = Result.get();
 
-  if (checkArgsForPlaceholders(*this, ArgExprs))
+  if (checkDuplicateArgsAndPlaceholders(*this, ArgExprs))
     return ExprError();
 
   if (getLangOpts().CPlusPlus) {
@@ -5177,10 +5195,19 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
   } else if (isa<MemberExpr>(NakedFn))
     NDecl = cast<MemberExpr>(NakedFn)->getMemberDecl();
 
+  SmallVector<Expr *, 32> MappedArgs;
+
   if (FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(NDecl)) {
-    if (CallingNDeclIndirectly &&
-        !checkAddressOfFunctionIsAvailable(FD, /*Complain=*/true,
-                                           Fn->getLocStart()))
+    if (CallingNDeclIndirectly) {
+      if (!checkAddressOfFunctionIsAvailable(FD, /*Complain=*/true,
+                                             Fn->getLocStart()))
+        return ExprError();
+      if (auto Arg = AnyDesignated(ArgExprs)) {
+        Diag(Arg->getLocStart(), diag::err_designated_arguments_indirect_callee)
+            << 0 << Arg->getSourceRange();
+        return ExprError();
+      }
+    } else if (DesignateArgumentsForCall(FD, Fn, ArgExprs, MappedArgs))
       return ExprError();
 
     // CheckEnableIf assumes that the we're passing in a sane number of args for
@@ -5202,6 +5229,10 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
             << Attr->getCond()->getSourceRange() << Attr->getMessage();
       }
     }
+  } else if (auto Arg = AnyDesignated(ArgExprs)) {
+    Diag(Arg->getLocStart(), diag::err_designated_arguments_indirect_callee)
+        << 0 << Arg->getSourceRange();
+    return ExprError();
   }
 
   return BuildResolvedCallExpr(Fn, NDecl, LParenLoc, ArgExprs, RParenLoc,
@@ -5510,9 +5541,24 @@ Sema::BuildCompoundLiteralExpr(SourceLocation LParenLoc, TypeSourceInfo *TInfo,
 ExprResult
 Sema::ActOnInitList(SourceLocation LBraceLoc, MultiExprArg InitArgList,
                     SourceLocation RBraceLoc) {
+  bool HasDuplicates = false;
+  llvm::DenseMap<IdentifierInfo *, DesignatedInitExpr *> Desigs;
   // Immediately handle non-overload placeholders.  Overloads can be
   // resolved contextually, but everything else here can't.
   for (unsigned I = 0, E = InitArgList.size(); I != E; ++I) {
+    if (auto DIE = dyn_cast<DesignatedInitExpr>(InitArgList[I])) {
+      auto name = DIE->getDesignator(0)->getFieldName();
+      auto Prev = Desigs[name];
+      Desigs[name] = DIE;
+      if (Prev) {
+        HasDuplicates = true;
+        Diag(DIE->getLocStart(), diag::err_duplicate_designators)
+            << name << DIE->getDesignator(0)->getSourceRange();
+        Diag(Prev->getLocStart(), diag::note_previous_designator)
+            << Prev->getDesignator(0)->getSourceRange();
+        continue;
+      }
+    }
     if (InitArgList[I]->getType()->isNonOverloadPlaceholderType()) {
       ExprResult result = CheckPlaceholderExpr(InitArgList[I]);
 
@@ -5523,6 +5569,10 @@ Sema::ActOnInitList(SourceLocation LBraceLoc, MultiExprArg InitArgList,
       InitArgList[I] = result.get();
     }
   }
+
+  // FIXME: do we need to delete the Exprs in InitArgList somehow?
+  if (HasDuplicates)
+    return ExprError();
 
   // Semantic analysis for initializers is done by ActOnDeclarator() and
   // CheckInitializer() - it requires knowledge of the object being intialized.
@@ -6048,6 +6098,24 @@ Sema::MaybeConvertParenListExprToParenExpr(Scope *S, Expr *OrigExpr) {
   if (Result.isInvalid()) return ExprError();
 
   return ActOnParenExpr(E->getLParenLoc(), E->getRParenLoc(), Result.get());
+}
+
+bool Sema::CheckDuplicateDesignators(MultiExprArg Args) {
+  bool HasDuplicates = false;
+  llvm::DenseMap<IdentifierInfo *, DesignatedInitExpr *> Desigs;
+  for (unsigned I = 0, E = Args.size(); I != E; ++I) {
+    if (auto DIE = dyn_cast<DesignatedInitExpr>(Args[I])) {
+      auto name = DIE->getDesignator(0)->getFieldName();
+      auto Prev = Desigs[name];
+      Desigs[name] = DIE;
+      if (Prev) {
+        HasDuplicates = true;
+        Diag(DIE->getLocStart(), diag::err_duplicate_designators) << name;
+        Diag(Prev->getLocStart(), diag::note_previous_designator);
+      }
+    }
+  }
+  return HasDuplicates;
 }
 
 ExprResult Sema::ActOnParenListExpr(SourceLocation L,

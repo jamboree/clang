@@ -2713,6 +2713,9 @@ Parser::ParseCXXNewExpression(bool UseGlobal, SourceLocation Start) {
       TypeIdParens = T.getRange();
       PlacementLParen = PlacementRParen = SourceLocation();
     } else {
+      if (Actions.CheckDuplicateDesignators(PlacementArgs))
+        PlacementArgs.clear();
+
       // We still need the type.
       if (Tok.is(tok::l_paren)) {
         BalancedDelimiterTracker T(*this, tok::l_paren);
@@ -2779,9 +2782,10 @@ Parser::ParseCXXNewExpression(bool UseGlobal, SourceLocation Start) {
       SkipUntil(tok::semi, StopAtSemi | StopBeforeMatch);
       return ExprError();
     }
-    Initializer = Actions.ActOnParenListExpr(ConstructorLParen,
-                                             ConstructorRParen,
-                                             ConstructorArgs);
+    if (!Actions.CheckDuplicateDesignators(ConstructorArgs))
+      Initializer = Actions.ActOnParenListExpr(ConstructorLParen,
+                                               ConstructorRParen,
+                                               ConstructorArgs);
   } else if (Tok.is(tok::l_brace) && getLangOpts().CPlusPlus11) {
     Diag(Tok.getLocation(),
          diag::warn_cxx98_compat_generalized_initializer_lists);

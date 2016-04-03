@@ -2113,11 +2113,13 @@ Decl *Parser::ParseDeclarationAfterDeclaratorAndAttributes(
         ExitScope();
       }
 
-      ExprResult Initializer = Actions.ActOnParenListExpr(T.getOpenLocation(),
-                                                          T.getCloseLocation(),
-                                                          Exprs);
-      Actions.AddInitializerToDecl(ThisDecl, Initializer.get(),
-                                   /*DirectInit=*/true, TypeContainsAuto);
+      if (!Actions.CheckDuplicateDesignators(Exprs)) {
+        ExprResult Initializer = Actions.ActOnParenListExpr(
+            T.getOpenLocation(), T.getCloseLocation(), Exprs);
+        if (!Initializer.isInvalid())
+          Actions.AddInitializerToDecl(ThisDecl, Initializer.get(),
+                                       /*DirectInit=*/true, TypeContainsAuto);
+      }
     }
   } else if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace) &&
              (!CurParsedObjCImpl || !D.isFunctionDeclarator())) {
@@ -5219,6 +5221,14 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
       // The ellipsis can't be followed by a parenthesized declarator. We
       // check for that in ParseParenDeclarator, after we have disambiguated
       // the l_paren token.
+    }
+
+    if (Tok.is(tok::period)) {
+      if (D.getContext() == Declarator::PrototypeContext ||
+          D.getContext() == Declarator::LambdaExprParameterContext) {
+        D.setPeriodLoc(ConsumeToken());
+        D.setDesignator(true);
+      }
     }
 
     if (Tok.isOneOf(tok::identifier, tok::kw_operator, tok::annot_template_id,

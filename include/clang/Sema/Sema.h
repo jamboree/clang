@@ -188,6 +188,7 @@ namespace clang {
   class VisibleDeclConsumer;
   class IndirectFieldDecl;
   struct DeductionFailureInfo;
+  struct DesignationFailureInfo;
   class TemplateSpecCandidateSet;
 
 namespace sema {
@@ -1943,6 +1944,8 @@ public:
                             AccessSpecifier AS, NamedDecl *PrevDecl,
                             Declarator *D = nullptr);
 
+  bool CheckDuplicateDesignators(MultiExprArg Args);
+
   bool CheckNontrivialField(FieldDecl *FD);
   void DiagnoseNontrivial(const CXXRecordDecl *Record, CXXSpecialMember CSM);
   bool SpecialMemberIsTrivial(CXXMethodDecl *MD, CXXSpecialMember CSM,
@@ -2393,7 +2396,9 @@ public:
   void AddOverloadCandidate(FunctionDecl *Function,
                             DeclAccessPair FoundDecl,
                             ArrayRef<Expr *> Args,
+                            SmallVectorImpl<Expr *> &MappedArgs,
                             OverloadCandidateSet& CandidateSet,
+                            bool HasDesig,
                             bool SuppressUserConversions = false,
                             bool PartialOverloading = false,
                             bool AllowExplicit = false);
@@ -2407,14 +2412,18 @@ public:
                           QualType ObjectType,
                           Expr::Classification ObjectClassification,
                           ArrayRef<Expr *> Args,
+                          SmallVectorImpl<Expr *> &MappedArgs,
                           OverloadCandidateSet& CandidateSet,
+                          bool HasDesig,
                           bool SuppressUserConversion = false);
   void AddMethodCandidate(CXXMethodDecl *Method,
                           DeclAccessPair FoundDecl,
                           CXXRecordDecl *ActingContext, QualType ObjectType,
                           Expr::Classification ObjectClassification,
                           ArrayRef<Expr *> Args,
+                          SmallVectorImpl<Expr *> &MappedArgs,
                           OverloadCandidateSet& CandidateSet,
+                          bool HasDesig,
                           bool SuppressUserConversions = false,
                           bool PartialOverloading = false);
   void AddMethodTemplateCandidate(FunctionTemplateDecl *MethodTmpl,
@@ -2424,14 +2433,18 @@ public:
                                   QualType ObjectType,
                                   Expr::Classification ObjectClassification,
                                   ArrayRef<Expr *> Args,
+                                  SmallVectorImpl<Expr *> &MappedArgs,
                                   OverloadCandidateSet& CandidateSet,
+                                  bool HasDesig,
                                   bool SuppressUserConversions = false,
                                   bool PartialOverloading = false);
   void AddTemplateOverloadCandidate(FunctionTemplateDecl *FunctionTemplate,
                                     DeclAccessPair FoundDecl,
                                  TemplateArgumentListInfo *ExplicitTemplateArgs,
                                     ArrayRef<Expr *> Args,
+                                    SmallVectorImpl<Expr *> &MappedArgs,
                                     OverloadCandidateSet& CandidateSet,
+                                    bool HasDesig,
                                     bool SuppressUserConversions = false,
                                     bool PartialOverloading = false);
   void AddConversionCandidate(CXXConversionDecl *Conversion,
@@ -2451,7 +2464,8 @@ public:
                              CXXRecordDecl *ActingContext,
                              const FunctionProtoType *Proto,
                              Expr *Object, ArrayRef<Expr *> Args,
-                             OverloadCandidateSet& CandidateSet);
+                             OverloadCandidateSet& CandidateSet,
+                             bool HasDesig);
   void AddMemberOperatorCandidates(OverloadedOperatorKind Op,
                                    SourceLocation OpLoc, ArrayRef<Expr *> Args,
                                    OverloadCandidateSet& CandidateSet,
@@ -2470,6 +2484,40 @@ public:
                                 TemplateArgumentListInfo *ExplicitTemplateArgs,
                                             OverloadCandidateSet& CandidateSet,
                                             bool PartialOverloading = false);
+
+  /// A user provided sink function that takes params
+  /// (unsigned FailureKind, const DesignationFailureInfo &Info).
+  /// The return value is used as the result of DesignateArguments.
+  typedef
+      llvm::function_ref<unsigned(unsigned, const DesignationFailureInfo &)>
+  DesignationFailureSink;
+
+  /// This handles arg arity checking and designated arg mapping, failure is
+  /// reported via DesignationFailureSink, 0 is returned on success.
+  /// If HasDesig is false, Args and MappedArgs are untouched, otherwise, 
+  /// there must be designated args and Args will be set to MappedArgs.
+  ///
+  /// Specifically, these cases are handled:
+  ///   - ovl_fail_too_many_arguments
+  ///   - ovl_fail_too_few_arguments
+  ///   - ovl_fail_designator_not_found
+  ///   - ovl_fail_argument_out_of_bound
+  ///   - ovl_fail_overlapped_arguments
+  ///
+  /// Note that ovl_fail_missing_argument is not handled here and needs a
+  /// separate check.
+  unsigned DesignateArguments(FunctionDecl *Function,
+                              unsigned NumParams,
+                              unsigned MinRequiredArgs,
+                              ArrayRef<Expr *>& Args,
+                              SmallVectorImpl<Expr *> &MappedArgs,
+                              DesignationFailureSink Sink,
+                              bool HasDesig,
+                              bool PartialOverloading = false);
+
+  bool DesignateArgumentsForCall(FunctionDecl *Function, Expr *CallExpr,
+                                 MultiExprArg &Args,
+                                 SmallVectorImpl<Expr *> &MappedArgs);
 
   // Emit as a 'note' the specific overload candidate
   void NoteOverloadCandidate(FunctionDecl *Fn, QualType DestType = QualType(),
@@ -2586,6 +2634,7 @@ public:
                             SourceLocation LParenLoc,
                             MultiExprArg Args,
                             SourceLocation RParenLoc);
+
   ExprResult
   BuildCallToObjectOfClassType(Scope *S, Expr *Object, SourceLocation LParenLoc,
                                MultiExprArg Args,
@@ -4692,11 +4741,12 @@ public:
                           SourceRange R);
   bool FindAllocationFunctions(SourceLocation StartLoc, SourceRange Range,
                                bool UseGlobal, QualType AllocType, bool IsArray,
-                               MultiExprArg PlaceArgs,
+                               SmallVectorImpl<Expr *> &PlaceArgs,
                                FunctionDecl *&OperatorNew,
                                FunctionDecl *&OperatorDelete);
   bool FindAllocationOverload(SourceLocation StartLoc, SourceRange Range,
-                              DeclarationName Name, MultiExprArg Args,
+                              DeclarationName Name,
+                              SmallVectorImpl<Expr *> &Args,
                               DeclContext *Ctx,
                               bool AllowMissing, FunctionDecl *&Operator,
                               bool Diagnose = true);
@@ -6355,6 +6405,10 @@ public:
     /// \brief The arguments included an overloaded function name that could
     /// not be resolved to a suitable function.
     TDK_FailedOverloadResolution,
+    TDK_DesignatorNotFound,
+    TDK_ArgumentOutOfBound,
+    TDK_OverlappedArguments,
+    TDK_MissingArgument,
     /// \brief Deduction failed; that's all we know.
     TDK_MiscellaneousDeductionFailure
   };
@@ -6403,8 +6457,10 @@ public:
   DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
                           TemplateArgumentListInfo *ExplicitTemplateArgs,
                           ArrayRef<Expr *> Args,
+                          SmallVectorImpl<Expr *> &MappedArgs,
                           FunctionDecl *&Specialization,
                           sema::TemplateDeductionInfo &Info,
+                          bool HasDesig,
                           bool PartialOverloading = false);
 
   TemplateDeductionResult
@@ -9366,6 +9422,13 @@ public:
     if (NumArgs > 0 && PartialOverloading)
       return NumArgs + 1 > NumParams; // If so, we view as an extra argument.
     return NumArgs > NumParams;
+  }
+
+  static Expr *AnyDesignated(ArrayRef<Expr *> Args) {
+    for (auto Arg : Args)
+      if (isa<DesignatedInitExpr>(Arg))
+        return Arg;
+    return nullptr;
   }
 
   // Emitting members of dllexported classes is delayed until the class

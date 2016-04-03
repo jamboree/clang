@@ -2900,6 +2900,7 @@ Sema::SpecialMemberOverloadResult *Sema::LookupSpecialMember(CXXRecordDecl *RD,
   // Copy the candidates as our processing of them may load new declarations
   // from an external source and invalidate lookup_result.
   SmallVector<NamedDecl *, 8> Candidates(R.begin(), R.end());
+  SmallVector<Expr *, 1> NoMappedArgs; // Dummy
 
   for (auto *Cand : Candidates) {
     if (Cand->isInvalidDecl())
@@ -2920,21 +2921,22 @@ Sema::SpecialMemberOverloadResult *Sema::LookupSpecialMember(CXXRecordDecl *RD,
       if (SM == CXXCopyAssignment || SM == CXXMoveAssignment)
         AddMethodCandidate(M, DeclAccessPair::make(M, AS_public), RD, ThisTy,
                            Classification, llvm::makeArrayRef(&Arg, NumArgs),
-                           OCS, true);
+                           NoMappedArgs, OCS, false, true);
       else
         AddOverloadCandidate(M, DeclAccessPair::make(M, AS_public),
-                             llvm::makeArrayRef(&Arg, NumArgs), OCS, true);
+                             llvm::makeArrayRef(&Arg, NumArgs), NoMappedArgs,
+                             OCS, false, true);
     } else if (FunctionTemplateDecl *Tmpl =
-                 dyn_cast<FunctionTemplateDecl>(Cand)) {
+                   dyn_cast<FunctionTemplateDecl>(Cand)) {
       if (SM == CXXCopyAssignment || SM == CXXMoveAssignment)
         AddMethodTemplateCandidate(Tmpl, DeclAccessPair::make(Tmpl, AS_public),
                                    RD, nullptr, ThisTy, Classification,
                                    llvm::makeArrayRef(&Arg, NumArgs),
-                                   OCS, true);
+                                   NoMappedArgs, OCS, false, true);
       else
-        AddTemplateOverloadCandidate(Tmpl, DeclAccessPair::make(Tmpl, AS_public),
-                                     nullptr, llvm::makeArrayRef(&Arg, NumArgs),
-                                     OCS, true);
+        AddTemplateOverloadCandidate(
+            Tmpl, DeclAccessPair::make(Tmpl, AS_public), nullptr,
+            llvm::makeArrayRef(&Arg, NumArgs), NoMappedArgs, OCS, false, true);
     } else {
       assert(isa<UsingDecl>(Cand) && "illegal Kind of operator = Decl");
     }

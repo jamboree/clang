@@ -546,7 +546,7 @@ namespace clang {
   };
 
   enum OverloadFailureKind {
-    ovl_fail_too_many_arguments,
+    ovl_fail_too_many_arguments = 1,
     ovl_fail_too_few_arguments,
     ovl_fail_bad_conversion,
     ovl_fail_bad_deduction,
@@ -585,7 +585,20 @@ namespace clang {
     ovl_fail_enable_if,
 
     /// This candidate was not viable because its address could not be taken.
-    ovl_fail_addr_not_available
+    ovl_fail_addr_not_available,
+
+    /// This candidate was not viable because a designator is not found.
+    ovl_fail_designator_not_found,
+
+    /// This candidate was not viable because multiple arguments are used
+    /// for the same parameter.
+    ovl_fail_overlapped_arguments,
+
+    /// This candidate was not viable because an argument is missing.
+    ovl_fail_missing_argument,
+
+    /// This candidate was not viable because an argument is out-of-bound.
+    ovl_fail_argument_out_of_bound
   };
 
   /// OverloadCandidate - A single candidate in an overload set (C++ 13.3).
@@ -618,11 +631,19 @@ namespace clang {
     /// the OverloadCandidateSet.
     ImplicitConversionSequence *Conversions;
 
+    /// MappedArgs - The mapped args resulted from the resolution process
+    /// if there are designators, the pointer points to a fixed size array with
+    /// NumMappedArgs elements. The memory is owned bythe OverloadCandidateSet.
+    Expr ** MappedArgs;
+
     /// The FixIt hints which can be used to fix the Bad candidate.
     ConversionFixItGenerator Fix;
 
     /// NumConversions - The number of elements in the Conversions array.
     unsigned NumConversions;
+
+    /// NumMappedArgs - The number of elements in the MappedArgs array.
+    unsigned NumMappedArgs;
 
     /// Viable - True to indicate that this overload candidate is viable.
     bool Viable;
@@ -657,6 +678,8 @@ namespace clang {
       /// after the call to the overload candidate to convert the result
       /// of calling the conversion function to the required type.
       StandardConversionSequence FinalConversion;
+
+      DesignationFailureInfo DesignationFailure;
     };
 
     /// hasAmbiguousConversion - Returns whether this overload
@@ -713,16 +736,21 @@ namespace clang {
     SmallVector<OverloadCandidate, 16> Candidates;
     llvm::SmallPtrSet<Decl *, 16> Functions;
 
-    // Allocator for OverloadCandidate::Conversions. We store the first few
-    // elements inline to avoid allocation for small sets.
-    llvm::BumpPtrAllocator ConversionSequenceAllocator;
+    // Allocator for OverloadCandidate::Conversions and MappedArgs. We store 
+    // the first few elements inline to avoid allocation for small sets.
+    llvm::BumpPtrAllocator Allocator;
 
     SourceLocation Loc;
     CandidateSetKind Kind;
 
     unsigned NumInlineSequences;
+    unsigned NumInlineMappedArgs;
     llvm::AlignedCharArray<llvm::AlignOf<ImplicitConversionSequence>::Alignment,
                            16 * sizeof(ImplicitConversionSequence)> InlineSpace;
+
+    llvm::AlignedCharArray<llvm::AlignOf<Expr *>::Alignment,
+                           16 * sizeof(ImplicitConversionSequence)>
+        MappedArgsInlineSpace;
 
     OverloadCandidateSet(const OverloadCandidateSet &) = delete;
     void operator=(const OverloadCandidateSet &) = delete;
@@ -731,7 +759,7 @@ namespace clang {
 
   public:
     OverloadCandidateSet(SourceLocation Loc, CandidateSetKind CSK)
-        : Loc(Loc), Kind(CSK), NumInlineSequences(0) {}
+        : Loc(Loc), Kind(CSK), NumInlineSequences(0), NumInlineMappedArgs(0) {}
     ~OverloadCandidateSet() { destroyCandidates(); }
 
     SourceLocation getLocation() const { return Loc; }
@@ -755,7 +783,8 @@ namespace clang {
 
     /// \brief Add a new candidate with NumConversions conversion sequence slots
     /// to the overload set.
-    OverloadCandidate &addCandidate(unsigned NumConversions = 0) {
+    OverloadCandidate &addCandidate(unsigned NumConversions = 0,
+                                    ArrayRef<Expr *> MappedArgs = {}) {
       Candidates.push_back(OverloadCandidate());
       OverloadCandidate &C = Candidates.back();
 
@@ -768,8 +797,8 @@ namespace clang {
         NumInlineSequences += NumConversions;
       } else {
         // Otherwise get memory from the allocator.
-        C.Conversions = ConversionSequenceAllocator
-                          .Allocate<ImplicitConversionSequence>(NumConversions);
+        C.Conversions =
+            Allocator.Allocate<ImplicitConversionSequence>(NumConversions);
       }
 
       // Construct the new objects.
@@ -777,6 +806,25 @@ namespace clang {
         new (&C.Conversions[i]) ImplicitConversionSequence();
 
       C.NumConversions = NumConversions;
+
+      auto NumMappedArgs = MappedArgs.size();
+      // Assign space from the inline array if there are enough free slots
+      // available.
+      if (NumMappedArgs + NumInlineMappedArgs <= 16) {
+        Expr **I = (Expr **)MappedArgsInlineSpace.buffer;
+        C.MappedArgs = &I[NumInlineMappedArgs];
+        NumInlineMappedArgs += NumMappedArgs;
+      } else {
+        // Otherwise get memory from the allocator.
+        C.MappedArgs = Allocator.Allocate<Expr *>(MappedArgs.size());
+      }
+
+      // Copy the args.
+      for (unsigned i = 0; i != NumMappedArgs; ++i)
+        C.MappedArgs[i] = MappedArgs[i];
+
+      C.NumMappedArgs = NumMappedArgs;
+
       return C;
     }
 
