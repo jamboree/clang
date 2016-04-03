@@ -2848,9 +2848,28 @@ ExprResult Sema::ActOnDesignatedInitializer(Designation &Desig,
                                  InitExpressions, Loc, GNUSyntax,
                                  Init.getAs<Expr>());
 
+  if (getLangOpts().CPlusPlus) {
+    if (Designators.size() == 1 && Designators[0].isFieldDesignator())
+      return DIE;
+  }
   if (!getLangOpts().C99)
     Diag(DIE->getLocStart(), diag::ext_designated_init)
       << DIE->getSourceRange();
+
+  return DIE;
+}
+
+ExprResult Sema::ActOnDesignatedArgument(const Designator &D,
+                                         SourceLocation Loc, ExprResult Init) {
+  typedef DesignatedInitExpr::Designator ASTDesignator;
+
+  if (Init.isInvalid())
+    return ExprError();
+
+  ASTDesignator Desig(D.getField(), D.getDotLoc(), D.getFieldLoc());
+
+  DesignatedInitExpr *DIE = DesignatedInitExpr::Create(
+      Context, &Desig, 1, None, Loc, false, Init.getAs<Expr>());
 
   return DIE;
 }

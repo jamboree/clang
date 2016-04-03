@@ -2633,17 +2633,16 @@ ExprResult clang::Parser::ParseArgument() {
       return ExprError();
     }
 
-    Designation Desig;
+    Designator Desig = Designator::getField(Tok.getIdentifierInfo(), DotLoc,
+                                            Tok.getLocation());
 
-    Desig.AddDesignator(Designator::getField(Tok.getIdentifierInfo(), DotLoc,
-                                             Tok.getLocation()));
     ConsumeToken(); // Eat the identifier.
 
     // Handle a normal designator sequence end, which is an equal.
     if (Tok.is(tok::equal)) {
       SourceLocation EqualLoc = ConsumeToken();
-      return Actions.ActOnDesignatedInitializer(Desig, EqualLoc, false,
-                                                ParseInitializer());
+      return Actions.ActOnDesignatedArgument(Desig, EqualLoc,
+                                             ParseInitializer());
     }
 
     Diag(Tok, diag::err_expected_equal_designator);

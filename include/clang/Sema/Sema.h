@@ -105,6 +105,7 @@ namespace clang {
   class DependentDiagnostic;
   class DesignatedInitExpr;
   class Designation;
+  class Designator;
   class EnableIfAttr;
   class EnumConstantDecl;
   class Expr;
@@ -4023,6 +4024,9 @@ public:
                                         SourceLocation Loc,
                                         bool GNUSyntax,
                                         ExprResult Init);
+
+  ExprResult ActOnDesignatedArgument(const Designator &D, SourceLocation Loc,
+                                     ExprResult Init);
 
 private:
   static BinaryOperatorKind ConvertTokenKindToBinaryOpcode(tok::TokenKind Kind);
