@@ -1157,7 +1157,8 @@ Sema::BuildCXXTypeConstructExpr(TypeSourceInfo *TInfo,
   // If the expression list is a single expression, the type conversion
   // expression is equivalent (in definedness, and if defined in meaning) to the
   // corresponding cast expression.
-  if (Exprs.size() == 1 && !ListInitialization) {
+  if (Exprs.size() == 1 && !ListInitialization &&
+      !isa<DesignatedInitExpr>(Exprs[0])) {
     Expr *Arg = Exprs[0];
     return BuildCXXFunctionalCastExpr(TInfo, LParenLoc, Arg, RParenLoc);
   }
@@ -1641,6 +1642,7 @@ Sema::BuildCXXNew(SourceRange Range, bool UseGlobal,
   FunctionDecl *OperatorDelete = nullptr;
   SmallVector<Expr*, 8> MappedPlacementArgs(PlacementArgs.begin(),
                                             PlacementArgs.end());
+  ArrayRef<Expr *> SyntacticPlacementArgs;
 
   if (!AllocType->isDependentType() &&
       !Expr::hasAnyTypeDependentArguments(PlacementArgs)) {
@@ -1649,6 +1651,7 @@ Sema::BuildCXXNew(SourceRange Range, bool UseGlobal,
             AllocType, ArraySize, MappedPlacementArgs, OperatorNew,
             OperatorDelete))
       return ExprError();
+    SyntacticPlacementArgs = PlacementArgs;
     PlacementArgs = MappedPlacementArgs;
   }
 
@@ -1789,11 +1792,16 @@ Sema::BuildCXXNew(SourceRange Range, bool UseGlobal,
     }
   }
 
-  return new (Context)
+  CXXNewExpr * New = new (Context)
       CXXNewExpr(Context, UseGlobal, OperatorNew, OperatorDelete,
                  UsualArrayDeleteWantsSize, PlacementArgs, TypeIdParens,
                  ArraySize, initStyle, Initializer, ResultType, AllocTypeInfo,
                  Range, DirectInitRange);
+
+  if (!SyntacticPlacementArgs.empty())
+      New->setSyntacticPlacementArgs(Context, SyntacticPlacementArgs);
+
+  return New;
 }
 
 /// \brief Checks that a type is suitable as the allocated type

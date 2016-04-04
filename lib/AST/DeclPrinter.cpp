@@ -99,7 +99,8 @@ namespace {
                                  const TemplateArgumentList *Args = nullptr);
     void prettyPrintAttributes(Decl *D);
     void prettyPrintPragmas(Decl *D);
-    void printDeclType(QualType T, StringRef DeclName, bool Pack = false);
+    void printDeclType(QualType T, StringRef DeclName, bool Pack = false,
+                       bool Desig = false);
   };
 }
 
@@ -236,7 +237,8 @@ void DeclPrinter::prettyPrintPragmas(Decl *D) {
   }
 }
 
-void DeclPrinter::printDeclType(QualType T, StringRef DeclName, bool Pack) {
+void DeclPrinter::printDeclType(QualType T, StringRef DeclName, bool Pack,
+                                bool Desig) {
   // Normally, a PackExpansionType is written as T[3]... (for instance, as a
   // template argument), but if it is the type of a declaration, the ellipsis
   // is placed before the name being declared.
@@ -244,7 +246,17 @@ void DeclPrinter::printDeclType(QualType T, StringRef DeclName, bool Pack) {
     Pack = true;
     T = PET->getPattern();
   }
-  T.print(Out, Policy, (Pack ? "..." : "") + DeclName, Indentation);
+  const char *Prefix;
+  if (Pack) {
+    if (Desig)
+      Prefix = "... .";
+    else
+      Prefix = "...";
+  } else if (Desig)
+    Prefix = ".";
+  else
+    Prefix = "";
+  T.print(Out, Policy, Prefix + DeclName, Indentation);
 }
 
 void DeclPrinter::ProcessDeclGroup(SmallVectorImpl<Decl*>& Decls) {
@@ -734,7 +746,10 @@ void DeclPrinter::VisitVarDecl(VarDecl *D) {
   QualType T = D->getTypeSourceInfo()
     ? D->getTypeSourceInfo()->getType()
     : D->getASTContext().getUnqualifiedObjCPointerType(D->getType());
-  printDeclType(T, D->getName());
+  bool Desig = false;
+  if (auto PD = dyn_cast<ParmVarDecl>(D))
+      Desig = PD->isDesignatable();
+  printDeclType(T, D->getName(), false, Desig);
   Expr *Init = D->getInit();
   if (!Policy.SuppressInitializers && Init) {
     bool ImplicitInit = false;
@@ -742,8 +757,9 @@ void DeclPrinter::VisitVarDecl(VarDecl *D) {
             dyn_cast<CXXConstructExpr>(Init->IgnoreImplicit())) {
       if (D->getInitStyle() == VarDecl::CallInit &&
           !Construct->isListInitialization()) {
-        ImplicitInit = Construct->getNumArgs() == 0 ||
-          Construct->getArg(0)->isDefaultArgument();
+        ImplicitInit = Construct->getSyntacticArgs().empty() &&
+                       (Construct->getNumArgs() == 0 ||
+                        Construct->getArg(0)->isDefaultArgument());
       }
     }
     if (!ImplicitInit) {

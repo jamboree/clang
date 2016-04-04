@@ -5196,6 +5196,7 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
     NDecl = cast<MemberExpr>(NakedFn)->getMemberDecl();
 
   SmallVector<Expr *, 32> MappedArgs;
+  ArrayRef<Expr *> SyntacticArgs;
 
   if (FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(NDecl)) {
     if (CallingNDeclIndirectly) {
@@ -5209,6 +5210,11 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
       }
     } else if (DesignateArgumentsForCall(FD, Fn, ArgExprs, MappedArgs))
       return ExprError();
+
+    if (!MappedArgs.empty()) {
+      SyntacticArgs = ArgExprs;
+      ArgExprs = MappedArgs;
+    }
 
     // CheckEnableIf assumes that the we're passing in a sane number of args for
     // FD, but that doesn't always hold true here. This is because, in some
@@ -5235,8 +5241,8 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
     return ExprError();
   }
 
-  return BuildResolvedCallExpr(Fn, NDecl, LParenLoc, ArgExprs, RParenLoc,
-                               ExecConfig, IsExecConfig);
+  return BuildResolvedCallExpr(Fn, NDecl, LParenLoc, ArgExprs, SyntacticArgs,
+                               RParenLoc, ExecConfig, IsExecConfig);
 }
 
 /// ActOnAsTypeExpr - create a new asType (bitcast) from the arguments.
@@ -5282,6 +5288,7 @@ ExprResult
 Sema::BuildResolvedCallExpr(Expr *Fn, NamedDecl *NDecl,
                             SourceLocation LParenLoc,
                             ArrayRef<Expr *> Args,
+                            ArrayRef<Expr *> SyntacticArgs,
                             SourceLocation RParenLoc,
                             Expr *Config, bool IsExecConfig) {
   FunctionDecl *FDecl = dyn_cast_or_null<FunctionDecl>(NDecl);
@@ -5470,6 +5477,9 @@ Sema::BuildResolvedCallExpr(Expr *Fn, NamedDecl *NDecl,
     if (CheckOtherCall(TheCall, Proto))
       return ExprError();
   }
+
+  if (!SyntacticArgs.empty())
+    TheCall->setSyntacticArgs(Context, SyntacticArgs);
 
   return MaybeBindToTemporary(TheCall);
 }

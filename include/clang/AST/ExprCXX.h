@@ -1167,7 +1167,8 @@ private:
 
   SourceLocation Loc;
   SourceRange ParenOrBraceRange;
-  unsigned NumArgs : 16;
+  unsigned NumArgs : 12;
+  unsigned NumSyntacticArgs : 12;
   bool Elidable : 1;
   bool HadMultipleCandidates : 1;
   bool ListInitialization : 1;
@@ -1175,6 +1176,7 @@ private:
   bool ZeroInitialization : 1;
   unsigned ConstructKind : 2;
   Stmt **Args;
+  Expr **SyntacticArgs;
 
 protected:
   CXXConstructExpr(const ASTContext &C, StmtClass SC, QualType T,
@@ -1190,18 +1192,18 @@ protected:
 
   /// \brief Construct an empty C++ construction expression.
   CXXConstructExpr(StmtClass SC, EmptyShell Empty)
-    : Expr(SC, Empty), Constructor(nullptr), NumArgs(0), Elidable(false),
-      HadMultipleCandidates(false), ListInitialization(false),
-      ZeroInitialization(false), ConstructKind(0), Args(nullptr)
-  { }
+      : Expr(SC, Empty), Constructor(nullptr), NumArgs(0), NumSyntacticArgs(0),
+        Elidable(false), HadMultipleCandidates(false),
+        ListInitialization(false), ZeroInitialization(false), ConstructKind(0),
+        Args(nullptr), SyntacticArgs(nullptr) {}
 
 public:
   /// \brief Construct an empty C++ construction expression.
   explicit CXXConstructExpr(EmptyShell Empty)
     : Expr(CXXConstructExprClass, Empty), Constructor(nullptr),
-      NumArgs(0), Elidable(false), HadMultipleCandidates(false),
+      NumArgs(0), NumSyntacticArgs(0), Elidable(false), HadMultipleCandidates(false),
       ListInitialization(false), ZeroInitialization(false),
-      ConstructKind(0), Args(nullptr)
+      ConstructKind(0), Args(nullptr), SyntacticArgs(nullptr)
   { }
 
   static CXXConstructExpr *Create(const ASTContext &C, QualType T,
@@ -1277,6 +1279,12 @@ public:
     return const_cast<CXXConstructExpr *>(this)->getArgs();
   }
   unsigned getNumArgs() const { return NumArgs; }
+
+  void setSyntacticArgs(const ASTContext &C, ArrayRef<Expr *> Args);
+
+  ArrayRef<Expr *> getSyntacticArgs() const {
+    return {SyntacticArgs, NumSyntacticArgs};
+  }
 
   /// \brief Return the specified argument.
   Expr *getArg(unsigned Arg) {
@@ -1731,6 +1739,8 @@ class CXXNewExpr : public Expr {
   /// Contains an optional array size expression, an optional initialization
   /// expression, and any number of optional placement arguments, in that order.
   Stmt **SubExprs;
+
+  Expr **SyntacticPlacementArgs;
   /// \brief Points to the allocation function used.
   FunctionDecl *OperatorNew;
   /// \brief Points to the deallocation function used in case of error. May be
@@ -1758,7 +1768,9 @@ class CXXNewExpr : public Expr {
   /// function for the allocated type want to know the allocated size?
   bool UsualArrayDeleteWantsSize : 1;
   /// The number of placement new arguments.
-  unsigned NumPlacementArgs : 13;
+  unsigned NumPlacementArgs : 12;
+
+  unsigned NumSyntacticPlacementArgs : 12;
   /// What kind of initializer do we have? Could be none, parens, or braces.
   /// In storage, we distinguish between "none, and no initializer expr", and
   /// "none, but an implicit initializer expr".
@@ -1781,7 +1793,8 @@ public:
              QualType ty, TypeSourceInfo *AllocatedTypeInfo,
              SourceRange Range, SourceRange directInitRange);
   explicit CXXNewExpr(EmptyShell Shell)
-    : Expr(CXXNewExprClass, Shell), SubExprs(nullptr) { }
+      : Expr(CXXNewExprClass, Shell), SubExprs(nullptr),
+        SyntacticPlacementArgs(nullptr), NumSyntacticPlacementArgs(0) {}
 
   void AllocateArgsArray(const ASTContext &C, bool isArray,
                          unsigned numPlaceArgs, bool hasInitializer);
@@ -1837,6 +1850,12 @@ public:
   const Expr *getPlacementArg(unsigned i) const {
     assert(i < NumPlacementArgs && "Index out of range");
     return const_cast<CXXNewExpr*>(this)->getPlacementArg(i);
+  }
+
+  void setSyntacticPlacementArgs(const ASTContext &C, ArrayRef<Expr *> Args);
+
+  ArrayRef<Expr *> getSyntacticPlacementArgs() const {
+    return {SyntacticPlacementArgs, NumSyntacticPlacementArgs};
   }
 
   bool isParenTypeId() const { return TypeIdParens.isValid(); }

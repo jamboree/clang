@@ -2517,7 +2517,7 @@ public:
                               bool PartialOverloading = false);
 
   bool DesignateArgumentsForCall(FunctionDecl *Function, Expr *CallExpr,
-                                 MultiExprArg &Args,
+                                 MultiExprArg Args,
                                  SmallVectorImpl<Expr *> &MappedArgs);
 
   // Emit as a 'note' the specific overload candidate
@@ -3982,6 +3982,7 @@ public:
   ExprResult BuildResolvedCallExpr(Expr *Fn, NamedDecl *NDecl,
                                    SourceLocation LParenLoc,
                                    ArrayRef<Expr *> Arg,
+                                   ArrayRef<Expr *> SyntacticArgs,
                                    SourceLocation RParenLoc,
                                    Expr *Config = nullptr,
                                    bool IsExecConfig = false);

@@ -5755,6 +5755,7 @@ PerformConstructorInitialization(Sema &S,
                                  const InitializedEntity &Entity,
                                  const InitializationKind &Kind,
                                  MultiExprArg Args,
+                                 MultiExprArg SyntacticArgs,
                                  const InitializationSequence::Step& Step,
                                  bool &ConstructorInitRequiresZeroInit,
                                  bool IsListInitialization,
@@ -5875,6 +5876,10 @@ PerformConstructorInitialization(Sema &S,
 
   if (shouldBindAsTemporary(Entity))
     CurInit = S.MaybeBindToTemporary(CurInit.get());
+
+  if (!SyntacticArgs.empty())
+    CurInit.getAs<CXXConstructExpr>()->setSyntacticArgs(S.Context,
+                                                        SyntacticArgs);
 
   return CurInit;
 }
@@ -6739,19 +6744,18 @@ InitializationSequence::Perform(Sema &S,
       InitListExpr *InitList = cast<InitListExpr>(Args[0]);
       S.Diag(InitList->getExprLoc(), diag::warn_cxx98_compat_ctor_list_init)
         << InitList->getSourceRange();
-      MultiExprArg Arg;
-      if (CtorMappedArgs.empty())
-        Arg = MultiExprArg(InitList->getInits(), InitList->getNumInits());
-      else
-        Arg = CtorMappedArgs;
-      CurInit = PerformConstructorInitialization(S, UseTemporary ? TempEntity :
-                                                                   Entity,
-                                                 Kind, Arg, *Step,
-                                               ConstructorInitRequiresZeroInit,
-                                               /*IsListInitialization*/true,
-                                               /*IsStdInitListInit*/false,
-                                               InitList->getLBraceLoc(),
-                                               InitList->getRBraceLoc());
+      MultiExprArg ExprArgs(InitList->getInits(), InitList->getNumInits());
+      MultiExprArg SyntacticArgs;
+      if (!CtorMappedArgs.empty()) {
+        SyntacticArgs = ExprArgs;
+        ExprArgs = CtorMappedArgs;
+      }
+      CurInit = PerformConstructorInitialization(
+          S, UseTemporary ? TempEntity : Entity, Kind, ExprArgs, SyntacticArgs,
+          *Step, ConstructorInitRequiresZeroInit,
+          /*IsListInitialization*/ true,
+          /*IsStdInitListInit*/ false, InitList->getLBraceLoc(),
+          InitList->getRBraceLoc());
       break;
     }
 
@@ -6784,15 +6788,19 @@ InitializationSequence::Perform(Sema &S,
       bool UseTemporary = Entity.getType()->isReferenceType();
       bool IsStdInitListInit =
           Step->Kind == SK_StdInitializerListConstructorCall;
+      MultiExprArg ExprArgs = Args;
+      MultiExprArg SyntacticArgs;
+      if (!CtorMappedArgs.empty()) {
+        SyntacticArgs = ExprArgs;
+        ExprArgs = CtorMappedArgs;
+      }
       CurInit = PerformConstructorInitialization(
-          S, UseTemporary ? TempEntity : Entity, Kind,
-          CtorMappedArgs.empty() ? Args : CtorMappedArgs,
-          *Step,
-          ConstructorInitRequiresZeroInit,
-          /*IsListInitialization*/IsStdInitListInit,
-          /*IsStdInitListInitialization*/IsStdInitListInit,
-          /*LBraceLoc*/SourceLocation(),
-          /*RBraceLoc*/SourceLocation());
+          S, UseTemporary ? TempEntity : Entity, Kind, ExprArgs, SyntacticArgs,
+          *Step, ConstructorInitRequiresZeroInit,
+          /*IsListInitialization*/ IsStdInitListInit,
+          /*IsStdInitListInitialization*/ IsStdInitListInit,
+          /*LBraceLoc*/ SourceLocation(),
+          /*RBraceLoc*/ SourceLocation());
       break;
     }
 

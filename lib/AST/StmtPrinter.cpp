@@ -1457,6 +1457,17 @@ void StmtPrinter::VisitOMPArraySectionExpr(OMPArraySectionExpr *Node) {
 }
 
 void StmtPrinter::PrintCallArgs(CallExpr *Call) {
+  ArrayRef<Expr *> SyntacticArgs = Call->getSyntacticArgs();
+  if (!SyntacticArgs.empty()) {
+    auto I = SyntacticArgs.begin();
+    auto E = SyntacticArgs.end();
+    PrintExpr(*I);
+    while (++I != E) {
+      OS << ", ";
+      PrintExpr(*I);
+    }
+    return;
+  }
   for (unsigned i = 0, e = Call->getNumArgs(); i != e; ++i) {
     if (isa<CXXDefaultArgExpr>(Call->getArg(i))) {
       // Don't print any defaulted arguments
@@ -1758,11 +1769,23 @@ void StmtPrinter::VisitCXXOperatorCallExpr(CXXOperatorCallExpr *Node) {
   } else if (Kind == OO_Call) {
     PrintExpr(Node->getArg(0));
     OS << '(';
-    for (unsigned ArgIdx = 1; ArgIdx < Node->getNumArgs(); ++ArgIdx) {
-      if (ArgIdx > 1)
+    ArrayRef<Expr *> SyntacticArgs = Node->getSyntacticArgs();
+    if (!SyntacticArgs.empty()) {
+      auto I = SyntacticArgs.begin();
+      auto E = SyntacticArgs.end();
+      PrintExpr(*I);
+      while (++I != E) {
         OS << ", ";
-      if (!isa<CXXDefaultArgExpr>(Node->getArg(ArgIdx)))
+        PrintExpr(*I);
+      }
+    } else {
+      for (unsigned ArgIdx = 1; ArgIdx < Node->getNumArgs(); ++ArgIdx) {
+        if (ArgIdx > 1)
+          OS << ", ";
+        if (isa<CXXDefaultArgExpr>(Node->getArg(ArgIdx)))
+          break;
         PrintExpr(Node->getArg(ArgIdx));
+      }
     }
     OS << ')';
   } else if (Kind == OO_Subscript) {
@@ -1962,14 +1985,25 @@ void StmtPrinter::VisitCXXTemporaryObjectExpr(CXXTemporaryObjectExpr *Node) {
     OS << "{";
   else
     OS << "(";
-  for (CXXTemporaryObjectExpr::arg_iterator Arg = Node->arg_begin(),
-                                         ArgEnd = Node->arg_end();
-       Arg != ArgEnd; ++Arg) {
-    if ((*Arg)->isDefaultArgument())
-      break;
-    if (Arg != Node->arg_begin())
+  ArrayRef<Expr *> SyntacticArgs = Node->getSyntacticArgs();
+  if (!SyntacticArgs.empty()) {
+    auto I = SyntacticArgs.begin();
+    auto E = SyntacticArgs.end();
+    PrintExpr(*I);
+    while (++I != E) {
       OS << ", ";
-    PrintExpr(*Arg);
+      PrintExpr(*I);
+    }
+  } else {
+    for (CXXTemporaryObjectExpr::arg_iterator Arg = Node->arg_begin(),
+                                              ArgEnd = Node->arg_end();
+         Arg != ArgEnd; ++Arg) {
+      if ((*Arg)->isDefaultArgument())
+        break;
+      if (Arg != Node->arg_begin())
+        OS << ", ";
+      PrintExpr(*Arg);
+    }
   }
   if (Node->isStdInitListInitialization())
     /* See above. */;
@@ -2079,40 +2113,51 @@ void StmtPrinter::VisitCXXScalarValueInitExpr(CXXScalarValueInitExpr *Node) {
   OS << "()";
 }
 
-void StmtPrinter::VisitCXXNewExpr(CXXNewExpr *E) {
-  if (E->isGlobalNew())
+void StmtPrinter::VisitCXXNewExpr(CXXNewExpr *New) {
+  if (New->isGlobalNew())
     OS << "::";
   OS << "new ";
-  unsigned NumPlace = E->getNumPlacementArgs();
-  if (NumPlace > 0 && !isa<CXXDefaultArgExpr>(E->getPlacementArg(0))) {
+  unsigned NumPlace = New->getNumPlacementArgs();
+  ArrayRef<Expr *> SyntacticPlacementArgs = New->getSyntacticPlacementArgs();
+  if (!SyntacticPlacementArgs.empty()) {
+    auto I = SyntacticPlacementArgs.begin();
+    auto E = SyntacticPlacementArgs.end();
     OS << "(";
-    PrintExpr(E->getPlacementArg(0));
+    PrintExpr(*I);
+    while (++I != E) {
+      OS << ", ";
+      PrintExpr(*I);
+    }
+    OS << ") ";
+  } else if (NumPlace > 0 && !isa<CXXDefaultArgExpr>(New->getPlacementArg(0))) {
+    OS << "(";
+    PrintExpr(New->getPlacementArg(0));
     for (unsigned i = 1; i < NumPlace; ++i) {
-      if (isa<CXXDefaultArgExpr>(E->getPlacementArg(i)))
+      if (isa<CXXDefaultArgExpr>(New->getPlacementArg(i)))
         break;
       OS << ", ";
-      PrintExpr(E->getPlacementArg(i));
+      PrintExpr(New->getPlacementArg(i));
     }
     OS << ") ";
   }
-  if (E->isParenTypeId())
+  if (New->isParenTypeId())
     OS << "(";
   std::string TypeS;
-  if (Expr *Size = E->getArraySize()) {
+  if (Expr *Size = New->getArraySize()) {
     llvm::raw_string_ostream s(TypeS);
     s << '[';
     Size->printPretty(s, Helper, Policy);
     s << ']';
   }
-  E->getAllocatedType().print(OS, Policy, TypeS);
-  if (E->isParenTypeId())
+  New->getAllocatedType().print(OS, Policy, TypeS);
+  if (New->isParenTypeId())
     OS << ")";
 
-  CXXNewExpr::InitializationStyle InitStyle = E->getInitializationStyle();
+  CXXNewExpr::InitializationStyle InitStyle = New->getInitializationStyle();
   if (InitStyle) {
     if (InitStyle == CXXNewExpr::CallInit)
       OS << "(";
-    PrintExpr(E->getInitializer());
+    PrintExpr(New->getInitializer());
     if (InitStyle == CXXNewExpr::CallInit)
       OS << ")";
   }
@@ -2143,21 +2188,32 @@ void StmtPrinter::VisitCXXPseudoDestructorExpr(CXXPseudoDestructorExpr *E) {
     E->getDestroyedType().print(OS, Policy);
 }
 
-void StmtPrinter::VisitCXXConstructExpr(CXXConstructExpr *E) {
-  if (E->isListInitialization() && !E->isStdInitListInitialization())
+void StmtPrinter::VisitCXXConstructExpr(CXXConstructExpr *Ctor) {
+  if (Ctor->isListInitialization() && !Ctor->isStdInitListInitialization())
     OS << "{";
-
-  for (unsigned i = 0, e = E->getNumArgs(); i != e; ++i) {
-    if (isa<CXXDefaultArgExpr>(E->getArg(i))) {
-      // Don't print any defaulted arguments
-      break;
+  ArrayRef<Expr *> SyntacticArgs = Ctor->getSyntacticArgs();
+  if (!SyntacticArgs.empty()) {
+    auto I = SyntacticArgs.begin();
+    auto E = SyntacticArgs.end();
+    PrintExpr(*I);
+    while (++I != E) {
+      OS << ", ";
+      PrintExpr(*I);
     }
+  } else {
+    for (unsigned i = 0, e = Ctor->getNumArgs(); i != e; ++i) {
+      if (isa<CXXDefaultArgExpr>(Ctor->getArg(i))) {
+        // Don't print any defaulted arguments
+        break;
+      }
 
-    if (i) OS << ", ";
-    PrintExpr(E->getArg(i));
+      if (i)
+        OS << ", ";
+      PrintExpr(Ctor->getArg(i));
+    }
   }
 
-  if (E->isListInitialization() && !E->isStdInitListInitialization())
+  if (Ctor->isListInitialization() && !Ctor->isStdInitListInitialization())
     OS << "}";
 }
 

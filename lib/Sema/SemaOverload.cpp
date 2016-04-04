@@ -11547,12 +11547,15 @@ static ExprResult FinishOverloadedCallExpr(Sema &SemaRef, Scope *S, Expr *Fn,
       return ExprError();
     Fn = SemaRef.FixOverloadedFunctionReference(Fn, (*Best)->FoundDecl, FDecl);
 
+    ArrayRef<Expr *> SyntacticArgs;
     // If the Candidate has processed the designated args, use it.
-    if (auto NumMappedArgs = (*Best)->NumMappedArgs)
+    if (auto NumMappedArgs = (*Best)->NumMappedArgs) {
+      SyntacticArgs = Args;
       Args = MultiExprArg((*Best)->MappedArgs, NumMappedArgs);
+    }
 
-    return SemaRef.BuildResolvedCallExpr(Fn, FDecl, LParenLoc, Args, RParenLoc,
-                                         ExecConfig);
+    return SemaRef.BuildResolvedCallExpr(Fn, FDecl, LParenLoc, Args,
+                                         SyntacticArgs, RParenLoc, ExecConfig);
   }
 
   case OR_No_Viable_Function: {
@@ -11600,12 +11603,19 @@ static ExprResult FinishOverloadedCallExpr(Sema &SemaRef, Scope *S, Expr *Fn,
       << Fn->getSourceRange();
     CandidateSet->NoteCandidates(SemaRef, OCD_AllCandidates, Args);
 
+    ArrayRef<Expr *> SyntacticArgs;
+    // If the Candidate has processed the designated args, use it.
+    if (auto NumMappedArgs = (*Best)->NumMappedArgs) {
+      SyntacticArgs = Args;
+      Args = MultiExprArg((*Best)->MappedArgs, NumMappedArgs);
+    }
+
     // We emitted an error for the unvailable/deleted function call but keep
     // the call in the AST.
     FunctionDecl *FDecl = (*Best)->Function;
     Fn = SemaRef.FixOverloadedFunctionReference(Fn, (*Best)->FoundDecl, FDecl);
-    return SemaRef.BuildResolvedCallExpr(Fn, FDecl, LParenLoc, Args, RParenLoc,
-                                         ExecConfig);
+    return SemaRef.BuildResolvedCallExpr(Fn, FDecl, LParenLoc, Args,
+                                         SyntacticArgs, RParenLoc, ExecConfig);
   }
   }
 
@@ -12324,8 +12334,6 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
   // argument and the member function we're referring to.
   Expr *NakedMemExpr = MemExprE->IgnoreParens();
 
-  SmallVector<Expr *, 32> MappedArgs;
-
   // Determine whether this is a call to a pointer-to-member function.
   if (BinaryOperator *op = dyn_cast<BinaryOperator>(NakedMemExpr)) {
     assert(op->getType() == Context.BoundMemberTy);
@@ -12392,6 +12400,10 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
   CXXMethodDecl *Method = nullptr;
   DeclAccessPair FoundDecl = DeclAccessPair::make(nullptr, AS_public);
   NestedNameSpecifier *Qualifier = nullptr;
+
+  SmallVector<Expr *, 32> MappedArgs;
+  ArrayRef<Expr *> SyntacticArgs;
+
   if (isa<MemberExpr>(NakedMemExpr)) {
     MemExpr = cast<MemberExpr>(NakedMemExpr);
     Method = cast<CXXMethodDecl>(MemExpr->getMemberDecl());
@@ -12401,6 +12413,11 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
 
     if (DesignateArgumentsForCall(Method, MemExpr, Args, MappedArgs))
       return ExprError();
+
+    if (!MappedArgs.empty()) {
+      SyntacticArgs = Args;
+      Args = MappedArgs;
+    }
   } else {
     UnresolvedMemberExpr *UnresExpr = cast<UnresolvedMemberExpr>(NakedMemExpr);
     Qualifier = UnresExpr->getQualifier();
@@ -12422,8 +12439,6 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
     }
 
     bool HasDesig = AnyDesignated(Args);
-    SmallVector<Expr *, 32> MappedArgs;
-
     for (UnresolvedMemberExpr::decls_iterator I = UnresExpr->decls_begin(),
            E = UnresExpr->decls_end(); I != E; ++I) {
 
@@ -12480,8 +12495,10 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
         return ExprError();
 
       // If the Candidate has processed the designated args, use it.
-      if (auto NumMappedArgs = Best->NumMappedArgs)
+      if (auto NumMappedArgs = Best->NumMappedArgs) {
+        SyntacticArgs = Args;
         Args = MultiExprArg(Best->MappedArgs, NumMappedArgs);
+      }
       break;
 
     case OR_No_Viable_Function:
@@ -12516,7 +12533,7 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
     // non-member call based on that function.
     if (Method->isStatic()) {
       return BuildResolvedCallExpr(MemExprE, Method, LParenLoc, Args,
-                                   RParenLoc);
+                                   SyntacticArgs, RParenLoc);
     }
 
     MemExpr = cast<MemberExpr>(MemExprE->IgnoreParens());
@@ -12617,11 +12634,14 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
                          MemExpr->getMemberLoc());
   }
 
+  if (!SyntacticArgs.empty())
+    TheCall->setSyntacticArgs(Context, SyntacticArgs);
+
   return MaybeBindToTemporary(TheCall);
 }
 
 bool Sema::DesignateArgumentsForCall(FunctionDecl *Function, Expr *CallExpr,
-                                     MultiExprArg &Args,
+                                     MultiExprArg Args,
                                      SmallVectorImpl<Expr *> &MappedArgs) {
   if (!AnyDesignated(Args))
     return false;
@@ -12713,6 +12733,7 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
 
   bool HasDesig = AnyDesignated(Args);
   SmallVector<Expr *, 32> MappedArgs;
+  ArrayRef<Expr *> SyntacticArgs;
 
   for (LookupResult::iterator Oper = R.begin(), OperEnd = R.end();
        Oper != OperEnd; ++Oper) {
@@ -12775,8 +12796,10 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
                              Best)) {
   case OR_Success:
     // If the Candidate has processed the designated args, use it.
-    if (auto NumMappedArgs = Best->NumMappedArgs)
+    if (auto NumMappedArgs = Best->NumMappedArgs) {
+      SyntacticArgs = Args;
       Args = MultiExprArg(Best->MappedArgs, NumMappedArgs);
+    }
     // Overload resolution succeeded; we'll build the appropriate call
     // below.
     break;
@@ -12958,6 +12981,9 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
 
   if (CheckFunctionCall(Method, TheCall, Proto))
     return true;
+
+  if (!SyntacticArgs.empty())
+    TheCall->setSyntacticArgs(Context, SyntacticArgs);
 
   return MaybeBindToTemporary(TheCall);
 }
