@@ -6019,9 +6019,15 @@ EnableIfAttr *Sema::CheckEnableIf(FunctionDecl *Function, ArrayRef<Expr *> Args,
       R = PerformObjectArgumentInitialization(Args[0], /*Qualifier=*/nullptr,
                                               Method, Method);
     } else {
-      R = PerformCopyInitialization(InitializedEntity::InitializeParameter(
-                                        Context, Function->getParamDecl(I)),
-                                    SourceLocation(), Args[I]);
+      ParmVarDecl *P = Function->getParamDecl(I);
+      Expr *Arg = Args[I];
+      if (!Arg)
+        Arg = P->hasUninstantiatedDefaultArg()
+                  ? P->getUninstantiatedDefaultArg()
+                  : P->getDefaultArg();
+      R = PerformCopyInitialization(
+          InitializedEntity::InitializeParameter(Context, P), SourceLocation(),
+          Arg);
     }
 
     if (R.isInvalid()) {
@@ -6041,8 +6047,7 @@ EnableIfAttr *Sema::CheckEnableIf(FunctionDecl *Function, ArrayRef<Expr *> Args,
     for (unsigned i = Args.size(), e = Function->getNumParams(); i != e; ++i) {
       ParmVarDecl *P = Function->getParamDecl(i);
       ExprResult R = PerformCopyInitialization(
-          InitializedEntity::InitializeParameter(Context,
-                                                 Function->getParamDecl(i)),
+          InitializedEntity::InitializeParameter(Context, P),
           SourceLocation(),
           P->hasUninstantiatedDefaultArg() ? P->getUninstantiatedDefaultArg()
                                            : P->getDefaultArg());
