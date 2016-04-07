@@ -1122,6 +1122,9 @@ Sema::ActOnCXXTypeConstructExpr(ParsedType TypeRep,
   if (!TypeRep)
     return ExprError();
 
+  if (CheckDuplicateDesignators(exprs))
+    return ExprError();
+
   TypeSourceInfo *TInfo;
   QualType Ty = GetTypeFromParser(TypeRep, &TInfo);
   if (!TInfo)

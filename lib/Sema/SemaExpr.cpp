@@ -5556,19 +5556,24 @@ Sema::ActOnInitList(SourceLocation LBraceLoc, MultiExprArg InitArgList,
   // Immediately handle non-overload placeholders.  Overloads can be
   // resolved contextually, but everything else here can't.
   for (unsigned I = 0, E = InitArgList.size(); I != E; ++I) {
-    if (auto DIE = dyn_cast<DesignatedInitExpr>(InitArgList[I])) {
-      auto name = DIE->getDesignator(0)->getFieldName();
-      auto Prev = Desigs[name];
-      Desigs[name] = DIE;
-      if (Prev) {
-        HasDuplicates = true;
-        Diag(DIE->getLocStart(), diag::err_duplicate_designators)
-            << name << DIE->getDesignator(0)->getSourceRange();
-        Diag(Prev->getLocStart(), diag::note_previous_designator)
-            << Prev->getDesignator(0)->getSourceRange();
-        continue;
+    if (getLangOpts().CPlusPlus) {
+      if (auto DIE = dyn_cast<DesignatedInitExpr>(InitArgList[I])) {
+        if (DIE->getDesignator(0)->isFieldDesignator()) {
+          auto name = DIE->getDesignator(0)->getFieldName();
+          auto Prev = Desigs[name];
+          Desigs[name] = DIE;
+          if (Prev) {
+            HasDuplicates = true;
+            Diag(DIE->getLocStart(), diag::err_duplicate_designators)
+                << name << DIE->getDesignator(0)->getSourceRange();
+            Diag(Prev->getLocStart(), diag::note_previous_designator)
+                << Prev->getDesignator(0)->getSourceRange();
+            continue;
+          }
+        }
       }
     }
+
     if (InitArgList[I]->getType()->isNonOverloadPlaceholderType()) {
       ExprResult result = CheckPlaceholderExpr(InitArgList[I]);
 
