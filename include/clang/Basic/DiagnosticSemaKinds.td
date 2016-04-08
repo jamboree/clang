@@ -4365,7 +4365,7 @@ def err_redefinition_different_typedef : Error<
   "%select{typedef|type alias|type alias template}0 "
   "redefinition with different types%diff{ ($ vs $)|}1,2">;
 def err_tag_reference_non_tag : Error<
-  "elaborated type refers to %select{a non-tag type|a typedef|a type alias|a template|a type alias template}0">;
+  "elaborated type refers to %select{a non-tag type|a typedef|a type alias|a template|a type alias template|a template template argument}0">;
 def err_tag_reference_conflict : Error<
   "implicit declaration introduced by elaborated type conflicts with "
   "%select{a declaration|a typedef|a type alias|a template}0 of the same name">;
@@ -7883,6 +7883,8 @@ def err_omp_global_var_arg : Error<
   "arguments of '#pragma omp %0' must have %select{global storage|static storage duration}1">;
 def err_omp_ref_type_arg : Error<
   "arguments of '#pragma omp %0' cannot be of reference type %1">;
+def err_omp_region_not_file_context : Error<
+  "directive must be at file or namespace scope">;
 def err_omp_var_scope : Error<
   "'#pragma omp %0' must appear in the scope of the %q1 variable declaration">;
 def err_omp_var_used : Error<
@@ -7958,6 +7960,8 @@ def err_omp_negative_expression_in_clause : Error<
 def err_omp_not_integral : Error<
   "expression must have integral or unscoped enumeration "
   "type, not %0">;
+def err_omp_threadprivate_in_target : Error<
+  "threadprivate variables cannot be used in target constructs">;
 def err_omp_incomplete_type : Error<
   "expression has incomplete class type %0">;
 def err_omp_explicit_conversion : Error<
@@ -7984,6 +7988,11 @@ def warn_omp_linear_step_zero : Warning<
 def warn_omp_alignment_not_power_of_two : Warning<
   "aligned clause will be ignored because the requested alignment is not a power of 2">,
   InGroup<OpenMPClauses>;
+def err_omp_enclosed_declare_target : Error<
+  "declare target region may not be enclosed within another declare target region">;
+def warn_omp_not_in_target_context : Warning<
+  "declaration is not declared in any declare target region">,
+  InGroup<OpenMPTarget>;
 def err_omp_aligned_expected_array_or_ptr : Error<
   "argument of aligned clause should be array"
   "%select{ or pointer|, pointer, reference to array or reference to pointer}1"

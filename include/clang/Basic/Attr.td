@@ -2265,8 +2265,32 @@ def OMPDeclareSimdDecl : Attr {
   let SemaHandler = 0;
   let HasCustomParsing = 1;
   let Documentation = [OMPDeclareSimdDocs];
+  let Args = [
+    EnumArgument<"BranchState", "BranchStateTy",
+                 [ "", "inbranch", "notinbranch" ],
+                 [ "BS_Undefined", "BS_Inbranch", "BS_Notinbranch" ]>,
+    ExprArgument<"Simdlen">
+  ];
   let AdditionalMembers = [{
-  void printPrettyPragma(raw_ostream &OS, const PrintingPolicy &Policy) const {}
+    void printPrettyPragma(raw_ostream & OS, const PrintingPolicy &Policy)
+        const {
+      if (getBranchState() != BS_Undefined)
+        OS << ConvertBranchStateTyToStr(getBranchState()) << " ";
+      if (auto *E = getSimdlen()) {
+        OS << "simdlen(";
+        E->printPretty(OS, nullptr, Policy);
+        OS << ") ";
+      }
+    }
+  }];
+}
+
+def OMPDeclareTargetDecl : Attr {
+  let Spellings = [Pragma<"omp", "declare target">];
+  let SemaHandler = 0;
+  let Documentation = [OMPDeclareTargetDocs];
+  let AdditionalMembers = [{
+    void printPrettyPragma(raw_ostream &OS, const PrintingPolicy &Policy) const {}
   }];
 }
 

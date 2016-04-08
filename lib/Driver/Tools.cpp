@@ -3891,6 +3891,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     A->claim();
   }
 
+  if (!Args.hasFlag(options::OPT_fjump_tables, options::OPT_fno_jump_tables,
+                    true))
+    CmdArgs.push_back("-fno-jump-tables");
+
   if (Arg *A = Args.getLastArg(options::OPT_mregparm_EQ)) {
     CmdArgs.push_back("-mregparm");
     CmdArgs.push_back(A->getValue());
@@ -7106,6 +7110,12 @@ void cloudabi::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
   // CloudABI only supports static linkage.
   CmdArgs.push_back("-Bstatic");
+
+  // CloudABI uses Position Independent Executables exclusively.
+  CmdArgs.push_back("-pie");
+  CmdArgs.push_back("--no-dynamic-linker");
+  CmdArgs.push_back("-zrelro");
+
   CmdArgs.push_back("--eh-frame-hdr");
   CmdArgs.push_back("--gc-sections");
 

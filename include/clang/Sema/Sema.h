@@ -3205,25 +3205,32 @@ private:
 
 public:
   /// \brief - Returns instance or factory methods in global method pool for
-  /// given selector. If no such method or only one method found, function returns
-  /// false; otherwise, it returns true
-  bool CollectMultipleMethodsInGlobalPool(Selector Sel,
-                                          SmallVectorImpl<ObjCMethodDecl*>& Methods,
-                                          bool instance);
+  /// given selector. It checks the desired kind first, if none is found, and
+  /// parameter checkTheOther is set, it then checks the other kind. If no such
+  /// method or only one method is found, function returns false; otherwise, it
+  /// returns true.
+  bool
+  CollectMultipleMethodsInGlobalPool(Selector Sel,
+                                     SmallVectorImpl<ObjCMethodDecl*>& Methods,
+                                     bool InstanceFirst, bool CheckTheOther,
+                                     const ObjCObjectType *TypeBound = nullptr);
     
-  bool AreMultipleMethodsInGlobalPool(Selector Sel, ObjCMethodDecl *BestMethod,
-                                      SourceRange R,
-                                      bool receiverIdOrClass);
+  bool
+  AreMultipleMethodsInGlobalPool(Selector Sel, ObjCMethodDecl *BestMethod,
+                                 SourceRange R, bool receiverIdOrClass,
+                                 SmallVectorImpl<ObjCMethodDecl*>& Methods);
       
-  void DiagnoseMultipleMethodInGlobalPool(SmallVectorImpl<ObjCMethodDecl*> &Methods,
-                                          Selector Sel, SourceRange R,
-                                          bool receiverIdOrClass);
+  void
+  DiagnoseMultipleMethodInGlobalPool(SmallVectorImpl<ObjCMethodDecl*> &Methods,
+                                     Selector Sel, SourceRange R,
+                                     bool receiverIdOrClass);
 
 private:
   /// \brief - Returns a selector which best matches given argument list or
   /// nullptr if none could be found
   ObjCMethodDecl *SelectBestMethod(Selector Sel, MultiExprArg Args,
-                                   bool IsInstance);
+                                   bool IsInstance,
+                                   SmallVectorImpl<ObjCMethodDecl*>& Methods);
     
 
   /// \brief Record the typo correction failure and return an empty correction.
@@ -4758,8 +4765,7 @@ public:
   void DeclareGlobalNewDelete();
   void DeclareGlobalAllocationFunction(DeclarationName Name, QualType Return,
                                        QualType Param1,
-                                       QualType Param2 = QualType(),
-                                       bool addRestrictAttr = false);
+                                       QualType Param2 = QualType());
 
   bool FindDeallocationFunction(SourceLocation StartLoc, CXXRecordDecl *RD,
                                 DeclarationName Name, FunctionDecl* &Operator,
@@ -7889,6 +7895,8 @@ public:
   //
 private:
   void *VarDataSharingAttributesStack;
+  /// Set to true inside '#pragma omp declare target' region.
+  bool IsInOpenMPDeclareTargetContext = false;
   /// \brief Initialization of data-sharing attributes stack.
   void InitDataSharingAttributesStack();
   void DestroyDataSharingAttributesStack();
@@ -7973,6 +7981,17 @@ public:
   /// \brief Called at the end of '#pragma omp declare reduction'.
   DeclGroupPtrTy ActOnOpenMPDeclareReductionDirectiveEnd(
       Scope *S, DeclGroupPtrTy DeclReductions, bool IsValid);
+
+  /// Called on the start of target region i.e. '#pragma omp declare target'.
+  bool ActOnStartOpenMPDeclareTargetDirective(SourceLocation Loc);
+  /// Called at the end of target region i.e. '#pragme omp end declare target'.
+  void ActOnFinishOpenMPDeclareTargetDirective();
+  /// Check declaration inside target region.
+  void checkDeclIsAllowedInOpenMPTarget(Expr *E, Decl *D);
+  /// Return true inside OpenMP target region.
+  bool isInOpenMPDeclareTargetContext() const {
+    return IsInOpenMPDeclareTargetContext;
+  }
 
   /// \brief Initialization of captured region for OpenMP region.
   void ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope);
@@ -8152,8 +8171,10 @@ public:
 
   /// \brief Called on well-formed '\#pragma omp declare simd' after parsing of
   /// the associated method/function.
-  DeclGroupPtrTy ActOnOpenMPDeclareSimdDirective(DeclGroupPtrTy DG,
-                                                 SourceLocation StartLoc);
+  DeclGroupPtrTy
+  ActOnOpenMPDeclareSimdDirective(DeclGroupPtrTy DG,
+                                  OMPDeclareSimdDeclAttr::BranchStateTy BS,
+                                  Expr *Simdlen, SourceRange SR);
 
   OMPClause *ActOnOpenMPSingleExprClause(OpenMPClauseKind Kind,
                                          Expr *Expr,
