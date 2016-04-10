@@ -2040,7 +2040,8 @@ private:
   TPResult TryParsePtrOperatorSeq();
   TPResult TryParseOperatorId();
   TPResult TryParseInitDeclaratorList();
-  TPResult TryParseDeclarator(bool mayBeAbstract, bool mayHaveIdentifier=true);
+  TPResult TryParseDeclarator(bool mayBeAbstract, bool mayHaveIdentifier = true,
+                              bool mayBeDesignator = false);
   TPResult
   TryParseParameterDeclarationClause(bool *InvalidAsDeclaration = nullptr,
                                      bool VersusTemplateArg = false);
