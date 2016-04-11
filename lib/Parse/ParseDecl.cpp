@@ -5226,7 +5226,17 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
     if (Tok.is(tok::period)) {
       if (D.getContext() == Declarator::PrototypeContext ||
           D.getContext() == Declarator::LambdaExprParameterContext) {
-        D.setPeriodLoc(ConsumeToken());
+        SourceLocation PeriodLoc = ConsumeToken();
+        if (!Tok.is(tok::identifier)) {
+          // We have a designator introducer but no following unqualified-id.
+          Diag(Tok.getLocation(),
+               diag::err_expected_unqualified_id)
+              << /*C++*/ 1;
+          D.SetIdentifier(nullptr, Tok.getLocation());
+          goto PastIdentifier;
+        }
+
+        D.setPeriodLoc(PeriodLoc);
         D.setDesignator(true);
       }
     }
