@@ -837,8 +837,10 @@ public:
     FK_AddressOfUnaddressableFunction,
     /// \brief List-copy-initialization chose an explicit constructor.
     FK_ExplicitConstructor,
-    /// \brief Designator for non record
+    /// \brief Designator for non record.
     FK_DesignatorForNonRecord,
+    /// \brief Bad designator in constructor.
+    FK_BadDesignatorInConstructor
   };
   
 private:

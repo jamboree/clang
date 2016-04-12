@@ -3127,6 +3127,7 @@ bool InitializationSequence::isAmbiguous() const {
   case FK_ExplicitConstructor:
   case FK_AddressOfUnaddressableFunction:
   case FK_DesignatorForNonRecord:
+  case FK_BadDesignatorInConstructor:
     return false;
 
   case FK_ReferenceInitOverloadFailed:
@@ -3472,9 +3473,10 @@ ResolveConstructorOverload(Sema &S, SourceLocation DeclLoc,
                            DeclContext::lookup_result Ctors,
                            OverloadCandidateSet::iterator &Best,
                            bool CopyInitializing, bool AllowExplicit,
-                           bool OnlyListConstructors, bool IsListInit) {
+                           bool OnlyListConstructors, bool IsListInit,
+                           bool HasDesig) {
   CandidateSet.clear();
-  bool HasDesig = Sema::AnyDesignated(Args);
+
   SmallVector<Expr *, 32> MappedArgs;
 
   for (NamedDecl *D : Ctors) {
@@ -3587,6 +3589,7 @@ static void TryConstructorInitialization(Sema &S,
   OverloadingResult Result = OR_No_Viable_Function;
   OverloadCandidateSet::iterator Best;
   bool AsInitializerList = false;
+  bool HasDesig = false;
 
   // C++11 [over.match.list]p1, per DR1467:
   //   When objects of non-aggregate type T are list-initialized, such that
@@ -3608,11 +3611,25 @@ static void TryConstructorInitialization(Sema &S,
                                           CandidateSet, Ctors, Best,
                                           CopyInitialization, AllowExplicit,
                                           /*OnlyListConstructor=*/true,
-                                          IsListInit);
+                                          IsListInit, HasDesig);
 
     // Time to unwrap the init list.
     Args = MultiExprArg(ILE->getInits(), ILE->getNumInits());
+
+    // Find any designator and bail out if it's not a single field designator.
+    for (auto Arg : Args) {
+      if (auto DIE = dyn_cast<DesignatedInitExpr>(Arg)) {
+        if (DIE->size() > 1 || !DIE->getDesignator(0)->isFieldDesignator()) {
+          Sequence.SetFailed(
+              InitializationSequence::FK_BadDesignatorInConstructor);
+          return;
+        }
+        HasDesig = true;
+      }
+    }
   }
+  else
+    HasDesig = Sema::AnyDesignated(Args);
 
   // C++11 [over.match.list]p1:
   //   - If no viable initializer-list constructor is found, overload resolution
@@ -3625,7 +3642,7 @@ static void TryConstructorInitialization(Sema &S,
                                         CandidateSet, Ctors, Best,
                                         CopyInitialization, AllowExplicit,
                                         /*OnlyListConstructors=*/false,
-                                        IsListInit);
+                                        IsListInit, HasDesig);
   }
   if (Result) {
     Sequence.SetOverloadFailure(IsListInit ?
@@ -7098,6 +7115,26 @@ static void diagnoseListInit(Sema &S, const InitializedEntity &Entity,
          "Inconsistent init list check result.");
 }
 
+static void DiagnoseBadDesignatorInConstructor(Sema &S, ArrayRef<Expr *> Args,
+                                               QualType DestType) {
+  for (auto Arg : Args) {
+    if (auto DIE = dyn_cast<DesignatedInitExpr>(Arg)) {
+      if (DIE->size() > 1) {
+        S.Diag(DIE->getLocStart(), diag::err_designator_chain_in_ctor)
+            << DIE->getDesignatorsSourceRange();
+        return;
+      }
+      auto D = DIE->getDesignator(0);
+      if (!D->isFieldDesignator()) {
+        S.Diag(D->getLBracketLoc(), diag::err_array_designator_non_array)
+            << DestType;
+        return;
+      }
+    }
+  }
+  assert(!"Inconsistent check result.");
+}
+
 bool InitializationSequence::Diagnose(Sema &S,
                                       const InitializedEntity &Entity,
                                       const InitializationKind &Kind,
@@ -7483,6 +7520,13 @@ bool InitializationSequence::Diagnose(Sema &S,
     S.Diag(Args[0]->getLocStart(), diag::err_designator_for_non_record_init)
         << DestType->isReferenceType() << DestType << Args[0]->getSourceRange();
     break;
+
+  case FK_BadDesignatorInConstructor: {
+    InitListExpr *ILE = cast<InitListExpr>(Args[0]);
+    Args = ArrayRef<Expr *>(ILE->getInits(), ILE->getNumInits());
+    DiagnoseBadDesignatorInConstructor(S, Args, DestType);
+    break;
+  }
   }
 
   PrintInitLocationNote(S, Entity);
@@ -7617,8 +7661,13 @@ void InitializationSequence::dump(raw_ostream &OS) const {
     case FK_ExplicitConstructor:
       OS << "list copy initialization chose explicit constructor";
       break;
+
     case FK_DesignatorForNonRecord:
       OS << "designator for non record";
+      break;
+
+    case FK_BadDesignatorInConstructor:
+      OS << "bad designator in constructor";
       break;
     }
     OS << '\n';

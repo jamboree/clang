@@ -76,28 +76,32 @@ int main() {
   (f6)(.b = 2);     //expected-error{{missing argument for 1st parameter}}
   (f7)(.a = 1, 2);  //expected-error{{argument index 2 is out of bounds}}
 
-  Agg agg = {.b = 1,.a = 2};
+  Agg agg1 = {.b = 1, .a = 2};
 
-  Agg agg1 = {.a = 1,    //expected-note{{previous designator is here}}
-              .a = 2};   //expected-error{{duplicate designators}}
+  Agg agg2 = {.a = 1,  // expected-note{{previous designator is here}}
+              .a = 2}; // expected-error{{duplicate designators}}
 
-  Agg agg2 = {1,       //expected-note{{previous initialization is here}}
-              .a = 2}; //expected-error{{multiple initializations given for non-static member}}
+  Agg agg3 = {1,       // expected-note{{previous initialization is here}}
+              .a = 2}; // expected-error{{multiple initializations given for non-static member}}
 
   Class c1(.b = 1, .a = 2);
   Class c2{.b = 1, .a = 2};
 
   c1.f(.b = 1, .a = 2);
   auto mf = &Class::f;
-  (c1.*mf)(.b = 1, .a = 2); //expected-error{{designated arguments cannot be used by member function pointer}}
+  (c1.*mf)(.b = 1, .a = 2); // expected-error{{designated arguments cannot be used by member function pointer}}
 
-  Class c3(.a = 1,  //expected-note{{previous designator is here}}
-           .a = 2); //expected-error{{duplicate designators}}
+  Class(.a = 1,  // expected-note{{previous designator is here}}
+        .a = 2); // expected-error{{duplicate designators}}
 
-  Class c4{.a = 1,  //expected-note{{previous designator is here}}
-           .a = 2}; //expected-error{{duplicate designators}}
+  Class{.a = 1,  // expected-note{{previous designator is here}}
+        .a = 2}; // expected-error{{duplicate designators}}
 
-  Class c5(.b = 1); //expected-error{{no matching constructor for initialization}}
+  Class(.b = 1); // expected-error{{no matching constructor for initialization}}
+
+  Class{[0] = 1}; // expected-error{{array designator cannot initialize non-array type}}
+
+  Class{.a.b = 1}; // expected-error{{designator chain cannot be used in constructor initialization}}
 
   using R = int&;
   int i(.x = 1);    //expected-error{{designator in initializer for scalar type}}

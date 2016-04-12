@@ -182,6 +182,8 @@ def err_duplicate_designators : Error<
   "duplicate designators %0">;
 def note_previous_designator : Note<
   "previous designator is here">;
+def err_designator_chain_in_ctor : Error<
+  "designator chain cannot be used in constructor initialization">;
 
 // Declarations.
 def ext_duplicate_declspec : ExtWarn<"duplicate '%0' declaration specifier">,
