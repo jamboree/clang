@@ -104,7 +104,8 @@ static void CheckArrayDesignatorSyntax(Parser &P, SourceLocation Loc,
        Desig.getDesignator(0).isArrayRangeDesignator()))
     P.Diag(Loc, diag::ext_gnu_missing_equal_designator);
   else if (Desig.getNumDesignators() > 0)
-    P.Diag(Loc, diag::err_expected_equal_designator);
+    P.Diag(Loc, diag::err_expected_equal_designator)
+        << P.getLangOpts().CPlusPlus;
 }
 
 /// ParseInitializerWithPotentialDesignator - Parse the 'initializer' production
@@ -372,7 +373,7 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator() {
                                               true, ParseInitializer());
   }
 
-  Diag(Tok, diag::err_expected_equal_designator);
+  Diag(Tok, diag::err_expected_equal_designator) << getLangOpts().CPlusPlus;
   return ExprError();
 }
 

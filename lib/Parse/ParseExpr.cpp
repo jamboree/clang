@@ -2624,7 +2624,7 @@ ExprResult Parser::ParseFoldExpression(ExprResult LHS,
 
 ExprResult clang::Parser::ParseArgument() {
   // Designated argument
-  if (Tok.is(tok::period)) {
+  if (getLangOpts().CPlusPlus && Tok.is(tok::period)) {
     // designator: '.' identifier
     SourceLocation DotLoc = ConsumeToken();
 
@@ -2645,7 +2645,7 @@ ExprResult clang::Parser::ParseArgument() {
                                              ParseInitializer());
     }
 
-    Diag(Tok, diag::err_expected_equal_designator);
+    Diag(Tok, diag::err_expected_equal_designator) << 1/*C++*/;
     return ExprError();
   }
 

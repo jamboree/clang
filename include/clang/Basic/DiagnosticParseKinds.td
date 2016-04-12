@@ -136,7 +136,8 @@ def ext_gnu_array_range : Extension<"use of GNU array range extension">,
 def ext_gnu_missing_equal_designator : ExtWarn<
   "use of GNU 'missing =' extension in designator">, 
   InGroup<GNUDesignator>;
-def err_expected_equal_designator : Error<"expected '=' or another designator">;
+def err_expected_equal_designator : Error<
+  "expected '=' %select{or another|after}0 designator">;
 def ext_gnu_old_style_field_designator : ExtWarn<
   "use of GNU old-style field designator extension">, 
   InGroup<GNUDesignator>;
