@@ -1317,8 +1317,8 @@ void InitListChecker::CheckScalarType(const InitializedEntity &Entity,
   } else if (isa<DesignatedInitExpr>(expr)) {
     if (!VerifyOnly)
       SemaRef.Diag(expr->getLocStart(),
-                   diag::err_designator_for_scalar_init)
-        << DeclType << expr->getSourceRange();
+                   diag::err_designator_for_non_record_init)
+          << 0 << DeclType << expr->getSourceRange();
     hadError = true;
     ++Index;
     ++StructuredIndex;
@@ -3126,6 +3126,7 @@ bool InitializationSequence::isAmbiguous() const {
   case FK_PlaceholderType:
   case FK_ExplicitConstructor:
   case FK_AddressOfUnaddressableFunction:
+  case FK_DesignatorForNonRecord:
     return false;
 
   case FK_ReferenceInitOverloadFailed:
@@ -5079,6 +5080,8 @@ void InitializationSequence::InitializeFrom(Sema &S,
     // (Therefore, multiple arguments are not permitted.)
     if (Args.size() != 1)
       SetFailed(FK_TooManyInitsForReference);
+    else if (isa<DesignatedInitExpr>(Initializer))
+      SetFailed(FK_DesignatorForNonRecord);
     else
       TryReferenceInitialization(S, Entity, Kind, Args[0], *this);
     return;
@@ -5239,6 +5242,11 @@ void InitializationSequence::InitializeFrom(Sema &S,
     MaybeProduceObjCObject(S, *this, Entity);
     if (!Failed() && NeedAtomicConversion)
       AddAtomicConversionStep(Entity.getType());
+    return;
+  }
+
+  if (isa<DesignatedInitExpr>(Initializer)) {
+    SetFailed(FK_DesignatorForNonRecord);
     return;
   }
 
@@ -7470,6 +7478,11 @@ bool InitializationSequence::Diagnose(Sema &S,
     S.Diag(CtorDecl->getLocation(), diag::note_constructor_declared_here);
     break;
   }
+
+  case FK_DesignatorForNonRecord:
+    S.Diag(Args[0]->getLocStart(), diag::err_designator_for_non_record_init)
+        << DestType->isReferenceType() << DestType << Args[0]->getSourceRange();
+    break;
   }
 
   PrintInitLocationNote(S, Entity);
@@ -7603,6 +7616,9 @@ void InitializationSequence::dump(raw_ostream &OS) const {
 
     case FK_ExplicitConstructor:
       OS << "list copy initialization chose explicit constructor";
+      break;
+    case FK_DesignatorForNonRecord:
+      OS << "designator for non record";
       break;
     }
     OS << '\n';

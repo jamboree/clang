@@ -36,6 +36,14 @@ struct Surrogate {
   operator FP() const { return f2; } //expected-note{{designated arguments cannot be used by surrogate}}
 };
 
+struct MemInit : Agg, Class {
+  Agg agg;
+  Class c1, c2;
+
+  MemInit(int.a, int.b)
+      : Agg{.a = a}, Class(.a = a), agg{.b = b}, c1{.a = a}, c2(.b = b, .a = a) {}
+};
+
 int main() {
   f2(.a = 1);
   (f2)(.a = 1);
@@ -91,7 +99,13 @@ int main() {
 
   Class c5(.b = 1); //expected-error{{no matching constructor for initialization}}
 
-  //int i(.x = 1);
+  using R = int&;
+  int i(.x = 1);    //expected-error{{designator in initializer for scalar type}}
+  R j(.x = 1);      //expected-error{{designator in initializer for reference type}}
+  int(.x = 1);      //expected-error{{designator in initializer for scalar type}}
+  R(.x = 1);        //expected-error{{designator in initializer for reference type}}
+
+  MemInit{.b = 1,.a = 2};
 
   return 0;
 }
