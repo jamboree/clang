@@ -31,6 +31,10 @@ struct Class { //expected-note{{candidate constructor (the implicit copy constru
   void f(int.a, int.b);
 };
 
+struct Derived : Class {
+  using Class::Class;
+};
+
 using FP = void (*)(int);
 struct Surrogate {
   operator FP() const { return f2; } //expected-note{{designated arguments cannot be used by surrogate}}
@@ -44,10 +48,13 @@ struct MemInit : Agg, Class {
       : Agg{.a = a}, Class(.a = a), agg{.b = b}, c1{.a = a}, c2(.b = b, .a = a) {}
 };
 
-void conv(Class); //expected-note{{candidate function not viable: cannot convert initializer list argument to 'Class'}} \
-                  //expected-note{{candidate function not viable: cannot convert initializer list argument to 'Class'}} \
+void conv(Class); //expected-note{{cannot convert initializer list argument to 'Class'}} \
+                  //expected-note{{cannot convert initializer list argument to 'Class'}} \
                   //expected-note{{passing argument to parameter here}} \
                   //expected-note{{passing argument to parameter here}}
+
+void* operator new(__SIZE_TYPE__); //expected-note{{requires 1 argument, but 2 were provided}}
+void *operator new(__SIZE_TYPE__.count, int.a); //expected-note{{multiple arguments provided for 1st parameter}}
 
 int main() {
   f2(.a = 1);
@@ -108,6 +115,9 @@ int main() {
 
   Class{[0] = 1}; // expected-error{{array designator cannot initialize non-array type}}
 
+  Derived(.a = 1).f(.b = 1, .a = 2);
+  Derived{.a = 1}.f(.b = 1, .a = 2);
+
   using R = int&;
   int i(.x = 1);    //expected-error{{designator in initializer for scalar type}}
   R j(.x = 1);      //expected-error{{designator in initializer for reference type}}
@@ -122,6 +132,9 @@ int main() {
   (conv)({.a = 1,.b = 2});
   (conv)({.a.b = 1}); //expected-error{{designator chain cannot initialize non-aggregate type}}
   (conv)({[0] = 1});  //expected-error{{array designator cannot initialize non-array type}}
+
+  new(.a = 1) int;
+  new(.count = 1) int; //expected-error{{no matching function for call}}
 
   return 0;
 }

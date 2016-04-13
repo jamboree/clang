@@ -9264,11 +9264,17 @@ private:
     for (unsigned I = 0, N = FPT->getNumParams(); I != N; ++I) {
       TypeSourceInfo *TInfo =
           Context.getTrivialTypeSourceInfo(FPT->getParamType(I), UsingLoc);
+      auto BasePD = BaseCtor->getParamDecl(I);
+      IdentifierInfo *Id = nullptr;
+      if (BasePD->isDesignatable())
+        Id = BasePD->getIdentifier();
       ParmVarDecl *PD = ParmVarDecl::Create(
-          Context, DerivedCtor, UsingLoc, UsingLoc, /*IdentifierInfo=*/nullptr,
-          FPT->getParamType(I), TInfo, SC_None, /*DefaultArg=*/nullptr);
+          Context, DerivedCtor, UsingLoc, UsingLoc, Id, FPT->getParamType(I),
+          TInfo, SC_None, /*DefaultArg=*/nullptr);
       PD->setScopeInfo(0, I);
       PD->setImplicit();
+      if (Id)
+        PD->setDesignatable(true);
       ParamDecls.push_back(PD);
       ProtoLoc.setParam(I, PD);
     }
