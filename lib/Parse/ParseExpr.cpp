@@ -2681,10 +2681,8 @@ ExprResult clang::Parser::ParseArgument() {
 /// [C++0x] initializer-list
 /// [C++0x]   initializer-clause ...[opt]
 /// [C++0x]   initializer-list , initializer-clause ...[opt]
-///
-/// [C++Ex] initializer-list
-/// [C++Ex]   designation[opt] initializer-clause ...[opt]
-/// [C++Ex]   initializer-list , designation[opt] initializer-clause ...[opt]
+/// [C++Ex]   designation initializer-clause
+/// [C++Ex]   initializer-list , designation initializer-clause
 ///
 /// [C++0x] initializer-clause:
 /// [C++0x]   assignment-expression

@@ -387,8 +387,10 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator() {
 /// [GNU]   '{' '}'
 ///
 ///       initializer-list:
-///         designation[opt] initializer ...[opt]
-///         initializer-list ',' designation[opt] initializer ...[opt]
+///         initializer ...[opt]
+///         initializer-list ',' initializer ...[opt]
+///         designation initializer
+///         initializer-list ',' designation initializer
 ///
 ExprResult Parser::ParseBraceInitializer() {
   InMessageExpressionRAIIObject InMessage(*this, false);
@@ -423,7 +425,8 @@ ExprResult Parser::ParseBraceInitializer() {
       continue;
     }
 
-    // Parse: designation[opt] initializer
+    // Parse: initializer ...[opt]
+    //        designation initializer
 
     // If we know that this cannot be a designation, just parse the nested
     // initializer directly.
@@ -433,7 +436,8 @@ ExprResult Parser::ParseBraceInitializer() {
     else
       SubElt = ParseInitializer();
 
-    if (Tok.is(tok::ellipsis))
+    if (Tok.is(tok::ellipsis) &&
+        (SubElt.isInvalid() || !isa<DesignatedInitExpr>(SubElt.get())))
       SubElt = Actions.ActOnPackExpansion(SubElt.get(), ConsumeToken());
 
     SubElt = Actions.CorrectDelayedTyposInExpr(SubElt.get());
