@@ -3194,8 +3194,20 @@ IsUserDefinedConversion(Sema &S, Expr *From, QualType ToType,
         // arguments, not the entire list.
         Args = ArrayRef<Expr *>(InitList->getInits(), InitList->getNumInits());
         ListInitializing = true;
+
+        // Find any designator and bail out if it's not a single field
+        // designator.
+        for (auto Arg : Args) {
+          if (auto DIE = dyn_cast<DesignatedInitExpr>(Arg)) {
+            if (DIE->size() > 1 ||
+                !DIE->getDesignator(0)->isFieldDesignator()) {
+              return OR_No_Viable_Function;
+            }
+            HasDesig = true;
+          }
+        }
+      } else
         HasDesig = Sema::AnyDesignated(Args);
-      }
 
       DeclContext::lookup_result R = S.LookupConstructors(ToRecordDecl);
       for (DeclContext::lookup_iterator Con = R.begin(), ConEnd = R.end();

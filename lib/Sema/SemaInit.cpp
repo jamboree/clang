@@ -3627,8 +3627,7 @@ static void TryConstructorInitialization(Sema &S,
         HasDesig = true;
       }
     }
-  }
-  else
+  } else
     HasDesig = Sema::AnyDesignated(Args);
 
   // C++11 [over.match.list]p1:
@@ -7121,7 +7120,7 @@ static void DiagnoseBadDesignatorInConstructor(Sema &S, ArrayRef<Expr *> Args,
     if (auto DIE = dyn_cast<DesignatedInitExpr>(Arg)) {
       if (DIE->size() > 1) {
         S.Diag(DIE->getLocStart(), diag::err_designator_chain_in_ctor)
-            << DIE->getDesignatorsSourceRange();
+            << DestType << DIE->getDesignatorsSourceRange();
         return;
       }
       auto D = DIE->getDesignator(0);

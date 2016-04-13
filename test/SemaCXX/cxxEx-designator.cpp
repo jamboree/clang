@@ -44,6 +44,11 @@ struct MemInit : Agg, Class {
       : Agg{.a = a}, Class(.a = a), agg{.b = b}, c1{.a = a}, c2(.b = b, .a = a) {}
 };
 
+void conv(Class); //expected-note{{candidate function not viable: cannot convert initializer list argument to 'Class'}} \
+                  //expected-note{{candidate function not viable: cannot convert initializer list argument to 'Class'}} \
+                  //expected-note{{passing argument to parameter here}} \
+                  //expected-note{{passing argument to parameter here}}
+
 int main() {
   f2(.a = 1);
   (f2)(.a = 1);
@@ -99,9 +104,9 @@ int main() {
 
   Class(.b = 1); // expected-error{{no matching constructor for initialization}}
 
-  Class{[0] = 1}; // expected-error{{array designator cannot initialize non-array type}}
+  Class{.a.b = 1}; // expected-error{{designator chain cannot initialize non-aggregate type}}
 
-  Class{.a.b = 1}; // expected-error{{designator chain cannot be used in constructor initialization}}
+  Class{[0] = 1}; // expected-error{{array designator cannot initialize non-array type}}
 
   using R = int&;
   int i(.x = 1);    //expected-error{{designator in initializer for scalar type}}
@@ -110,6 +115,13 @@ int main() {
   R(.x = 1);        //expected-error{{designator in initializer for reference type}}
 
   MemInit{.b = 1,.a = 2};
+
+  conv({.a = 1,.b = 2});
+  conv({.a.b = 1}); //expected-error{{no matching function for call}}
+  conv({[0] = 1});  //expected-error{{no matching function for call}}
+  (conv)({.a = 1,.b = 2});
+  (conv)({.a.b = 1}); //expected-error{{designator chain cannot initialize non-aggregate type}}
+  (conv)({[0] = 1});  //expected-error{{array designator cannot initialize non-array type}}
 
   return 0;
 }
