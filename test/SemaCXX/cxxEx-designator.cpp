@@ -3,6 +3,8 @@
 void f1(int = 0); //expected-note{{previous definition is here}}
 void f1(int.a);   //expected-error{{cannot be redefined}}
 
+void f2(int);
+void f2(int _);
 void f2(int.a);
 
 void f3(int);   //expected-note{{no corresponding designatable parameter}} expected-note{{declared here}}
@@ -15,6 +17,9 @@ void f6(int.a, int.b = 0); //expected-note{{missing argument for 1st parameter}}
 void f7(int, int.a); //expected-note{{argument index 2 is out of bounds}} expected-note{{declared here}}
 
 void f8(void *.a, int.b); //expected-note{{no known conversion from 'int' to 'void *'}}
+
+template<class... T>
+void f9(int.a, int.b, int.c = 0, T...);
 
 template <class F>
 auto fn(F f) -> decltype(f(.a = 1,   //expected-note{{previous designator is here}}
@@ -67,6 +72,10 @@ int main() {
   (f7)(0, .a = 1);
   f8(.b = 1, .a = nullptr);
   (f8)(.b = 1, .a = nullptr);
+  f9(1, .b = 2);
+  f9(.b = 1, .a = 2);
+  //f9(.b = 1, 2, 3, .a = 4);
+  //f9(.c = 1, 2, .a = 3, 4);
 
   f2(.a = 1,            //expected-note{{previous designator is here}}
      .a = 2);           //expected-error{{duplicate designators}}

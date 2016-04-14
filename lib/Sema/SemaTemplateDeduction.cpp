@@ -3334,6 +3334,8 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
       Function->getType()->getAs<FunctionProtoType>();
   unsigned NumParams = Function->getNumParams();
 
+  // TODO: make the following reuse DesignateArguments.
+
   // C++ [temp.deduct.call]p1:
   //   Template argument deduction is done by comparing each function template
   //   parameter type (call it P) with the type of the corresponding argument
@@ -3362,14 +3364,11 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
     for (auto Arg : Args) {
       auto DIE = dyn_cast<DesignatedInitExpr>(Arg);
       if (DIE) {
-        auto I = DesigParamFinder.Find(DIE->getDesignator(0)->getFieldName());
-        if (I == DesigParamFinder.NumParams) {
+        Index = DesigParamFinder.Find(DIE->getDesignator(0)->getFieldName());
+        if (Index == DesigParamFinder.NumParams) {
           Info.DesignationFailure = {Arg, 0};
           return TDK_DesignatorNotFound;
         }
-        Index = I++;
-        if (I > NumArgs)
-          NumArgs = I;
       }
       if (Index >= MaxArgs) {
         Info.DesignationFailure = {Arg, Index};
@@ -3381,11 +3380,11 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
       }
       MappedArgs[Index] = DIE ? DIE->getInit() : Arg;
       ++Index;
+      if (Index > NumArgs)
+        NumArgs = Index;
     }
-    if (Index > NumArgs)
-      NumArgs = Index;
-    if (NumArgs < NumParams)
-      MappedArgs.resize(NumArgs);
+
+    MappedArgs.resize(NumArgs);
     Args = MappedArgs;
   }
 

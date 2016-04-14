@@ -8628,15 +8628,12 @@ unsigned Sema::DesignateArguments(FunctionDecl *Function, unsigned NumParams,
   for (auto Arg : Args) {
     auto DIE = dyn_cast<DesignatedInitExpr>(Arg);
     if (DIE) {
-      auto I = DesigParamFinder.Find(DIE->getDesignator(0)->getFieldName());
-      if (I == DesigParamFinder.NumParams) {
+      Index = DesigParamFinder.Find(DIE->getDesignator(0)->getFieldName());
+      if (Index == DesigParamFinder.NumParams) {
         // Unmatched designator
         return Sink(ovl_fail_designator_not_found, {Arg, 0});
       }
       HasDesig = true;
-      Index = I++;
-      if (I > NumArgs)
-        NumArgs = I;
     }
     if (Index >= MaxArgs) {
       // Argument index out-of-bound
@@ -8648,9 +8645,9 @@ unsigned Sema::DesignateArguments(FunctionDecl *Function, unsigned NumParams,
     }
     MappedArgs[Index] = DIE ? DIE->getInit() : Arg;
     ++Index;
+    if (Index > NumArgs)
+      NumArgs = Index;
   }
-  if (Index > NumArgs)
-    NumArgs = Index;
 
   assert(HasDesig && "HasDesig is false positive");
   MappedArgs.resize(NumArgs);
