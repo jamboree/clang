@@ -3334,8 +3334,6 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
       Function->getType()->getAs<FunctionProtoType>();
   unsigned NumParams = Function->getNumParams();
 
-  // TODO: make the following reuse DesignateArguments.
-
   // C++ [temp.deduct.call]p1:
   //   Template argument deduction is done by comparing each function template
   //   parameter type (call it P) with the type of the corresponding argument
@@ -3346,46 +3344,6 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
   else if (TooManyArguments(NumParams, Args.size(), PartialOverloading)) {
     if (!Proto->isTemplateVariadic() && !Proto->isVariadic())
       return TDK_TooManyArguments;
-  }
-
-  if (HasDesig) {
-    // Build mapped arg-list
-    FunctionDecl::DesigParamFinder DesigParamFinder(Function, NumParams);
-    unsigned MaxArgs = NumParams;
-    if (!Args.size())
-      MaxArgs = 0;
-    else if (Proto->isTemplateVariadic())
-      MaxArgs += Args.size() - (1 + (NumParams != 1));
-    else if (Proto->isVariadic())
-      MaxArgs += Args.size() - !!NumParams;
-    MappedArgs.resize(MaxArgs);
-    unsigned NumArgs = 0;
-    unsigned Index = 0;
-    for (auto Arg : Args) {
-      auto DIE = dyn_cast<DesignatedInitExpr>(Arg);
-      if (DIE) {
-        Index = DesigParamFinder.Find(DIE->getDesignator(0)->getFieldName());
-        if (Index == DesigParamFinder.NumParams) {
-          Info.DesignationFailure = {Arg, 0};
-          return TDK_DesignatorNotFound;
-        }
-      }
-      if (Index >= MaxArgs) {
-        Info.DesignationFailure = {Arg, Index};
-        return TDK_ArgumentOutOfBound;
-      }
-      if (MappedArgs[Index]) {
-        Info.DesignationFailure = {Arg, Index};
-        return TDK_OverlappedArguments;
-      }
-      MappedArgs[Index] = DIE ? DIE->getInit() : Arg;
-      ++Index;
-      if (Index > NumArgs)
-        NumArgs = Index;
-    }
-
-    MappedArgs.resize(NumArgs);
-    Args = MappedArgs;
   }
 
   // The types of the parameters from which we will perform template argument
@@ -3412,6 +3370,96 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
     // Just fill in the parameter types from the function declaration.
     for (unsigned I = 0; I != NumParams; ++I)
       ParamTypes.push_back(Function->getParamDecl(I)->getType());
+  }
+  
+  // We can't use FunctionDecl::DesigParamFinder as we need special handling
+  // for non-deduced parameter packs.
+  class SkippedDesigParamFinder {
+    llvm::SmallDenseMap<IdentifierInfo *, unsigned> Cache;
+    FunctionDecl *Function;
+    const QualType *ParamTypes;
+    unsigned Index;
+    unsigned SubIndex;
+    unsigned SkipCount;
+    const unsigned NumParams;
+
+  public:
+    const unsigned End;
+
+    SkippedDesigParamFinder(FunctionDecl *Function,
+                            unsigned NumParams, ArrayRef<QualType> ParamTypes)
+        : Function(Function), ParamTypes(ParamTypes.data()), Index(0),
+          SubIndex(0), SkipCount(0), NumParams(NumParams),
+          End(ParamTypes.size()) {}
+
+    unsigned Find(IdentifierInfo *Id) {
+      auto I = Cache.find(Id);
+      if (I != Cache.end())
+        return I->second;
+      for (; Index != NumParams; ++Index, ++SubIndex) {
+        auto Param = Function->getParamDecl(Index);
+        if (Param->isDesignatable()) {
+          auto PId = Param->getIdentifier();
+          if (Id == PId) {
+            ++Index;
+            return SubIndex++ - SkipCount;
+          }
+          Cache[PId] = SubIndex - SkipCount;
+        } else if (Param->isParameterPack()) {
+          ++SkipCount;
+          while (!isa<PackExpansionType>(ParamTypes[SubIndex])) {
+            ++SubIndex;
+            assert(SubIndex != End);
+          }
+        }
+      }
+      return End;
+    }
+  };
+
+  if (HasDesig) {
+    // Build mapped arg-list
+    SkippedDesigParamFinder DesigParamFinder(Function, NumParams, ParamTypes);
+    unsigned MaxArgs = ParamTypes.size();
+    if (!Args.size())
+      MaxArgs = 0;
+    else if (Proto->isVariadic() ||
+             isa<PackExpansionType>(Proto->getParamType(NumParams - 1)))
+      MaxArgs += Args.size();
+    else { // Ignore non-deduced parameter packs.
+      for (unsigned I = 0, E = NumParams - 1; I != E; ++I) {
+        if (isa<PackExpansionType>(Proto->getParamType(I)))
+          --MaxArgs;
+      }
+    }
+    MappedArgs.resize(MaxArgs);
+    unsigned NumArgs = 0;
+    unsigned Index = 0;
+    for (auto Arg : Args) {
+      auto DIE = dyn_cast<DesignatedInitExpr>(Arg);
+      if (DIE) {
+        Index = DesigParamFinder.Find(DIE->getDesignator(0)->getFieldName());
+        if (Index == DesigParamFinder.End) {
+          Info.DesignationFailure = {Arg, 0};
+          return TDK_DesignatorNotFound;
+        }
+      }
+      if (Index >= MaxArgs) {
+        Info.DesignationFailure = {Arg, Index};
+        return TDK_ArgumentOutOfBounds;
+      }
+      if (MappedArgs[Index]) {
+        Info.DesignationFailure = {Arg, Index};
+        return TDK_OverlappedArguments;
+      }
+      MappedArgs[Index] = DIE ? DIE->getInit() : Arg;
+      ++Index;
+      if (Index > NumArgs)
+        NumArgs = Index;
+    }
+
+    MappedArgs.resize(NumArgs);
+    Args = MappedArgs;
   }
 
   // Deduce template arguments from the function parameters.
@@ -3493,7 +3541,7 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
     //   not occur at the end of the parameter-declaration-list, the type of
     //   the parameter pack is a non-deduced context.
     if (ParamIdx + 1 < NumParamTypes)
-      break;
+      continue;
 
     QualType ParamPattern = ParamExpansion->getPattern();
     PackDeductionScope PackScope(*this, TemplateParams, Deduced, Info,

@@ -598,7 +598,7 @@ namespace clang {
     ovl_fail_missing_argument,
 
     /// This candidate was not viable because an argument is out-of-bound.
-    ovl_fail_argument_out_of_bound
+    ovl_fail_argument_out_of_bounds
   };
 
   /// OverloadCandidate - A single candidate in an overload set (C++ 13.3).

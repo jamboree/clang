@@ -3408,7 +3408,7 @@ def note_ovl_designator_not_found : Note<"candidate "
     "not viable: %select{no corresponding designatable parameter|parameter}2 %3"
     "%select{| is not designatable}2">;
 
-def note_ovl_argument_out_of_bound : Note<"candidate "
+def note_ovl_argument_out_of_bounds : Note<"candidate "
     "%select{function|function|constructor|function|function|constructor|"
     "constructor (the implicit default constructor)|"
     "constructor (the implicit copy constructor)|"
@@ -3416,7 +3416,7 @@ def note_ovl_argument_out_of_bound : Note<"candidate "
     "function (the implicit copy assignment operator)|"
     "function (the implicit move assignment operator)|"
     "constructor (inherited)}0 %select{|template }1"
-    "not viable: argument index %2 is out of bounds, only %3 parameters">;
+    "not viable: argument index %2 is out of bounds, max %3 parameter%s3">;
 
 def note_ovl_bad_argument_pos : Note<"candidate "
     "%select{function|function|constructor|function|function|constructor|"
@@ -6458,8 +6458,8 @@ def err_protocheck_designator_not_found : Error<
   "%select{| is not designatable}0">;
 def err_protocheck_bad_argument_pos : Error<
   "%select{multiple arguments provided|missing argument}0 for %ordinal1 parameter">;
-def err_protocheck_argument_out_of_bound : Error<
-  "argument index %0 is out of bounds, only %1 parameters">;
+def err_protocheck_argument_out_of_bounds : Error<
+  "argument index %0 is out of bounds, max %1 parameter%s1">;
 
 def err_designated_arguments_indirect_callee : Error<
   "designated arguments cannot be used by "

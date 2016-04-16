@@ -19,7 +19,11 @@ void f7(int, int.a); //expected-note{{argument index 2 is out of bounds}} expect
 void f8(void *.a, int.b); //expected-note{{no known conversion from 'int' to 'void *'}}
 
 template<class... T>
-void f9(int.a, int.b, int.c = 0, T...);
+void f9(int.a, int.b, T...); //expected-note{{missing argument for 1st parameter}}
+
+template<class...T, class U>
+void f10(int.a, T..., U.b); //expected-note{{argument index 3 is out of bounds, max 3 parameters}} \
+                            //expected-note{{multiple arguments provided for 3rd parameter}}
 
 template <class F>
 auto fn(F f) -> decltype(f(.a = 1,   //expected-note{{previous designator is here}}
@@ -72,10 +76,11 @@ int main() {
   (f7)(0, .a = 1);
   f8(.b = 1, .a = nullptr);
   (f8)(.b = 1, .a = nullptr);
-  f9(1, .b = 2);
-  f9(.b = 1, .a = 2);
-  //f9(.b = 1, 2, 3, .a = 4);
-  //f9(.c = 1, 2, .a = 3, 4);
+  f9(1, .b = 2, 3, 4);
+  f9(.b = 1, 2, .a = 3);
+  f10(.a = 1, 2);
+  f10(.b = 1, .a = 2);
+  f10<int>(.b = 1, .a = 2, 3);
 
   f2(.a = 1,            //expected-note{{previous designator is here}}
      .a = 2);           //expected-error{{duplicate designators}}
@@ -85,6 +90,9 @@ int main() {
   f6(.b = 2);           //expected-error{{no matching function}}
   f7(.a = 1, 2);        //expected-error{{no matching function}}
   f8(.b = 1, .a = 2);   //expected-error{{no matching function}}
+  f9(.b = 1, 2, 3);     //expected-error{{no matching function}}
+  f10<int>(.b = 1, 2, 3);           //expected-error{{no matching function}}
+  f10<int>(.b = 1, .a = 2, 3, 4);   //expected-error{{no matching function}}
   Surrogate s;
   s(.a = 1);            //expected-error{{no matching function}}
 

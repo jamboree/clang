@@ -570,7 +570,7 @@ clang::MakeDeductionFailureInfo(ASTContext &Context,
   Result.HasDiagnostic = false;
   switch (TDK) {
   case Sema::TDK_DesignatorNotFound:
-  case Sema::TDK_ArgumentOutOfBound:
+  case Sema::TDK_ArgumentOutOfBounds:
   case Sema::TDK_OverlappedArguments:
   case Sema::TDK_MissingArgument:
     Result.DesignationFailure = Info.DesignationFailure;
@@ -649,7 +649,7 @@ void DeductionFailureInfo::Destroy() {
   case Sema::TDK_InvalidExplicitArguments:
   case Sema::TDK_FailedOverloadResolution:
   case Sema::TDK_DesignatorNotFound:
-  case Sema::TDK_ArgumentOutOfBound:
+  case Sema::TDK_ArgumentOutOfBounds:
   case Sema::TDK_OverlappedArguments:
   case Sema::TDK_MissingArgument:
     break;
@@ -695,7 +695,7 @@ TemplateParameter DeductionFailureInfo::getTemplateParameter() {
   case Sema::TDK_NonDeducedMismatch:
   case Sema::TDK_FailedOverloadResolution:
   case Sema::TDK_DesignatorNotFound:
-  case Sema::TDK_ArgumentOutOfBound:
+  case Sema::TDK_ArgumentOutOfBounds:
   case Sema::TDK_OverlappedArguments:
   case Sema::TDK_MissingArgument:
     return TemplateParameter();
@@ -730,7 +730,7 @@ TemplateArgumentList *DeductionFailureInfo::getTemplateArgumentList() {
   case Sema::TDK_NonDeducedMismatch:
   case Sema::TDK_FailedOverloadResolution:
   case Sema::TDK_DesignatorNotFound:
-  case Sema::TDK_ArgumentOutOfBound:
+  case Sema::TDK_ArgumentOutOfBounds:
   case Sema::TDK_OverlappedArguments:
   case Sema::TDK_MissingArgument:
     return nullptr;
@@ -761,7 +761,7 @@ const TemplateArgument *DeductionFailureInfo::getFirstArg() {
   case Sema::TDK_SubstitutionFailure:
   case Sema::TDK_FailedOverloadResolution:
   case Sema::TDK_DesignatorNotFound:
-  case Sema::TDK_ArgumentOutOfBound:
+  case Sema::TDK_ArgumentOutOfBounds:
   case Sema::TDK_OverlappedArguments:
   case Sema::TDK_MissingArgument:
     return nullptr;
@@ -792,7 +792,7 @@ const TemplateArgument *DeductionFailureInfo::getSecondArg() {
   case Sema::TDK_SubstitutionFailure:
   case Sema::TDK_FailedOverloadResolution:
   case Sema::TDK_DesignatorNotFound:
-  case Sema::TDK_ArgumentOutOfBound:
+  case Sema::TDK_ArgumentOutOfBounds:
   case Sema::TDK_OverlappedArguments:
   case Sema::TDK_MissingArgument:
     return nullptr;
@@ -8620,7 +8620,7 @@ unsigned Sema::DesignateArguments(FunctionDecl *Function, unsigned NumParams,
   if (!Args.size())
     MaxArgs = 0;
   else if (Proto->isVariadic())
-    MaxArgs += Args.size() - !!NumParams;
+    MaxArgs += Args.size();
   unsigned NumArgs = 0;
   unsigned Index = 0;
   MappedArgs.resize(MaxArgs);
@@ -8629,7 +8629,7 @@ unsigned Sema::DesignateArguments(FunctionDecl *Function, unsigned NumParams,
     auto DIE = dyn_cast<DesignatedInitExpr>(Arg);
     if (DIE) {
       Index = DesigParamFinder.Find(DIE->getDesignator(0)->getFieldName());
-      if (Index == DesigParamFinder.NumParams) {
+      if (Index == DesigParamFinder.End) {
         // Unmatched designator
         return Sink(ovl_fail_designator_not_found, {Arg, 0});
       }
@@ -8637,7 +8637,7 @@ unsigned Sema::DesignateArguments(FunctionDecl *Function, unsigned NumParams,
     }
     if (Index >= MaxArgs) {
       // Argument index out-of-bound
-      return Sink(ovl_fail_argument_out_of_bound, {Arg, Index});
+      return Sink(ovl_fail_argument_out_of_bounds, {Arg, Index});
     }
     if (MappedArgs[Index]) {
       // Conflict arguments
@@ -9477,7 +9477,7 @@ static void DiagnoseArgumentOutOfBound(Sema &S, FunctionDecl *Fn,
                                        const DesignationFailureInfo &Info) {
   std::string Description;
   OverloadCandidateKind FnKind = ClassifyOverloadCandidate(S, Fn, Description);
-  S.Diag(Fn->getLocation(), diag::note_ovl_argument_out_of_bound)
+  S.Diag(Fn->getLocation(), diag::note_ovl_argument_out_of_bounds)
       << (unsigned)FnKind << (Fn->getDescribedFunctionTemplate() != nullptr)
       << Info.ParamIndex << Fn->getNumParams();
 }
@@ -9761,7 +9761,7 @@ static void DiagnoseBadDeduction(Sema &S, Decl *Templated,
                            DeductionFailure.DesignationFailure, 1);
     break;
 
-  case Sema::TDK_ArgumentOutOfBound:
+  case Sema::TDK_ArgumentOutOfBounds:
     DiagnoseArgumentOutOfBound(S, dyn_cast<FunctionDecl>(Templated),
                                DeductionFailure.DesignationFailure);
     break;
@@ -9946,7 +9946,7 @@ static void NoteFunctionCandidate(Sema &S, OverloadCandidate *Cand,
     DiagnoseBadArgumentPos(S, Cand->Function, Cand->DesignationFailure, 1);
     break;
 
-  case ovl_fail_argument_out_of_bound:
+  case ovl_fail_argument_out_of_bounds:
     DiagnoseArgumentOutOfBound(S, Cand->Function, Cand->DesignationFailure);
     break;
   }
@@ -10058,7 +10058,7 @@ static unsigned RankDeductionFailure(const DeductionFailureInfo &DFI) {
   case Sema::TDK_TooManyArguments:
   case Sema::TDK_TooFewArguments:
   case Sema::TDK_DesignatorNotFound:
-  case Sema::TDK_ArgumentOutOfBound:
+  case Sema::TDK_ArgumentOutOfBounds:
   case Sema::TDK_OverlappedArguments:
   case Sema::TDK_MissingArgument:
     return 6;
@@ -12670,8 +12670,8 @@ bool Sema::DesignateArgumentsForCall(FunctionDecl *Function, Expr *CallExpr,
           << mode << Id << DIE->getDesignator(0)->getSourceRange();
       break;
     }
-    case ovl_fail_argument_out_of_bound:
-      Diag(Info.Arg->getLocStart(), diag::err_protocheck_argument_out_of_bound)
+    case ovl_fail_argument_out_of_bounds:
+      Diag(Info.Arg->getLocStart(), diag::err_protocheck_argument_out_of_bounds)
           << Info.ParamIndex << Function->getNumParams()
           << Info.Arg->getSourceRange();
       break;

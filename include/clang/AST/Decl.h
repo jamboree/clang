@@ -1561,16 +1561,16 @@ public:
     unsigned Index;
 
   public:
-    const unsigned NumParams;
+    const unsigned End;
 
     DesigParamFinder(FunctionDecl *Function, unsigned NumParams)
-        : Function(Function), Index(0), NumParams(NumParams) {}
+        : Function(Function), Index(0), End(NumParams) {}
 
     unsigned Find(IdentifierInfo *Id) {
       auto I = Cache.find(Id);
       if (I != Cache.end())
         return I->second;
-      for (; Index != NumParams; ++Index) {
+      for (; Index != End; ++Index) {
         auto Param = Function->getParamDecl(Index);
         if (Param->isDesignatable()) {
           auto PId = Param->getIdentifier();
@@ -1579,7 +1579,7 @@ public:
           Cache[PId] = Index;
         }
       }
-      return NumParams;
+      return End;
     }
   };
 

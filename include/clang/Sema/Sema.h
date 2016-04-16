@@ -6417,7 +6417,7 @@ public:
     /// not be resolved to a suitable function.
     TDK_FailedOverloadResolution,
     TDK_DesignatorNotFound,
-    TDK_ArgumentOutOfBound,
+    TDK_ArgumentOutOfBounds,
     TDK_OverlappedArguments,
     TDK_MissingArgument,
     /// \brief Deduction failed; that's all we know.
