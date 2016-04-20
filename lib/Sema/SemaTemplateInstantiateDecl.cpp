@@ -239,16 +239,72 @@ instantiateDependentModeAttr(Sema &S,
 static void instantiateOMPDeclareSimdDeclAttr(
     Sema &S, const MultiLevelTemplateArgumentList &TemplateArgs,
     const OMPDeclareSimdDeclAttr &Attr, Decl *New) {
+  // Allow 'this' in clauses with varlists.
+  if (auto *FTD = dyn_cast<FunctionTemplateDecl>(New))
+    New = FTD->getTemplatedDecl();
+  auto *FD = cast<FunctionDecl>(New);
+  auto *ThisContext = dyn_cast_or_null<CXXRecordDecl>(FD->getDeclContext());
+  SmallVector<Expr *, 4> Uniforms, Aligneds, Alignments, Linears, Steps;
+  SmallVector<unsigned, 4> LinModifiers;
+
+  auto &&Subst = [&](Expr *E) -> ExprResult {
+    if (auto *DRE = dyn_cast<DeclRefExpr>(E->IgnoreParenImpCasts()))
+      if (auto *PVD = dyn_cast<ParmVarDecl>(DRE->getDecl())) {
+        Sema::ContextRAII SavedContext(S, FD);
+        LocalInstantiationScope Local(S);
+        if (FD->getNumParams() > PVD->getFunctionScopeIndex())
+          Local.InstantiatedLocal(
+              PVD, FD->getParamDecl(PVD->getFunctionScopeIndex()));
+        return S.SubstExpr(E, TemplateArgs);
+      }
+    Sema::CXXThisScopeRAII ThisScope(S, ThisContext, /*TypeQuals=*/0,
+                                     FD->isCXXInstanceMember());
+    return S.SubstExpr(E, TemplateArgs);
+  };
+
   ExprResult Simdlen;
-  if (auto *E = Attr.getSimdlen()) {
-    Simdlen = S.SubstExpr(E, TemplateArgs);
-    if (Simdlen.isInvalid())
-      return;
+  if (auto *E = Attr.getSimdlen())
+    Simdlen = Subst(E);
+
+  if (Attr.uniforms_size() > 0) {
+    for(auto *E : Attr.uniforms()) {
+      ExprResult Inst = Subst(E);
+      if (Inst.isInvalid())
+        continue;
+      Uniforms.push_back(Inst.get());
+    }
   }
 
-  (void)S.ActOnOpenMPDeclareSimdDirective(S.ConvertDeclToDeclGroup(New),
-                                          Attr.getBranchState(), Simdlen.get(),
-                                          Attr.getRange());
+  auto AI = Attr.alignments_begin();
+  for (auto *E : Attr.aligneds()) {
+    ExprResult Inst = Subst(E);
+    if (Inst.isInvalid())
+      continue;
+    Aligneds.push_back(Inst.get());
+    Inst = ExprEmpty();
+    if (*AI)
+      Inst = S.SubstExpr(*AI, TemplateArgs);
+    Alignments.push_back(Inst.get());
+    ++AI;
+  }
+
+  auto SI = Attr.steps_begin();
+  for (auto *E : Attr.linears()) {
+    ExprResult Inst = Subst(E);
+    if (Inst.isInvalid())
+      continue;
+    Linears.push_back(Inst.get());
+    Inst = ExprEmpty();
+    if (*SI)
+      Inst = S.SubstExpr(*SI, TemplateArgs);
+    Steps.push_back(Inst.get());
+    ++SI;
+  }
+  LinModifiers.append(Attr.modifiers_begin(), Attr.modifiers_end());
+  (void)S.ActOnOpenMPDeclareSimdDirective(
+      S.ConvertDeclToDeclGroup(New), Attr.getBranchState(), Simdlen.get(),
+      Uniforms, Aligneds, Alignments, Linears, LinModifiers, Steps,
+      Attr.getRange());
 }
 
 void Sema::InstantiateAttrs(const MultiLevelTemplateArgumentList &TemplateArgs,
@@ -3474,7 +3530,8 @@ TemplateDeclInstantiator::InitMethodInstantiation(CXXMethodDecl *New,
 void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
                                          FunctionDecl *Function,
                                          bool Recursive,
-                                         bool DefinitionRequired) {
+                                         bool DefinitionRequired,
+                                         bool AtEndOfTU) {
   if (Function->isInvalidDecl() || Function->isDefined())
     return;
 
@@ -3548,6 +3605,16 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
       assert(!Recursive);
       PendingInstantiations.push_back(
         std::make_pair(Function, PointOfInstantiation));
+    } else if (Function->getTemplateSpecializationKind()
+                 == TSK_ImplicitInstantiation) {
+      if (AtEndOfTU && !getDiagnostics().hasErrorOccurred()) {
+        Diag(PointOfInstantiation, diag::warn_func_template_missing)
+          << Function;
+        Diag(PatternDecl->getLocation(), diag::note_forward_template_decl);
+        if (getLangOpts().CPlusPlus11)
+          Diag(PointOfInstantiation, diag::note_inst_declaration_hint)
+            << Function;
+      }
     }
 
     return;
@@ -3895,7 +3962,7 @@ void Sema::InstantiateStaticDataMemberDefinition(
 
 void Sema::InstantiateVariableDefinition(SourceLocation PointOfInstantiation,
                                          VarDecl *Var, bool Recursive,
-                                         bool DefinitionRequired) {
+                                      bool DefinitionRequired, bool AtEndOfTU) {
   if (Var->isInvalidDecl())
     return;
 
@@ -4027,6 +4094,16 @@ void Sema::InstantiateVariableDefinition(SourceLocation PointOfInstantiation,
                  == TSK_ExplicitInstantiationDefinition) {
       PendingInstantiations.push_back(
         std::make_pair(Var, PointOfInstantiation));
+    } else if (Var->getTemplateSpecializationKind()
+                 == TSK_ImplicitInstantiation) {
+      // Warn about missing definition at the end of translation unit.
+      if (AtEndOfTU && !getDiagnostics().hasErrorOccurred()) {
+        Diag(PointOfInstantiation, diag::warn_var_template_missing)
+          << Var;
+        Diag(PatternDecl->getLocation(), diag::note_forward_template_decl);
+        if (getLangOpts().CPlusPlus11)
+          Diag(PointOfInstantiation, diag::note_inst_declaration_hint) << Var;
+      }
     }
 
     return;
@@ -4796,7 +4873,7 @@ void Sema::PerformPendingInstantiations(bool LocalOnly) {
       bool DefinitionRequired = Function->getTemplateSpecializationKind() ==
                                 TSK_ExplicitInstantiationDefinition;
       InstantiateFunctionDefinition(/*FIXME:*/Inst.second, Function, true,
-                                    DefinitionRequired);
+                                    DefinitionRequired, true);
       continue;
     }
 
@@ -4837,7 +4914,7 @@ void Sema::PerformPendingInstantiations(bool LocalOnly) {
     // Instantiate static data member definitions or variable template
     // specializations.
     InstantiateVariableDefinition(/*FIXME:*/ Inst.second, Var, true,
-                                  DefinitionRequired);
+                                  DefinitionRequired, true);
   }
 }
 

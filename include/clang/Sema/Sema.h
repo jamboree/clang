@@ -7232,7 +7232,8 @@ public:
   void InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
                                      FunctionDecl *Function,
                                      bool Recursive = false,
-                                     bool DefinitionRequired = false);
+                                     bool DefinitionRequired = false,
+                                     bool AtEndOfTU = false);
   VarTemplateSpecializationDecl *BuildVarTemplateInstantiation(
       VarTemplateDecl *VarTemplate, VarDecl *FromVar,
       const TemplateArgumentList &TemplateArgList,
@@ -7256,7 +7257,8 @@ public:
       const MultiLevelTemplateArgumentList &TemplateArgs);
   void InstantiateVariableDefinition(SourceLocation PointOfInstantiation,
                                      VarDecl *Var, bool Recursive = false,
-                                     bool DefinitionRequired = false);
+                                     bool DefinitionRequired = false,
+                                     bool AtEndOfTU = false);
   void InstantiateStaticDataMemberDefinition(
                                      SourceLocation PointOfInstantiation,
                                      VarDecl *Var,
@@ -7384,6 +7386,12 @@ public:
   void FindProtocolDeclaration(bool WarnOnDeclarations, bool ForObjCContainer,
                                ArrayRef<IdentifierLocPair> ProtocolId,
                                SmallVectorImpl<Decl *> &Protocols);
+
+  void DiagnoseTypeArgsAndProtocols(IdentifierInfo *ProtocolId,
+                                    SourceLocation ProtocolLoc,
+                                    IdentifierInfo *TypeArgId,
+                                    SourceLocation TypeArgLoc,
+                                    bool SelectProtocolFirst = false);
 
   /// Given a list of identifiers (and their locations), resolve the
   /// names to either Objective-C protocol qualifiers or type
@@ -8169,12 +8177,21 @@ public:
       SourceLocation EndLoc,
       llvm::DenseMap<ValueDecl *, Expr *> &VarsWithImplicitDSA);
 
+  /// Checks correctness of linear modifiers.
+  bool CheckOpenMPLinearModifier(OpenMPLinearClauseKind LinKind,
+                                 SourceLocation LinLoc);
+  /// Checks that the specified declaration matches requirements for the linear
+  /// decls.
+  bool CheckOpenMPLinearDecl(ValueDecl *D, SourceLocation ELoc,
+                             OpenMPLinearClauseKind LinKind, QualType Type);
+
   /// \brief Called on well-formed '\#pragma omp declare simd' after parsing of
   /// the associated method/function.
-  DeclGroupPtrTy
-  ActOnOpenMPDeclareSimdDirective(DeclGroupPtrTy DG,
-                                  OMPDeclareSimdDeclAttr::BranchStateTy BS,
-                                  Expr *Simdlen, SourceRange SR);
+  DeclGroupPtrTy ActOnOpenMPDeclareSimdDirective(
+      DeclGroupPtrTy DG, OMPDeclareSimdDeclAttr::BranchStateTy BS,
+      Expr *Simdlen, ArrayRef<Expr *> Uniforms, ArrayRef<Expr *> Aligneds,
+      ArrayRef<Expr *> Alignments, ArrayRef<Expr *> Linears,
+      ArrayRef<unsigned> LinModifiers, ArrayRef<Expr *> Steps, SourceRange SR);
 
   OMPClause *ActOnOpenMPSingleExprClause(OpenMPClauseKind Kind,
                                          Expr *Expr,

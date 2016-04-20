@@ -95,6 +95,8 @@ def m_ppc_Features_Group : OptionGroup<"<ppc features group>">,
                            Group<m_Group>;
 def m_wasm_Features_Group : OptionGroup<"<wasm features group>">,
                             Group<m_Group>;
+def m_amdgpu_Features_Group : OptionGroup<"<amdgpu features group>">,
+                              Group<m_Group>;
 
 def m_libc_Group          : OptionGroup<"<m libc group>">, Group<m_Group>;
 def u_Group               : OptionGroup<"<u group>">;
@@ -335,7 +337,7 @@ def Xassembler : Separate<["-"], "Xassembler">,
   HelpText<"Pass <arg> to the assembler">, MetaVarName<"<arg>">;
 def Xclang : Separate<["-"], "Xclang">,
   HelpText<"Pass <arg> to the clang compiler">, MetaVarName<"<arg>">,
-  Flags<[DriverOption, CoreOption]>;
+  Flags<[DriverOption, CoreOption]>, Group<CompileOnly_Group>;
 def Xcuda_fatbinary : Separate<["-"], "Xcuda-fatbinary">,
   HelpText<"Pass <arg> to fatbinary invocation">, MetaVarName<"<arg>">;
 def Xcuda_ptxas : Separate<["-"], "Xcuda-ptxas">,
@@ -373,13 +375,18 @@ def cxx_isystem : JoinedOrSeparate<["-"], "cxx-isystem">, Group<clang_i_Group>,
 def c : Flag<["-"], "c">, Flags<[DriverOption]>,
   HelpText<"Only run preprocess, compile, and assemble steps">;
 def cuda_device_only : Flag<["--"], "cuda-device-only">,
-  HelpText<"Do device-side CUDA compilation only">;
+  HelpText<"Compile CUDA code for device only">;
+def cuda_host_only : Flag<["--"], "cuda-host-only">,
+  HelpText<"Compile CUDA code for host only.  Has no effect on non-CUDA "
+           "compilations.">;
+def cuda_compile_host_device : Flag<["--"], "cuda-compile-host-device">,
+  HelpText<"Compile CUDA code for both host and device (default).  Has no "
+           "effect on non-CUDA compilations.">;
 def cuda_gpu_arch_EQ : Joined<["--"], "cuda-gpu-arch=">, Flags<[DriverOption]>,
   HelpText<"CUDA GPU architecture (e.g. sm_35).  May be specified more than once.">;
-def cuda_host_only : Flag<["--"], "cuda-host-only">,
-  HelpText<"Do host-side CUDA compilation only">;
 def cuda_noopt_device_debug : Flag<["--"], "cuda-noopt-device-debug">,
   HelpText<"Enable device-side debug info generation. Disables ptxas optimizations.">;
+def no_cuda_noopt_device_debug : Flag<["--"], "no-cuda-noopt-device-debug">;
 def cuda_path_EQ : Joined<["--"], "cuda-path=">, Group<i_Group>,
   HelpText<"CUDA installation path">;
 def fcuda_flush_denormals_to_zero : Flag<["-"], "fcuda-flush-denormals-to-zero">,
@@ -1254,7 +1261,7 @@ def iquote : JoinedOrSeparate<["-"], "iquote">, Group<clang_i_Group>, Flags<[CC1
 def isysroot : JoinedOrSeparate<["-"], "isysroot">, Group<clang_i_Group>, Flags<[CC1Option]>,
   HelpText<"Set the system root directory (usually /)">, MetaVarName<"<dir>">;
 def isystem : JoinedOrSeparate<["-"], "isystem">, Group<clang_i_Group>,
-  Flags<[CC1Option, CoreOption]>,
+  Flags<[CC1Option]>,
   HelpText<"Add directory to SYSTEM include search path">, MetaVarName<"<directory>">;
 def iwithprefixbefore : JoinedOrSeparate<["-"], "iwithprefixbefore">, Group<clang_i_Group>,
   HelpText<"Set directory to include search path with prefix">, MetaVarName<"<dir>">,
@@ -1445,6 +1452,16 @@ def ffixed_x18 : Flag<["-"], "ffixed-x18">, Group<m_aarch64_Features_Group>,
 
 def msimd128 : Flag<["-"], "msimd128">, Group<m_wasm_Features_Group>;
 def mno_simd128 : Flag<["-"], "mno-simd128">, Group<m_wasm_Features_Group>;
+
+def mamdgpu_debugger_abi : Joined<["-"], "mamdgpu-debugger-abi=">,
+  Flags<[HelpHidden]>,
+  Group<m_Group>,
+  HelpText<"Generate additional code for specified <version> of debugger ABI (AMDGPU only)">,
+  MetaVarName<"<version>">;
+def mamdgpu_debugger_insert_nops : Flag<["-"], "mamdgpu-debugger-insert-nops">,
+  Group<m_amdgpu_Features_Group>;
+def mamdgpu_debugger_reserve_trap_regs : Flag<["-"], "mamdgpu-debugger-reserve-trap-regs">,
+  Group<m_amdgpu_Features_Group>;
 
 def mvsx : Flag<["-"], "mvsx">, Group<m_ppc_Features_Group>;
 def mno_vsx : Flag<["-"], "mno-vsx">, Group<m_ppc_Features_Group>;

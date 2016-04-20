@@ -961,7 +961,6 @@ void ASTWriter::WriteBlockInfoBlock() {
   RECORD(UPDATE_VISIBLE);
   RECORD(DECL_UPDATE_OFFSETS);
   RECORD(DECL_UPDATES);
-  RECORD(CXX_BASE_SPECIFIER_OFFSETS);
   RECORD(DIAG_PRAGMA_MAPPINGS);
   RECORD(CUDA_SPECIAL_DECL_REFS);
   RECORD(HEADER_SEARCH_TABLE);
@@ -983,7 +982,6 @@ void ASTWriter::WriteBlockInfoBlock() {
   RECORD(MSSTRUCT_PRAGMA_OPTIONS);
   RECORD(POINTERS_TO_MEMBERS_PRAGMA_OPTIONS);
   RECORD(UNUSED_LOCAL_TYPEDEF_NAME_CANDIDATES);
-  RECORD(CXX_CTOR_INITIALIZERS_OFFSETS);
   RECORD(DELETE_EXPRS_TO_ANALYZE);
 
   // SourceManager Block.
@@ -1121,10 +1119,22 @@ void ASTWriter::WriteBlockInfoBlock() {
   RECORD(DECL_TEMPLATE_TYPE_PARM);
   RECORD(DECL_NON_TYPE_TEMPLATE_PARM);
   RECORD(DECL_TEMPLATE_TEMPLATE_PARM);
+  RECORD(DECL_TYPE_ALIAS_TEMPLATE);
   RECORD(DECL_STATIC_ASSERT);
   RECORD(DECL_CXX_BASE_SPECIFIERS);
+  RECORD(DECL_CXX_CTOR_INITIALIZERS);
   RECORD(DECL_INDIRECTFIELD);
   RECORD(DECL_EXPANDED_NON_TYPE_TEMPLATE_PARM_PACK);
+  RECORD(DECL_EXPANDED_TEMPLATE_TEMPLATE_PARM_PACK);
+  RECORD(DECL_CLASS_SCOPE_FUNCTION_SPECIALIZATION);
+  RECORD(DECL_IMPORT);
+  RECORD(DECL_OMP_THREADPRIVATE);
+  RECORD(DECL_EMPTY);
+  RECORD(DECL_OBJC_TYPE_PARAM);
+  RECORD(DECL_OMP_CAPTUREDEXPR);
+  RECORD(DECL_PRAGMA_COMMENT);
+  RECORD(DECL_PRAGMA_DETECT_MISMATCH);
+  RECORD(DECL_OMP_DECLARE_REDUCTION);
   
   // Statements and Exprs can occur in the Decls and Types block.
   AddStmtsExprs(Stream, Record);
@@ -2713,46 +2723,6 @@ void ASTWriter::WritePragmaDiagnosticMappings(const DiagnosticsEngine &Diag,
     Stream.EmitRecord(DIAG_PRAGMA_MAPPINGS, Record);
 }
 
-void ASTWriter::WriteCXXCtorInitializersOffsets() {
-  if (CXXCtorInitializersOffsets.empty())
-    return;
-
-  // Create a blob abbreviation for the C++ ctor initializer offsets.
-  using namespace llvm;
-
-  auto *Abbrev = new BitCodeAbbrev();
-  Abbrev->Add(BitCodeAbbrevOp(CXX_CTOR_INITIALIZERS_OFFSETS));
-  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // size
-  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob));
-  unsigned CtorInitializersOffsetAbbrev = Stream.EmitAbbrev(Abbrev);
-
-  // Write the base specifier offsets table.
-  RecordData::value_type Record[] = {CXX_CTOR_INITIALIZERS_OFFSETS,
-                                     CXXCtorInitializersOffsets.size()};
-  Stream.EmitRecordWithBlob(CtorInitializersOffsetAbbrev, Record,
-                            bytes(CXXCtorInitializersOffsets));
-}
-
-void ASTWriter::WriteCXXBaseSpecifiersOffsets() {
-  if (CXXBaseSpecifiersOffsets.empty())
-    return;
-
-  // Create a blob abbreviation for the C++ base specifiers offsets.
-  using namespace llvm;
-    
-  auto *Abbrev = new BitCodeAbbrev();
-  Abbrev->Add(BitCodeAbbrevOp(CXX_BASE_SPECIFIER_OFFSETS));
-  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 32)); // size
-  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob));
-  unsigned BaseSpecifierOffsetAbbrev = Stream.EmitAbbrev(Abbrev);
-  
-  // Write the base specifier offsets table.
-  RecordData::value_type Record[] = {CXX_BASE_SPECIFIER_OFFSETS,
-                                     CXXBaseSpecifiersOffsets.size()};
-  Stream.EmitRecordWithBlob(BaseSpecifierOffsetAbbrev, Record,
-                            bytes(CXXBaseSpecifiersOffsets));
-}
-
 //===----------------------------------------------------------------------===//
 // Type Serialization
 //===----------------------------------------------------------------------===//
@@ -3106,6 +3076,7 @@ void ASTWriter::WriteReferencedSelectorsPool(Sema &SemaRef) {
     return;
 
   RecordData Record;
+  ASTRecordWriter Writer(*this, Record);
 
   // Note: this writes out all references even for a dependent AST. But it is
   // very tricky to fix, and given that @selector shouldn't really appear in
@@ -3113,10 +3084,10 @@ void ASTWriter::WriteReferencedSelectorsPool(Sema &SemaRef) {
   for (auto &SelectorAndLocation : SemaRef.ReferencedSelectors) {
     Selector Sel = SelectorAndLocation.first;
     SourceLocation Loc = SelectorAndLocation.second;
-    AddSelectorRef(Sel, Record);
-    AddSourceLocation(Loc, Record);
+    Writer.AddSelectorRef(Sel);
+    Writer.AddSourceLocation(Loc);
   }
-  Stream.EmitRecord(REFERENCED_SELECTOR_POOL, Record);
+  Writer.Emit(REFERENCED_SELECTOR_POOL);
 }
 
 //===----------------------------------------------------------------------===//
@@ -4104,7 +4075,6 @@ ASTWriter::ASTWriter(
       FirstSelectorID(NUM_PREDEF_SELECTOR_IDS), NextSelectorID(FirstSelectorID),
       NumStatements(0), NumMacros(0),
       NumLexicalDeclContexts(0), NumVisibleDeclContexts(0),
-      NextCXXBaseSpecifiersID(1), NextCXXCtorInitializersID(1),
       TypeExtQualAbbrev(0), TypeFunctionProtoAbbrev(0), DeclParmVarAbbrev(0),
       DeclContextLexicalAbbrev(0), DeclContextVisibleLookupAbbrev(0),
       UpdateVisibleAbbrev(0), DeclRecordAbbrev(0), DeclTypedefAbbrev(0),
@@ -4505,8 +4475,6 @@ uint64_t ASTWriter::WriteASTCore(Sema &SemaRef, StringRef isysroot,
   WriteTypeDeclOffsets();
   if (!DeclUpdatesOffsetsRecord.empty())
     Stream.EmitRecord(DECL_UPDATE_OFFSETS, DeclUpdatesOffsetsRecord);
-  WriteCXXBaseSpecifiersOffsets();
-  WriteCXXCtorInitializersOffsets();
   WriteFileDeclIDsMap();
   WriteSourceManagerBlock(Context.getSourceManager(), PP);
   WriteComments();
@@ -4694,7 +4662,7 @@ void ASTWriter::WriteDeclUpdatesBlocks(RecordDataImpl &OffsetsRecord) {
         auto *RD = cast<CXXRecordDecl>(D);
         UpdatedDeclContexts.insert(RD->getPrimaryContext());
         Record.AddCXXDefinitionData(RD);
-        Record.push_back(WriteDeclContextLexicalBlock(
+        Record.AddOffset(WriteDeclContextLexicalBlock(
             *Context, const_cast<CXXRecordDecl *>(RD)));
 
         // This state is sometimes updated by template instantiation, when we
@@ -4787,8 +4755,6 @@ void ASTWriter::WriteDeclUpdatesBlocks(RecordDataImpl &OffsetsRecord) {
 
     OffsetsRecord.push_back(GetDeclRef(D));
     OffsetsRecord.push_back(Record.Emit(DECL_UPDATES));
-
-    FlushPendingAfterDecl();
   }
 }
 
@@ -4802,19 +4768,19 @@ void ASTWriter::AddSourceRange(SourceRange Range, RecordDataImpl &Record) {
   AddSourceLocation(Range.getEnd(), Record);
 }
 
-void ASTWriter::AddAPInt(const llvm::APInt &Value, RecordDataImpl &Record) {
-  Record.push_back(Value.getBitWidth());
+void ASTRecordWriter::AddAPInt(const llvm::APInt &Value) {
+  Record->push_back(Value.getBitWidth());
   const uint64_t *Words = Value.getRawData();
-  Record.append(Words, Words + Value.getNumWords());
+  Record->append(Words, Words + Value.getNumWords());
 }
 
-void ASTWriter::AddAPSInt(const llvm::APSInt &Value, RecordDataImpl &Record) {
-  Record.push_back(Value.isUnsigned());
-  AddAPInt(Value, Record);
+void ASTRecordWriter::AddAPSInt(const llvm::APSInt &Value) {
+  Record->push_back(Value.isUnsigned());
+  AddAPInt(Value);
 }
 
-void ASTWriter::AddAPFloat(const llvm::APFloat &Value, RecordDataImpl &Record) {
-  AddAPInt(Value.bitcastToAPInt(), Record);
+void ASTRecordWriter::AddAPFloat(const llvm::APFloat &Value) {
+  AddAPInt(Value.bitcastToAPInt());
 }
 
 void ASTWriter::AddIdentifierRef(const IdentifierInfo *II, RecordDataImpl &Record) {
@@ -4859,8 +4825,8 @@ uint64_t ASTWriter::getMacroDirectivesOffset(const IdentifierInfo *Name) {
   return IdentMacroDirectivesOffsetMap.lookup(Name);
 }
 
-void ASTWriter::AddSelectorRef(const Selector SelRef, RecordDataImpl &Record) {
-  Record.push_back(getSelectorRef(SelRef));
+void ASTRecordWriter::AddSelectorRef(const Selector SelRef) {
+  Record->push_back(Writer->getSelectorRef(SelRef));
 }
 
 SelectorID ASTWriter::getSelectorRef(Selector Sel) {
@@ -4882,26 +4848,8 @@ SelectorID ASTWriter::getSelectorRef(Selector Sel) {
   return SID;
 }
 
-void ASTWriter::AddCXXTemporary(const CXXTemporary *Temp, RecordDataImpl &Record) {
-  AddDeclRef(Temp->getDestructor(), Record);
-}
-
-void ASTWriter::AddCXXCtorInitializersRef(ArrayRef<CXXCtorInitializer *> Inits,
-                                          RecordDataImpl &Record) {
-  assert(!Inits.empty() && "Empty ctor initializer sets are not recorded");
-  CXXCtorInitializersToWrite.push_back(
-      QueuedCXXCtorInitializers(NextCXXCtorInitializersID, Inits));
-  Record.push_back(NextCXXCtorInitializersID++);
-}
-
-void ASTWriter::AddCXXBaseSpecifiersRef(CXXBaseSpecifier const *Bases,
-                                        CXXBaseSpecifier const *BasesEnd,
-                                        RecordDataImpl &Record) {
-  assert(Bases != BasesEnd && "Empty base-specifier sets are not recorded");
-  CXXBaseSpecifiersToWrite.push_back(
-                                QueuedCXXBaseSpecifiers(NextCXXBaseSpecifiersID,
-                                                        Bases, BasesEnd));
-  Record.push_back(NextCXXBaseSpecifiersID++);
+void ASTRecordWriter::AddCXXTemporary(const CXXTemporary *Temp) {
+  AddDeclRef(Temp->getDestructor());
 }
 
 void ASTRecordWriter::AddTemplateArgumentLocInfo(
@@ -5092,32 +5040,32 @@ void ASTWriter::associateDeclWithFile(const Decl *D, DeclID ID) {
   Decls.insert(I, LocDecl);
 }
 
-void ASTWriter::AddDeclarationName(DeclarationName Name, RecordDataImpl &Record) {
+void ASTRecordWriter::AddDeclarationName(DeclarationName Name) {
   // FIXME: Emit a stable enum for NameKind.  0 = Identifier etc.
-  Record.push_back(Name.getNameKind());
+  Record->push_back(Name.getNameKind());
   switch (Name.getNameKind()) {
   case DeclarationName::Identifier:
-    AddIdentifierRef(Name.getAsIdentifierInfo(), Record);
+    AddIdentifierRef(Name.getAsIdentifierInfo());
     break;
 
   case DeclarationName::ObjCZeroArgSelector:
   case DeclarationName::ObjCOneArgSelector:
   case DeclarationName::ObjCMultiArgSelector:
-    AddSelectorRef(Name.getObjCSelector(), Record);
+    AddSelectorRef(Name.getObjCSelector());
     break;
 
   case DeclarationName::CXXConstructorName:
   case DeclarationName::CXXDestructorName:
   case DeclarationName::CXXConversionFunctionName:
-    AddTypeRef(Name.getCXXNameType(), Record);
+    AddTypeRef(Name.getCXXNameType());
     break;
 
   case DeclarationName::CXXOperatorName:
-    Record.push_back(Name.getCXXOverloadedOperator());
+    Record->push_back(Name.getCXXOverloadedOperator());
     break;
 
   case DeclarationName::CXXLiteralOperatorName:
-    AddIdentifierRef(Name.getCXXLiteralIdentifier(), Record);
+    AddIdentifierRef(Name.getCXXLiteralIdentifier());
     break;
 
   case DeclarationName::CXXUsingDirective:
@@ -5191,8 +5139,7 @@ void ASTRecordWriter::AddQualifierInfo(const QualifierInfo &Info) {
     AddTemplateParameterList(Info.TemplParamLists[i]);
 }
 
-void ASTWriter::AddNestedNameSpecifier(NestedNameSpecifier *NNS,
-                                       RecordDataImpl &Record) {
+void ASTRecordWriter::AddNestedNameSpecifier(NestedNameSpecifier *NNS) {
   // Nested name specifiers usually aren't too long. I think that 8 would
   // typically accommodate the vast majority.
   SmallVector<NestedNameSpecifier *, 8> NestedNames;
@@ -5203,28 +5150,28 @@ void ASTWriter::AddNestedNameSpecifier(NestedNameSpecifier *NNS,
     NNS = NNS->getPrefix();
   }
 
-  Record.push_back(NestedNames.size());
+  Record->push_back(NestedNames.size());
   while(!NestedNames.empty()) {
     NNS = NestedNames.pop_back_val();
     NestedNameSpecifier::SpecifierKind Kind = NNS->getKind();
-    Record.push_back(Kind);
+    Record->push_back(Kind);
     switch (Kind) {
     case NestedNameSpecifier::Identifier:
-      AddIdentifierRef(NNS->getAsIdentifier(), Record);
+      AddIdentifierRef(NNS->getAsIdentifier());
       break;
 
     case NestedNameSpecifier::Namespace:
-      AddDeclRef(NNS->getAsNamespace(), Record);
+      AddDeclRef(NNS->getAsNamespace());
       break;
 
     case NestedNameSpecifier::NamespaceAlias:
-      AddDeclRef(NNS->getAsNamespaceAlias(), Record);
+      AddDeclRef(NNS->getAsNamespaceAlias());
       break;
 
     case NestedNameSpecifier::TypeSpec:
     case NestedNameSpecifier::TypeSpecWithTemplate:
-      AddTypeRef(QualType(NNS->getAsType(), 0), Record);
-      Record.push_back(Kind == NestedNameSpecifier::TypeSpecWithTemplate);
+      AddTypeRef(QualType(NNS->getAsType(), 0));
+      Record->push_back(Kind == NestedNameSpecifier::TypeSpecWithTemplate);
       break;
 
     case NestedNameSpecifier::Global:
@@ -5232,7 +5179,7 @@ void ASTWriter::AddNestedNameSpecifier(NestedNameSpecifier *NNS,
       break;
 
     case NestedNameSpecifier::Super:
-      AddDeclRef(NNS->getAsRecordDecl(), Record);
+      AddDeclRef(NNS->getAsRecordDecl());
       break;
     }
   }
@@ -5384,16 +5331,15 @@ void ASTRecordWriter::AddTemplateArgument(const TemplateArgument &Arg) {
   }
 }
 
-void
-ASTWriter::AddTemplateParameterList(const TemplateParameterList *TemplateParams,
-                                    RecordDataImpl &Record) {
+void ASTRecordWriter::AddTemplateParameterList(
+    const TemplateParameterList *TemplateParams) {
   assert(TemplateParams && "No TemplateParams!");
-  AddSourceLocation(TemplateParams->getTemplateLoc(), Record);
-  AddSourceLocation(TemplateParams->getLAngleLoc(), Record);
-  AddSourceLocation(TemplateParams->getRAngleLoc(), Record);
-  Record.push_back(TemplateParams->size());
+  AddSourceLocation(TemplateParams->getTemplateLoc());
+  AddSourceLocation(TemplateParams->getLAngleLoc());
+  AddSourceLocation(TemplateParams->getRAngleLoc());
+  Record->push_back(TemplateParams->size());
   for (const auto &P : *TemplateParams)
-    AddDeclRef(P, Record);
+    AddDeclRef(P);
 }
 
 /// \brief Emit a template argument list.
@@ -5416,13 +5362,12 @@ void ASTRecordWriter::AddASTTemplateArgumentListInfo(
     AddTemplateArgumentLoc(TemplArgs[i]);
 }
 
-void
-ASTWriter::AddUnresolvedSet(const ASTUnresolvedSet &Set, RecordDataImpl &Record) {
-  Record.push_back(Set.size());
+void ASTRecordWriter::AddUnresolvedSet(const ASTUnresolvedSet &Set) {
+  Record->push_back(Set.size());
   for (ASTUnresolvedSet::const_iterator
          I = Set.begin(), E = Set.end(); I != E; ++I) {
-    AddDeclRef(I.getDecl(), Record);
-    Record.push_back(I.getAccess());
+    AddDeclRef(I.getDecl());
+    Record->push_back(I.getAccess());
   }
 }
 
@@ -5438,106 +5383,67 @@ void ASTRecordWriter::AddCXXBaseSpecifier(const CXXBaseSpecifier &Base) {
                                           : SourceLocation());
 }
 
-void ASTWriter::FlushCXXBaseSpecifiers() {
-  RecordData Record;
-  unsigned N = CXXBaseSpecifiersToWrite.size();
-  for (unsigned I = 0; I != N; ++I) {
-    Record.clear();
+static uint64_t EmitCXXBaseSpecifiers(ASTWriter &W,
+                                      ArrayRef<CXXBaseSpecifier> Bases) {
+  ASTWriter::RecordData Record;
+  ASTRecordWriter Writer(W, Record);
+  Writer.push_back(Bases.size());
 
-    const CXXBaseSpecifier *B = CXXBaseSpecifiersToWrite[I].Bases,
-                        *BEnd = CXXBaseSpecifiersToWrite[I].BasesEnd;
+  for (auto &Base : Bases)
+    Writer.AddCXXBaseSpecifier(Base);
 
-    // Write the base specifier set.
-    ASTRecordWriter Writer(*this, Record);
-    Writer.push_back(BEnd - B);
-    for (; B != BEnd; ++B)
-      Writer.AddCXXBaseSpecifier(*B);
-    uint64_t Offset = Writer.Emit(serialization::DECL_CXX_BASE_SPECIFIERS);
-    
-    // Record the offset of this base-specifier set.
-    //
-    // FIXME: We don't need an indirect lookup table for these; instead, write
-    // the base specifier record prior to the decl record and store its offset
-    // from the decl record rather than its ID.
-    unsigned Index = CXXBaseSpecifiersToWrite[I].ID - 1;
-    if (Index == CXXBaseSpecifiersOffsets.size())
-      CXXBaseSpecifiersOffsets.push_back(Offset);
-    else {
-      if (Index > CXXBaseSpecifiersOffsets.size())
-        CXXBaseSpecifiersOffsets.resize(Index + 1);
-      CXXBaseSpecifiersOffsets[Index] = Offset;
+  return Writer.Emit(serialization::DECL_CXX_BASE_SPECIFIERS);
+}
+
+// FIXME: Move this out of the main ASTRecordWriter interface.
+void ASTRecordWriter::AddCXXBaseSpecifiers(ArrayRef<CXXBaseSpecifier> Bases) {
+  AddOffset(EmitCXXBaseSpecifiers(*Writer, Bases));
+}
+
+static uint64_t
+EmitCXXCtorInitializers(ASTWriter &W,
+                        ArrayRef<CXXCtorInitializer *> CtorInits) {
+  ASTWriter::RecordData Record;
+  ASTRecordWriter Writer(W, Record);
+  Writer.push_back(CtorInits.size());
+
+  for (auto *Init : CtorInits) {
+    if (Init->isBaseInitializer()) {
+      Writer.push_back(CTOR_INITIALIZER_BASE);
+      Writer.AddTypeSourceInfo(Init->getTypeSourceInfo());
+      Writer.push_back(Init->isBaseVirtual());
+    } else if (Init->isDelegatingInitializer()) {
+      Writer.push_back(CTOR_INITIALIZER_DELEGATING);
+      Writer.AddTypeSourceInfo(Init->getTypeSourceInfo());
+    } else if (Init->isMemberInitializer()){
+      Writer.push_back(CTOR_INITIALIZER_MEMBER);
+      Writer.AddDeclRef(Init->getMember());
+    } else {
+      Writer.push_back(CTOR_INITIALIZER_INDIRECT_MEMBER);
+      Writer.AddDeclRef(Init->getIndirectMember());
+    }
+
+    Writer.AddSourceLocation(Init->getMemberLocation());
+    Writer.AddStmt(Init->getInit());
+    Writer.AddSourceLocation(Init->getLParenLoc());
+    Writer.AddSourceLocation(Init->getRParenLoc());
+    Writer.push_back(Init->isWritten());
+    if (Init->isWritten()) {
+      Writer.push_back(Init->getSourceOrder());
+    } else {
+      Writer.push_back(Init->getNumArrayIndices());
+      for (auto *VD : Init->getArrayIndices())
+        Writer.AddDeclRef(VD);
     }
   }
 
-  assert(N == CXXBaseSpecifiersToWrite.size() &&
-         "added more base specifiers while writing base specifiers");
-  CXXBaseSpecifiersToWrite.clear();
+  return Writer.Emit(serialization::DECL_CXX_CTOR_INITIALIZERS);
 }
 
 // FIXME: Move this out of the main ASTRecordWriter interface.
 void ASTRecordWriter::AddCXXCtorInitializers(
-    const CXXCtorInitializer *const *CtorInitializers,
-    unsigned NumCtorInitializers) {
-  Record->push_back(NumCtorInitializers);
-  for (unsigned i=0; i != NumCtorInitializers; ++i) {
-    const CXXCtorInitializer *Init = CtorInitializers[i];
-
-    if (Init->isBaseInitializer()) {
-      Record->push_back(CTOR_INITIALIZER_BASE);
-      AddTypeSourceInfo(Init->getTypeSourceInfo());
-      Record->push_back(Init->isBaseVirtual());
-    } else if (Init->isDelegatingInitializer()) {
-      Record->push_back(CTOR_INITIALIZER_DELEGATING);
-      AddTypeSourceInfo(Init->getTypeSourceInfo());
-    } else if (Init->isMemberInitializer()){
-      Record->push_back(CTOR_INITIALIZER_MEMBER);
-      AddDeclRef(Init->getMember());
-    } else {
-      Record->push_back(CTOR_INITIALIZER_INDIRECT_MEMBER);
-      AddDeclRef(Init->getIndirectMember());
-    }
-
-    AddSourceLocation(Init->getMemberLocation());
-    AddStmt(Init->getInit());
-    AddSourceLocation(Init->getLParenLoc());
-    AddSourceLocation(Init->getRParenLoc());
-    Record->push_back(Init->isWritten());
-    if (Init->isWritten()) {
-      Record->push_back(Init->getSourceOrder());
-    } else {
-      Record->push_back(Init->getNumArrayIndices());
-      for (unsigned i=0, e=Init->getNumArrayIndices(); i != e; ++i)
-        AddDeclRef(Init->getArrayIndex(i));
-    }
-  }
-}
-
-void ASTWriter::FlushCXXCtorInitializers() {
-  RecordData Record;
-
-  unsigned N = CXXCtorInitializersToWrite.size();
-  (void)N; // Silence unused warning in non-assert builds.
-  for (auto &Init : CXXCtorInitializersToWrite) {
-    Record.clear();
-
-    ASTRecordWriter Writer(*this, Record);
-    Writer.AddCXXCtorInitializers(Init.Inits.data(), Init.Inits.size());
-    uint64_t Offset = Writer.Emit(serialization::DECL_CXX_CTOR_INITIALIZERS);
-
-    // Record the offset of this mem-initializer list.
-    unsigned Index = Init.ID - 1;
-    if (Index == CXXCtorInitializersOffsets.size())
-      CXXCtorInitializersOffsets.push_back(Offset);
-    else {
-      if (Index > CXXCtorInitializersOffsets.size())
-        CXXCtorInitializersOffsets.resize(Index + 1);
-      CXXCtorInitializersOffsets[Index] = Offset;
-    }
-  }
-
-  assert(N == CXXCtorInitializersToWrite.size() &&
-         "added more ctor initializers while writing ctor initializers");
-  CXXCtorInitializersToWrite.clear();
+    ArrayRef<CXXCtorInitializer *> CtorInits) {
+  AddOffset(EmitCXXCtorInitializers(*Writer, CtorInits));
 }
 
 void ASTRecordWriter::AddCXXDefinitionData(const CXXRecordDecl *D) {
@@ -5586,13 +5492,12 @@ void ASTRecordWriter::AddCXXDefinitionData(const CXXRecordDecl *D) {
 
   Record->push_back(Data.NumBases);
   if (Data.NumBases > 0)
-    AddCXXBaseSpecifiersRef(Data.getBases(), Data.getBases() + Data.NumBases);
-  
+    AddCXXBaseSpecifiers(Data.bases());
+
   // FIXME: Make VBases lazily computed when needed to avoid storing them.
   Record->push_back(Data.NumVBases);
   if (Data.NumVBases > 0)
-    AddCXXBaseSpecifiersRef(Data.getVBases(),
-                            Data.getVBases() + Data.NumVBases);
+    AddCXXBaseSpecifiers(Data.vbases());
 
   AddUnresolvedSet(Data.Conversions.get(*Writer->Context));
   AddUnresolvedSet(Data.VisibleConversions.get(*Writer->Context));

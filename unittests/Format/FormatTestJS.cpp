@@ -136,6 +136,9 @@ TEST_F(FormatTestJS, ReservedWords) {
                "};");
   verifyFormat("var struct = 2;");
   verifyFormat("var union = 2;");
+  verifyFormat("var interface = 2;");
+  verifyFormat("interface = 2;");
+  verifyFormat("x = interface instanceof y;");
 }
 
 TEST_F(FormatTestJS, CppKeywords) {
@@ -686,6 +689,8 @@ TEST_F(FormatTestJS, AutomaticSemicolonInsertionHeuristic) {
   verifyFormat("x instanceof String", "x\n"
                                       "instanceof\n"
                                       "String");
+  verifyFormat("function f(@Foo bar) {}", "function f(@Foo\n"
+                                          "  bar) {}");
 }
 
 TEST_F(FormatTestJS, ClosureStyleCasts) {
@@ -934,8 +939,21 @@ TEST_F(FormatTestJS, MetadataAnnotations) {
                "    return 'y';\n"
                "  }\n"
                "}");
+  verifyFormat("class C {\n"
+               "  private x(@A x: string) {}\n"
+               "}");
   verifyFormat("class X {}\n"
                "class Y {}");
+}
+
+TEST_F(FormatTestJS, TypeAliases) {
+  verifyFormat("type X = number;\n"
+               "class C {}");
+  verifyFormat("type X<Y> = Z<Y>;");
+  verifyFormat("type X = {\n"
+               "  y: number\n"
+               "};\n"
+               "class C {}");
 }
 
 TEST_F(FormatTestJS, Modules) {
@@ -956,6 +974,10 @@ TEST_F(FormatTestJS, Modules) {
   verifyFormat("export function A() {}\n"
                "export default function B() {}\n"
                "export function C() {}");
+  verifyFormat("export default () => {\n"
+               "  let x = 1;\n"
+               "  return x;\n"
+               "}");
   verifyFormat("export const x = 12;");
   verifyFormat("export default class X {}");
   verifyFormat("export {X, Y} from 'some/module.js';");
@@ -1086,7 +1108,10 @@ TEST_F(FormatTestJS, TemplateStrings) {
                "var y;");
 }
 
-TEST_F(FormatTestJS, CastSyntax) { verifyFormat("var x = <type>foo;"); }
+TEST_F(FormatTestJS, CastSyntax) {
+  verifyFormat("var x = <type>foo;");
+  verifyFormat("var x = foo as type;");
+}
 
 TEST_F(FormatTestJS, TypeArguments) {
   verifyFormat("class X<Y> {}");

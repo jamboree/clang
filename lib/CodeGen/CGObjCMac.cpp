@@ -22,9 +22,9 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/StmtObjC.h"
-#include "clang/Basic/CodeGenOptions.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/CodeGen/CGFunctionInfo.h"
+#include "clang/Frontend/CodeGenOptions.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -2953,6 +2953,15 @@ llvm::Constant *CGObjCCommonMac::EmitPropertyList(Twine Name,
                                        const ObjCContainerDecl *OCD,
                                        const ObjCCommonTypesHelper &ObjCTypes,
                                        bool IsClassProperty) {
+  if (IsClassProperty) {
+    // Make this entry NULL for OS X with deployment target < 10.11, for iOS
+    // with deployment target < 9.0.
+    const llvm::Triple &Triple = CGM.getTarget().getTriple();
+    if ((Triple.isMacOSX() && Triple.isMacOSXVersionLT(10, 11)) ||
+        (Triple.isiOS() && Triple.isOSVersionLT(9)))
+      return llvm::Constant::getNullValue(ObjCTypes.PropertyListPtrTy);
+  }
+
   SmallVector<llvm::Constant *, 16> Properties;
   llvm::SmallPtrSet<const IdentifierInfo*, 16> PropertySet;
 

@@ -1855,8 +1855,7 @@ bool Sema::IsIntegralPromotion(Expr *From, QualType FromType, QualType ToType) {
         (FromType->isSignedIntegerType() ||
          // We can promote any unsigned integer type whose size is
          // less than int to an int.
-         (!FromType->isSignedIntegerType() &&
-          Context.getTypeSize(FromType) < Context.getTypeSize(ToType)))) {
+         Context.getTypeSize(FromType) < Context.getTypeSize(ToType))) {
       return To->getKind() == BuiltinType::Int;
     }
 
@@ -9534,11 +9533,8 @@ static void DiagnoseArityMismatch(Sema &S, OverloadCandidate *Cand,
 }
 
 static TemplateDecl *getDescribedTemplate(Decl *Templated) {
-  if (FunctionDecl *FD = dyn_cast<FunctionDecl>(Templated))
-    return FD->getDescribedFunctionTemplate();
-  else if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(Templated))
-    return RD->getDescribedClassTemplate();
-
+  if (TemplateDecl *TD = Templated->getDescribedTemplate())
+    return TD;
   llvm_unreachable("Unsupported: Getting the described template declaration"
                    " for bad deduction diagnosis");
 }

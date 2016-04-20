@@ -1115,7 +1115,7 @@ void Driver::BuildUniversalActions(Compilation &C, const ToolChain &TC,
 /// \brief Check that the file referenced by Value exists. If it doesn't,
 /// issue a diagnostic and return false.
 static bool DiagnoseInputExistence(const Driver &D, const DerivedArgList &Args,
-                                   StringRef Value) {
+                                   StringRef Value, types::ID Ty) {
   if (!D.getCheckInputsExist())
     return true;
 
@@ -1135,9 +1135,18 @@ static bool DiagnoseInputExistence(const Driver &D, const DerivedArgList &Args,
   if (llvm::sys::fs::exists(Twine(Path)))
     return true;
 
-  if (D.IsCLMode() && !llvm::sys::path::is_absolute(Twine(Path)) &&
-      llvm::sys::Process::FindInEnvPath("LIB", Value))
-    return true;
+  if (D.IsCLMode()) {
+    if (!llvm::sys::path::is_absolute(Twine(Path)) &&
+        llvm::sys::Process::FindInEnvPath("LIB", Value))
+      return true;
+
+    if (Args.hasArg(options::OPT__SLASH_link) && Ty == types::TY_Object) {
+      // Arguments to the /link flag might cause the linker to search for object
+      // and library files in paths we don't know about. Don't error in such
+      // cases.
+      return true;
+    }
+  }
 
   D.Diag(clang::diag::err_drv_no_such_file) << Path;
   return false;
@@ -1253,19 +1262,19 @@ void Driver::BuildInputs(const ToolChain &TC, DerivedArgList &Args,
         }
       }
 
-      if (DiagnoseInputExistence(*this, Args, Value))
+      if (DiagnoseInputExistence(*this, Args, Value, Ty))
         Inputs.push_back(std::make_pair(Ty, A));
 
     } else if (A->getOption().matches(options::OPT__SLASH_Tc)) {
       StringRef Value = A->getValue();
-      if (DiagnoseInputExistence(*this, Args, Value)) {
+      if (DiagnoseInputExistence(*this, Args, Value, types::TY_C)) {
         Arg *InputArg = MakeInputArg(Args, Opts, A->getValue());
         Inputs.push_back(std::make_pair(types::TY_C, InputArg));
       }
       A->claim();
     } else if (A->getOption().matches(options::OPT__SLASH_Tp)) {
       StringRef Value = A->getValue();
-      if (DiagnoseInputExistence(*this, Args, Value)) {
+      if (DiagnoseInputExistence(*this, Args, Value, types::TY_CXX)) {
         Arg *InputArg = MakeInputArg(Args, Opts, A->getValue());
         Inputs.push_back(std::make_pair(types::TY_CXX, InputArg));
       }
@@ -1307,11 +1316,17 @@ void Driver::BuildInputs(const ToolChain &TC, DerivedArgList &Args,
 static Action *buildCudaActions(Compilation &C, DerivedArgList &Args,
                                 const Arg *InputArg, Action *HostAction,
                                 ActionList &Actions) {
-  Arg *PartialCompilationArg = Args.getLastArg(options::OPT_cuda_host_only,
-                                               options::OPT_cuda_device_only);
-  // Host-only compilation case.
-  if (PartialCompilationArg &&
-      PartialCompilationArg->getOption().matches(options::OPT_cuda_host_only))
+  Arg *PartialCompilationArg = Args.getLastArg(
+      options::OPT_cuda_host_only, options::OPT_cuda_device_only,
+      options::OPT_cuda_compile_host_device);
+  bool CompileHostOnly =
+      PartialCompilationArg &&
+      PartialCompilationArg->getOption().matches(options::OPT_cuda_host_only);
+  bool CompileDeviceOnly =
+      PartialCompilationArg &&
+      PartialCompilationArg->getOption().matches(options::OPT_cuda_device_only);
+
+  if (CompileHostOnly)
     return C.MakeAction<CudaHostAction>(HostAction, ActionList());
 
   // Collect all cuda_gpu_arch parameters, removing duplicates.
@@ -1355,15 +1370,14 @@ static Action *buildCudaActions(Compilation &C, DerivedArgList &Args,
 
   // Figure out what to do with device actions -- pass them as inputs to the
   // host action or run each of them independently.
-  bool DeviceOnlyCompilation = PartialCompilationArg != nullptr;
-  if (PartialCompilation || DeviceOnlyCompilation) {
+  if (PartialCompilation || CompileDeviceOnly) {
     // In case of partial or device-only compilation results of device actions
     // are not consumed by the host action device actions have to be added to
     // top-level actions list with AtTopLevel=true and run independently.
 
     // -o is ambiguous if we have more than one top-level action.
     if (Args.hasArg(options::OPT_o) &&
-        (!DeviceOnlyCompilation || GpuArchList.size() > 1)) {
+        (!CompileDeviceOnly || GpuArchList.size() > 1)) {
       C.getDriver().Diag(
           clang::diag::err_drv_output_argument_with_multiple_files);
       return nullptr;
@@ -1374,7 +1388,7 @@ static Action *buildCudaActions(Compilation &C, DerivedArgList &Args,
                                                        GpuArchList[I],
                                                        /* AtTopLevel */ true));
     // Kill host action in case of device-only compilation.
-    if (DeviceOnlyCompilation)
+    if (CompileDeviceOnly)
       return nullptr;
     return HostAction;
   }
@@ -1638,9 +1652,10 @@ void Driver::BuildActions(Compilation &C, DerivedArgList &Args,
   // Claim ignored clang-cl options.
   Args.ClaimAllArgs(options::OPT_cl_ignored_Group);
 
-  // Claim --cuda-host-only arg which may be passed to non-CUDA
-  // compilations and should not trigger warnings there.
+  // Claim --cuda-host-only and --cuda-compile-host-device, which may be passed
+  // to non-CUDA compilations and should not trigger warnings there.
   Args.ClaimAllArgs(options::OPT_cuda_host_only);
+  Args.ClaimAllArgs(options::OPT_cuda_compile_host_device);
 }
 
 Action *Driver::ConstructPhaseAction(Compilation &C, const ArgList &Args,

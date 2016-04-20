@@ -2228,8 +2228,10 @@ InitListChecker::CheckDesignatedInitializer(const InitializedEntity &Entity,
     for (auto *FI : RT->getDecl()->fields()) {
       if (FI->isUnnamedBitfield())
         continue;
-      if (KnownField == FI)
+      if (declaresSameEntity(KnownField, FI)) {
+        KnownField = FI;
         break;
+      }
       ++FieldIndex;
     }
 
@@ -2242,7 +2244,7 @@ InitListChecker::CheckDesignatedInitializer(const InitializedEntity &Entity,
       FieldIndex = 0;
       if (!VerifyOnly) {
         FieldDecl *CurrentField = StructuredList->getInitializedFieldInUnion();
-        if (CurrentField && CurrentField != *Field) {
+        if (CurrentField && !declaresSameEntity(CurrentField, *Field)) {
           assert(StructuredList->getNumInits() == 1
                  && "A union should never have more than one initializer!");
 

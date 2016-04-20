@@ -803,7 +803,12 @@ arm::FloatABI arm::getARMFloatABI(const ToolChain &TC, const ArgList &Args) {
         break;
       default:
         // Assume "soft", but warn the user we are guessing.
-        ABI = FloatABI::Soft;
+        if (Triple.isOSBinFormatMachO() &&
+            Triple.getSubArch() == llvm::Triple::ARMSubArch_v7em)
+          ABI = FloatABI::Hard;
+        else
+          ABI = FloatABI::Soft;
+
         if (Triple.getOS() != llvm::Triple::UnknownOS ||
             !Triple.isOSBinFormatMachO())
           D.Diag(diag::warn_drv_assuming_mfloat_abi_is) << "soft";
@@ -2391,6 +2396,22 @@ static void getWebAssemblyTargetFeatures(const ArgList &Args,
   handleTargetFeaturesGroup(Args, Features, options::OPT_m_wasm_Features_Group);
 }
 
+static void getAMDGPUTargetFeatures(const Driver &D, const ArgList &Args,
+                                    std::vector<const char *> &Features) {
+  if (const Arg *dAbi = Args.getLastArg(options::OPT_mamdgpu_debugger_abi)) {
+    StringRef value = dAbi->getValue();
+    if (value == "1.0") {
+      Features.push_back("+amdgpu-debugger-insert-nops");
+      Features.push_back("+amdgpu-debugger-reserve-trap-regs");
+    } else {
+      D.Diag(diag::err_drv_clang_unsupported) << dAbi->getAsString(Args);
+    }
+  }
+
+  handleTargetFeaturesGroup(
+    Args, Features, options::OPT_m_amdgpu_Features_Group);
+}
+
 static void getTargetFeatures(const ToolChain &TC, const llvm::Triple &Triple,
                               const ArgList &Args, ArgStringList &CmdArgs,
                               bool ForAS) {
@@ -2435,6 +2456,10 @@ static void getTargetFeatures(const ToolChain &TC, const llvm::Triple &Triple,
   case llvm::Triple::wasm32:
   case llvm::Triple::wasm64:
     getWebAssemblyTargetFeatures(Args, Features);
+    break;
+  case llvm::Triple::r600:
+  case llvm::Triple::amdgcn:
+    getAMDGPUTargetFeatures(D, Args, Features);
     break;
   }
 
@@ -4878,15 +4903,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   // -stack-protector=0 is default.
   unsigned StackProtectorLevel = 0;
-  if (getToolChain().getSanitizerArgs().needsSafeStackRt()) {
-    Args.ClaimAllArgs(options::OPT_fno_stack_protector);
-    Args.ClaimAllArgs(options::OPT_fstack_protector_all);
-    Args.ClaimAllArgs(options::OPT_fstack_protector_strong);
-    Args.ClaimAllArgs(options::OPT_fstack_protector);
-  } else if (Arg *A = Args.getLastArg(options::OPT_fno_stack_protector,
-                                      options::OPT_fstack_protector_all,
-                                      options::OPT_fstack_protector_strong,
-                                      options::OPT_fstack_protector)) {
+  if (Arg *A = Args.getLastArg(options::OPT_fno_stack_protector,
+                               options::OPT_fstack_protector_all,
+                               options::OPT_fstack_protector_strong,
+                               options::OPT_fstack_protector)) {
     if (A->getOption().matches(options::OPT_fstack_protector)) {
       StackProtectorLevel = std::max<unsigned>(
           LangOptions::SSPOn,
@@ -6207,24 +6227,28 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
 
   // Forward -g and handle debug info related flags, assuming we are dealing
   // with an actual assembly file.
+  bool WantDebug = false;
+  unsigned DwarfVersion = 0;
+  Args.ClaimAllArgs(options::OPT_g_Group);
+  if (Arg *A = Args.getLastArg(options::OPT_g_Group)) {
+    WantDebug = !A->getOption().matches(options::OPT_g0) &&
+                !A->getOption().matches(options::OPT_ggdb0);
+    if (WantDebug)
+      DwarfVersion = DwarfVersionNum(A->getSpelling());
+  }
+  if (DwarfVersion == 0)
+    DwarfVersion = getToolChain().GetDefaultDwarfVersion();
+
+  codegenoptions::DebugInfoKind DebugInfoKind = codegenoptions::NoDebugInfo;
+
   if (SourceAction->getType() == types::TY_Asm ||
       SourceAction->getType() == types::TY_PP_Asm) {
-    bool WantDebug = false;
-    unsigned DwarfVersion = 0;
-    Args.ClaimAllArgs(options::OPT_g_Group);
-    if (Arg *A = Args.getLastArg(options::OPT_g_Group)) {
-      WantDebug = !A->getOption().matches(options::OPT_g0) &&
-        !A->getOption().matches(options::OPT_ggdb0);
-      if (WantDebug)
-        DwarfVersion = DwarfVersionNum(A->getSpelling());
-    }
-    if (DwarfVersion == 0)
-      DwarfVersion = getToolChain().GetDefaultDwarfVersion();
-    RenderDebugEnablingArgs(Args, CmdArgs,
-                            (WantDebug ? codegenoptions::LimitedDebugInfo
-                                       : codegenoptions::NoDebugInfo),
-                            DwarfVersion, llvm::DebuggerKind::Default);
-
+    // You might think that it would be ok to set DebugInfoKind outside of
+    // the guard for source type, however there is a test which asserts
+    // that some assembler invocation receives no -debug-info-kind,
+    // and it's not clear whether that test is just overly restrictive.
+    DebugInfoKind = (WantDebug ? codegenoptions::LimitedDebugInfo
+                               : codegenoptions::NoDebugInfo);
     // Add the -fdebug-compilation-dir flag if needed.
     addDebugCompDirArg(Args, CmdArgs);
 
@@ -6237,6 +6261,8 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
     // And pass along -I options
     Args.AddAllArgs(CmdArgs, options::OPT_I);
   }
+  RenderDebugEnablingArgs(Args, CmdArgs, DebugInfoKind, DwarfVersion,
+                          llvm::DebuggerKind::Default);
 
   // Handle -fPIC et al -- the relocation-model affects the assembler
   // for some targets.
@@ -8202,12 +8228,12 @@ void freebsd::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   if (IsPIE)
     CmdArgs.push_back("-pie");
 
+  CmdArgs.push_back("--eh-frame-hdr");
   if (Args.hasArg(options::OPT_static)) {
     CmdArgs.push_back("-Bstatic");
   } else {
     if (Args.hasArg(options::OPT_rdynamic))
       CmdArgs.push_back("-export-dynamic");
-    CmdArgs.push_back("--eh-frame-hdr");
     if (Args.hasArg(options::OPT_shared)) {
       CmdArgs.push_back("-Bshareable");
     } else {
@@ -10936,7 +10962,8 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
 
   ArgStringList CmdArgs;
   CmdArgs.push_back(TC.getTriple().isArch64Bit() ? "-m64" : "-m32");
-  if (Args.getLastArg(options::OPT_cuda_noopt_device_debug)) {
+  if (Args.hasFlag(options::OPT_cuda_noopt_device_debug,
+                   options::OPT_no_cuda_noopt_device_debug, false)) {
     // ptxas does not accept -g option if optimization is enabled, so
     // we ignore the compiler's -O* options if we want debug info.
     CmdArgs.push_back("-g");
