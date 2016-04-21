@@ -94,19 +94,25 @@ Stmt *AnalysisDeclContext::getBody(bool &IsAutosynthesized) const {
   IsAutosynthesized = false;
   if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
     Stmt *Body = FD->getBody();
-    if (!Body && Manager && Manager->synthesizeBodies()) {
-      Body = getBodyFarm(getASTContext(), Manager->Injector.get()).getBody(FD);
-      if (Body)
+    if (Manager && Manager->synthesizeBodies()) {
+      Stmt *SynthesizedBody =
+          getBodyFarm(getASTContext(), Manager->Injector.get()).getBody(FD);
+      if (SynthesizedBody) {
+        Body = SynthesizedBody;
         IsAutosynthesized = true;
+      }
     }
     return Body;
   }
   else if (const ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(D)) {
     Stmt *Body = MD->getBody();
-    if (!Body && Manager && Manager->synthesizeBodies()) {
-      Body = getBodyFarm(getASTContext(), Manager->Injector.get()).getBody(MD);
-      if (Body)
+    if (Manager && Manager->synthesizeBodies()) {
+      Stmt *SynthesizedBody =
+          getBodyFarm(getASTContext(), Manager->Injector.get()).getBody(MD);
+      if (SynthesizedBody) {
+        Body = SynthesizedBody;
         IsAutosynthesized = true;
+      }
     }
     return Body;
   } else if (const BlockDecl *BD = dyn_cast<BlockDecl>(D))
@@ -135,6 +141,10 @@ bool AnalysisDeclContext::isBodyAutosynthesizedFromModelFile() const {
   return Tmp && Body->getLocStart().isValid();
 }
 
+/// Returns true if \param VD is an Objective-C implicit 'self' parameter.
+static bool isSelfDecl(const VarDecl *VD) {
+  return isa<ImplicitParamDecl>(VD) && VD->getName() == "self";
+}
 
 const ImplicitParamDecl *AnalysisDeclContext::getSelfDecl() const {
   if (const ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(D))
@@ -143,7 +153,7 @@ const ImplicitParamDecl *AnalysisDeclContext::getSelfDecl() const {
     // See if 'self' was captured by the block.
     for (const auto &I : BD->captures()) {
       const VarDecl *VD = I.getVariable();
-      if (VD->getName() == "self")
+      if (isSelfDecl(VD))
         return dyn_cast<ImplicitParamDecl>(VD);
     }    
   }
@@ -161,7 +171,7 @@ const ImplicitParamDecl *AnalysisDeclContext::getSelfDecl() const {
       continue;
 
     VarDecl *VD = LC.getCapturedVar();
-    if (VD->getName() == "self")
+    if (isSelfDecl(VD))
       return dyn_cast<ImplicitParamDecl>(VD);
   }
 

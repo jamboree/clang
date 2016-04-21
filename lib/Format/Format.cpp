@@ -22,6 +22,7 @@
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/SourceManager.h"
+#include "clang/Basic/VirtualFileSystem.h"
 #include "clang/Lex/Lexer.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Allocator.h"
@@ -68,6 +69,16 @@ template <> struct ScalarEnumerationTraits<FormatStyle::UseTabStyle> {
     IO.enumCase(Value, "Always", FormatStyle::UT_Always);
     IO.enumCase(Value, "true", FormatStyle::UT_Always);
     IO.enumCase(Value, "ForIndentation", FormatStyle::UT_ForIndentation);
+    IO.enumCase(Value, "ForContinuationAndIndentation",
+                FormatStyle::UT_ForContinuationAndIndentation);
+  }
+};
+
+template <> struct ScalarEnumerationTraits<FormatStyle::JavaScriptQuoteStyle> {
+  static void enumeration(IO &IO, FormatStyle::JavaScriptQuoteStyle &Value) {
+    IO.enumCase(Value, "Leave", FormatStyle::JSQS_Leave);
+    IO.enumCase(Value, "Single", FormatStyle::JSQS_Single);
+    IO.enumCase(Value, "Double", FormatStyle::JSQS_Double);
   }
 };
 
@@ -292,6 +303,7 @@ template <> struct MappingTraits<FormatStyle> {
                    Style.ExperimentalAutoDetectBinPacking);
     IO.mapOptional("ForEachMacros", Style.ForEachMacros);
     IO.mapOptional("IncludeCategories", Style.IncludeCategories);
+    IO.mapOptional("IncludeIsMainRegex", Style.IncludeIsMainRegex);
     IO.mapOptional("IndentCaseLabels", Style.IndentCaseLabels);
     IO.mapOptional("IndentWidth", Style.IndentWidth);
     IO.mapOptional("IndentWrappedFunctionNames",
@@ -335,6 +347,7 @@ template <> struct MappingTraits<FormatStyle> {
     IO.mapOptional("Standard", Style.Standard);
     IO.mapOptional("TabWidth", Style.TabWidth);
     IO.mapOptional("UseTab", Style.UseTab);
+    IO.mapOptional("JavaScriptQuotes", Style.JavaScriptQuotes);
   }
 };
 
@@ -508,6 +521,7 @@ FormatStyle getLLVMStyle() {
   LLVMStyle.IncludeCategories = {{"^\"(llvm|llvm-c|clang|clang-c)/", 2},
                                  {"^(<|\"(gtest|isl|json)/)", 3},
                                  {".*", 1}};
+  LLVMStyle.IncludeIsMainRegex = "$";
   LLVMStyle.IndentCaseLabels = false;
   LLVMStyle.IndentWrappedFunctionNames = false;
   LLVMStyle.IndentWidth = 2;
@@ -522,6 +536,7 @@ FormatStyle getLLVMStyle() {
   LLVMStyle.SpacesBeforeTrailingComments = 1;
   LLVMStyle.Standard = FormatStyle::LS_Cpp11;
   LLVMStyle.UseTab = FormatStyle::UT_Never;
+  LLVMStyle.JavaScriptQuotes = FormatStyle::JSQS_Leave;
   LLVMStyle.ReflowComments = true;
   LLVMStyle.SpacesInParentheses = false;
   LLVMStyle.SpacesInSquareBrackets = false;
@@ -559,6 +574,7 @@ FormatStyle getGoogleStyle(FormatStyle::LanguageKind Language) {
   GoogleStyle.ConstructorInitializerAllOnOneLineOrOnePerLine = true;
   GoogleStyle.DerivePointerAlignment = true;
   GoogleStyle.IncludeCategories = {{"^<.*\\.h>", 1}, {"^<.*", 2}, {".*", 3}};
+  GoogleStyle.IncludeIsMainRegex = "([-_](test|unittest))?$";
   GoogleStyle.IndentCaseLabels = true;
   GoogleStyle.KeepEmptyLinesAtTheStartOfBlocks = false;
   GoogleStyle.ObjCSpaceAfterProperty = false;
@@ -587,9 +603,10 @@ FormatStyle getGoogleStyle(FormatStyle::LanguageKind Language) {
     GoogleStyle.AllowShortFunctionsOnASingleLine = FormatStyle::SFS_Inline;
     GoogleStyle.AlwaysBreakBeforeMultilineStrings = false;
     GoogleStyle.BreakBeforeTernaryOperators = false;
-    GoogleStyle.CommentPragmas = "@(export|see|visibility) ";
+    GoogleStyle.CommentPragmas = "@(export|return|see|visibility) ";
     GoogleStyle.MaxEmptyLinesToKeep = 3;
     GoogleStyle.SpacesInContainerLiterals = false;
+    GoogleStyle.JavaScriptQuotes = FormatStyle::JSQS_Single;
   } else if (Language == FormatStyle::LK_Proto) {
     GoogleStyle.AllowShortFunctionsOnASingleLine = FormatStyle::SFS_None;
     GoogleStyle.SpacesInContainerLiterals = false;
@@ -1382,8 +1399,13 @@ private:
         Tok.IsUnterminatedLiteral = true;
       } else if (Style.Language == FormatStyle::LK_JavaScript &&
                  Tok.TokenText == "''") {
-        Tok.Tok.setKind(tok::char_constant);
+        Tok.Tok.setKind(tok::string_literal);
       }
+    }
+
+    if (Style.Language == FormatStyle::LK_JavaScript &&
+        Tok.is(tok::char_constant)) {
+      Tok.Tok.setKind(tok::string_literal);
     }
 
     if (Tok.is(tok::comment) && (Tok.TokenText == "// clang-format on" ||
@@ -1457,7 +1479,7 @@ public:
         AnnotatedLines.push_back(new AnnotatedLine(UnwrappedLines[Run][i]));
       }
       tooling::Replacements RunResult =
-          format(AnnotatedLines, Tokens, IncompleteFormat);
+          format(AnnotatedLines, Tokens, Result, IncompleteFormat);
       DEBUG({
         llvm::dbgs() << "Replacements for run " << Run << ":\n";
         for (tooling::Replacements::iterator I = RunResult.begin(),
@@ -1477,16 +1499,21 @@ public:
 
   tooling::Replacements format(SmallVectorImpl<AnnotatedLine *> &AnnotatedLines,
                                FormatTokenLexer &Tokens,
+                               tooling::Replacements &Result,
                                bool *IncompleteFormat) {
     TokenAnnotator Annotator(Style, Tokens.getKeywords());
     for (unsigned i = 0, e = AnnotatedLines.size(); i != e; ++i) {
       Annotator.annotate(*AnnotatedLines[i]);
     }
     deriveLocalStyle(AnnotatedLines);
+    computeAffectedLines(AnnotatedLines.begin(), AnnotatedLines.end());
+    if (Style.Language == FormatStyle::LK_JavaScript &&
+        Style.JavaScriptQuotes != FormatStyle::JSQS_Leave)
+      requoteJSStringLiteral(AnnotatedLines, Result);
+
     for (unsigned i = 0, e = AnnotatedLines.size(); i != e; ++i) {
       Annotator.calculateFormattingInformation(*AnnotatedLines[i]);
     }
-    computeAffectedLines(AnnotatedLines.begin(), AnnotatedLines.end());
 
     Annotator.setCommentLineLevels(AnnotatedLines);
     ContinuationIndenter Indenter(Style, Tokens.getKeywords(), SourceMgr,
@@ -1537,6 +1564,83 @@ private:
     }
     return SomeLineAffected;
   }
+ 
+  // If the last token is a double/single-quoted string literal, generates a
+  // replacement with a single/double quoted string literal, re-escaping the
+  // contents in the process.
+  void requoteJSStringLiteral(SmallVectorImpl<AnnotatedLine *> &Lines,
+                                 tooling::Replacements &Result) {
+    for (AnnotatedLine *Line : Lines) {
+      requoteJSStringLiteral(Line->Children, Result);
+      if (!Line->Affected)
+        continue;
+      for (FormatToken *FormatTok = Line->First; FormatTok;
+           FormatTok = FormatTok->Next) {
+        StringRef Input = FormatTok->TokenText;
+        if (!FormatTok->isStringLiteral() ||
+            // NB: testing for not starting with a double quote to avoid
+            // breaking
+            // `template strings`.
+            (Style.JavaScriptQuotes == FormatStyle::JSQS_Single &&
+             !Input.startswith("\"")) ||
+            (Style.JavaScriptQuotes == FormatStyle::JSQS_Double &&
+             !Input.startswith("\'")))
+          continue;
+
+        // Change start and end quote.
+        bool IsSingle = Style.JavaScriptQuotes == FormatStyle::JSQS_Single;
+        SourceLocation Start = FormatTok->Tok.getLocation();
+        auto Replace = [&](SourceLocation Start, unsigned Length,
+                           StringRef ReplacementText) {
+          Result.insert(
+              tooling::Replacement(SourceMgr, Start, Length, ReplacementText));
+        };
+        Replace(Start, 1, IsSingle ? "'" : "\"");
+        Replace(FormatTok->Tok.getEndLoc().getLocWithOffset(-1), 1,
+                IsSingle ? "'" : "\"");
+
+        // Escape internal quotes.
+        size_t ColumnWidth = FormatTok->TokenText.size();
+        bool Escaped = false;
+        for (size_t i = 1; i < Input.size() - 1; i++) {
+          switch (Input[i]) {
+            case '\\':
+              if (!Escaped && i + 1 < Input.size() &&
+                  ((IsSingle && Input[i + 1] == '"') ||
+                   (!IsSingle && Input[i + 1] == '\''))) {
+                // Remove this \, it's escaping a " or ' that no longer needs
+                // escaping
+                ColumnWidth--;
+                Replace(Start.getLocWithOffset(i), 1, "");
+                continue;
+              }
+              Escaped = !Escaped;
+              break;
+            case '\"':
+            case '\'':
+              if (!Escaped && IsSingle == (Input[i] == '\'')) {
+                // Escape the quote.
+                Replace(Start.getLocWithOffset(i), 0, "\\");
+                ColumnWidth++;
+              }
+              Escaped = false;
+              break;
+            default:
+              Escaped = false;
+              break;
+          }
+        }
+
+        // For formatting, count the number of non-escaped single quotes in them
+        // and adjust ColumnWidth to take the added escapes into account.
+        // FIXME(martinprobst): this might conflict with code breaking a long string
+        // literal (which clang-format doesn't do, yet). For that to work, this code
+        // would have to modify TokenText directly.
+        FormatTok->ColumnWidth = ColumnWidth;
+      }
+    }
+  }
+
 
   // Determines whether 'Line' is affected by the SourceRanges given as input.
   // Returns \c true if line or one if its children is affected.
@@ -1756,10 +1860,11 @@ static void sortIncludes(const FormatStyle &Style,
   SmallVector<unsigned, 16> Indices;
   for (unsigned i = 0, e = Includes.size(); i != e; ++i)
     Indices.push_back(i);
-  std::sort(Indices.begin(), Indices.end(), [&](unsigned LHSI, unsigned RHSI) {
-    return std::tie(Includes[LHSI].Category, Includes[LHSI].Filename) <
-           std::tie(Includes[RHSI].Category, Includes[RHSI].Filename);
-  });
+  std::stable_sort(
+      Indices.begin(), Indices.end(), [&](unsigned LHSI, unsigned RHSI) {
+        return std::tie(Includes[LHSI].Category, Includes[LHSI].Filename) <
+               std::tie(Includes[RHSI].Category, Includes[RHSI].Filename);
+      });
 
   // If the #includes are out of order, we generate a single replacement fixing
   // the entire block. Otherwise, no replacement is generated.
@@ -1862,8 +1967,12 @@ tooling::Replacements sortIncludes(const FormatStyle &Style, StringRef Code,
           StringRef HeaderStem =
               llvm::sys::path::stem(IncludeName.drop_front(1).drop_back(1));
           if (FileStem.startswith(HeaderStem)) {
-            Category = 0;
-            MainIncludeFound = true;
+            llvm::Regex MainIncludeRegex(
+                (HeaderStem + Style.IncludeIsMainRegex).str());
+            if (MainIncludeRegex.match(FileStem)) {
+              Category = 0;
+              MainIncludeFound = true;
+            }
           }
         }
         IncludesInBlock.push_back({IncludeName, Line, Prev, Category});
@@ -1882,6 +1991,25 @@ tooling::Replacements sortIncludes(const FormatStyle &Style, StringRef Code,
   if (!IncludesInBlock.empty())
     sortIncludes(Style, IncludesInBlock, Ranges, FileName, Replaces, Cursor);
   return Replaces;
+}
+
+tooling::Replacements formatReplacements(StringRef Code,
+                                         const tooling::Replacements &Replaces,
+                                         const FormatStyle &Style) {
+  if (Replaces.empty())
+    return tooling::Replacements();
+
+  std::string NewCode = applyAllReplacements(Code, Replaces);
+  std::vector<tooling::Range> ChangedRanges =
+      tooling::calculateChangedRanges(Replaces);
+  StringRef FileName = Replaces.begin()->getFilePath();
+  tooling::Replacements FormatReplaces =
+      reformat(Style, NewCode, ChangedRanges, FileName);
+
+  tooling::Replacements MergedReplacements =
+      mergeReplacements(Replaces, FormatReplaces);
+
+  return MergedReplacements;
 }
 
 tooling::Replacements reformat(const FormatStyle &Style,
@@ -1964,7 +2092,10 @@ static FormatStyle::LanguageKind getLanguageByFileName(StringRef FileName) {
 }
 
 FormatStyle getStyle(StringRef StyleName, StringRef FileName,
-                     StringRef FallbackStyle) {
+                     StringRef FallbackStyle, vfs::FileSystem *FS) {
+  if (!FS) {
+    FS = vfs::getRealFileSystem().get();
+  }
   FormatStyle Style = getLLVMStyle();
   Style.Language = getLanguageByFileName(FileName);
   if (!getPredefinedStyle(FallbackStyle, Style.Language, &Style)) {
@@ -1995,28 +2126,34 @@ FormatStyle getStyle(StringRef StyleName, StringRef FileName,
   llvm::sys::fs::make_absolute(Path);
   for (StringRef Directory = Path; !Directory.empty();
        Directory = llvm::sys::path::parent_path(Directory)) {
-    if (!llvm::sys::fs::is_directory(Directory))
+
+    auto Status = FS->status(Directory);
+    if (!Status ||
+        Status->getType() != llvm::sys::fs::file_type::directory_file) {
       continue;
+    }
+
     SmallString<128> ConfigFile(Directory);
 
     llvm::sys::path::append(ConfigFile, ".clang-format");
     DEBUG(llvm::dbgs() << "Trying " << ConfigFile << "...\n");
-    bool IsFile = false;
-    // Ignore errors from is_regular_file: we only need to know if we can read
-    // the file or not.
-    llvm::sys::fs::is_regular_file(Twine(ConfigFile), IsFile);
 
+    Status = FS->status(ConfigFile.str());
+    bool IsFile =
+        Status && (Status->getType() == llvm::sys::fs::file_type::regular_file);
     if (!IsFile) {
       // Try _clang-format too, since dotfiles are not commonly used on Windows.
       ConfigFile = Directory;
       llvm::sys::path::append(ConfigFile, "_clang-format");
       DEBUG(llvm::dbgs() << "Trying " << ConfigFile << "...\n");
-      llvm::sys::fs::is_regular_file(Twine(ConfigFile), IsFile);
+      Status = FS->status(ConfigFile.str());
+      IsFile = Status &&
+               (Status->getType() == llvm::sys::fs::file_type::regular_file);
     }
 
     if (IsFile) {
       llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> Text =
-          llvm::MemoryBuffer::getFile(ConfigFile.c_str());
+          FS->getBufferForFile(ConfigFile.str());
       if (std::error_code EC = Text.getError()) {
         llvm::errs() << EC.message() << "\n";
         break;

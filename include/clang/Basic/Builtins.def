@@ -377,6 +377,11 @@ BUILTIN(__builtin_signbit, "i.", "Fnc")
 BUILTIN(__builtin_signbitf, "if", "Fnc")
 BUILTIN(__builtin_signbitl, "iLd", "Fnc")
 
+// Special FP builtins.
+BUILTIN(__builtin_canonicalize, "dd", "nc")
+BUILTIN(__builtin_canonicalizef, "ff", "nc")
+BUILTIN(__builtin_canonicalizel, "LdLd", "nc")
+
 // Builtins for arithmetic.
 BUILTIN(__builtin_clzs , "iUs"  , "nc")
 BUILTIN(__builtin_clz  , "iUi"  , "nc")
@@ -404,6 +409,7 @@ BUILTIN(__builtin_bswap16, "UsUs", "nc")
 BUILTIN(__builtin_bswap32, "UiUi", "nc")
 BUILTIN(__builtin_bswap64, "ULLiULLi", "nc")
 
+BUILTIN(__builtin_bitreverse8, "UcUc", "nc")
 BUILTIN(__builtin_bitreverse16, "UsUs", "nc")
 BUILTIN(__builtin_bitreverse32, "UiUi", "nc")
 BUILTIN(__builtin_bitreverse64, "ULLiULLi", "nc")

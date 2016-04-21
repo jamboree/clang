@@ -607,6 +607,8 @@ llvm::Constant *CodeGenVTables::CreateVTableInitializer(
             llvm::FunctionType::get(CGM.VoidTy, /*isVarArg=*/false);
           StringRef PureCallName = CGM.getCXXABI().GetPureVirtualCallName();
           PureVirtualFn = CGM.CreateRuntimeFunction(Ty, PureCallName);
+          if (auto *F = dyn_cast<llvm::Function>(PureVirtualFn))
+            F->setUnnamedAddr(true);
           PureVirtualFn = llvm::ConstantExpr::getBitCast(PureVirtualFn,
                                                          CGM.Int8PtrTy);
         }
@@ -618,6 +620,8 @@ llvm::Constant *CodeGenVTables::CreateVTableInitializer(
           StringRef DeletedCallName =
             CGM.getCXXABI().GetDeletedVirtualCallName();
           DeletedVirtualFn = CGM.CreateRuntimeFunction(Ty, DeletedCallName);
+          if (auto *F = dyn_cast<llvm::Function>(DeletedVirtualFn))
+            F->setUnnamedAddr(true);
           DeletedVirtualFn = llvm::ConstantExpr::getBitCast(DeletedVirtualFn,
                                                          CGM.Int8PtrTy);
         }
@@ -898,21 +902,34 @@ void CodeGenModule::EmitDeferredVTables() {
   DeferredVTables.clear();
 }
 
-bool CodeGenModule::IsCFIBlacklistedRecord(const CXXRecordDecl *RD) {
-  if (RD->hasAttr<UuidAttr>() &&
-      getContext().getSanitizerBlacklist().isBlacklistedType("attr:uuid"))
-    return true;
+bool CodeGenModule::NeedVTableBitSets() {
+  return getCodeGenOpts().WholeProgramVTables ||
+         getLangOpts().Sanitize.has(SanitizerKind::CFIVCall) ||
+         getLangOpts().Sanitize.has(SanitizerKind::CFINVCall) ||
+         getLangOpts().Sanitize.has(SanitizerKind::CFIDerivedCast) ||
+         getLangOpts().Sanitize.has(SanitizerKind::CFIUnrelatedCast);
+}
 
-  return getContext().getSanitizerBlacklist().isBlacklistedType(
-      RD->getQualifiedNameAsString());
+bool CodeGenModule::IsBitSetBlacklistedRecord(const CXXRecordDecl *RD) {
+  std::string TypeName = RD->getQualifiedNameAsString();
+  auto isInBlacklist = [&](const SanitizerBlacklist &BL) {
+    if (RD->hasAttr<UuidAttr>() && BL.isBlacklistedType("attr:uuid"))
+      return true;
+
+    return BL.isBlacklistedType(TypeName);
+  };
+
+  return isInBlacklist(WholeProgramVTablesBlacklist) ||
+         ((LangOpts.Sanitize.has(SanitizerKind::CFIVCall) ||
+           LangOpts.Sanitize.has(SanitizerKind::CFINVCall) ||
+           LangOpts.Sanitize.has(SanitizerKind::CFIDerivedCast) ||
+           LangOpts.Sanitize.has(SanitizerKind::CFIUnrelatedCast)) &&
+          isInBlacklist(getContext().getSanitizerBlacklist()));
 }
 
 void CodeGenModule::EmitVTableBitSetEntries(llvm::GlobalVariable *VTable,
                                             const VTableLayout &VTLayout) {
-  if (!LangOpts.Sanitize.has(SanitizerKind::CFIVCall) &&
-      !LangOpts.Sanitize.has(SanitizerKind::CFINVCall) &&
-      !LangOpts.Sanitize.has(SanitizerKind::CFIDerivedCast) &&
-      !LangOpts.Sanitize.has(SanitizerKind::CFIUnrelatedCast))
+  if (!NeedVTableBitSets())
     return;
 
   CharUnits PointerWidth =
@@ -922,7 +939,7 @@ void CodeGenModule::EmitVTableBitSetEntries(llvm::GlobalVariable *VTable,
   std::vector<BSEntry> BitsetEntries;
   // Create a bit set entry for each address point.
   for (auto &&AP : VTLayout.getAddressPoints()) {
-    if (IsCFIBlacklistedRecord(AP.first.getBase()))
+    if (IsBitSetBlacklistedRecord(AP.first.getBase()))
       continue;
 
     BitsetEntries.push_back(std::make_pair(AP.first.getBase(), AP.second));

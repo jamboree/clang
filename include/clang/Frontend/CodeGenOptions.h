@@ -80,9 +80,10 @@ public:
   };
 
   enum ProfileInstrKind {
-    ProfileNoInstr,    // No instrumentation.
-    ProfileClangInstr  // Clang instrumentation to generate execution counts
+    ProfileNone,       // Profile instrumentation is turned off.
+    ProfileClangInstr, // Clang instrumentation to generate execution counts
                        // to use with PGO.
+    ProfileIRInstr,    // IR level PGO instrumentation in LLVM.
   };
 
   /// The code model to use (-mcmodel).
@@ -152,14 +153,11 @@ public:
   std::string SampleProfileFile;
 
   /// Name of the profile file to use as input for -fprofile-instr-use
-  std::string InstrProfileInput;
+  std::string ProfileInstrumentUsePath;
 
   /// Name of the function summary index file to use for ThinLTO function
   /// importing.
   std::string ThinLTOIndexFile;
-
-  /// The EABI version to use
-  std::string EABIVersion;
 
   /// A list of file names passed with -fcuda-include-gpubinary options to
   /// forward to CUDA runtime back-end for incorporating them into host-side
@@ -201,6 +199,9 @@ public:
   /// \brief A list of all -fno-builtin-* function names (e.g., memset).
   std::vector<std::string> NoBuiltinFuncs;
 
+  /// List of blacklist files for the whole-program vtable optimization feature.
+  std::vector<std::string> WholeProgramVTablesBlacklistFiles;
+
 public:
   // Define accessors/mutators for code generation options of enumeration type.
 #define CODEGENOPT(Name, Bits, Default)
@@ -222,6 +223,21 @@ public:
   /// \brief Check if Clang profile instrumenation is on.
   bool hasProfileClangInstr() const {
     return getProfileInstr() == ProfileClangInstr;
+  }
+
+  /// \brief Check if IR level profile instrumentation is on.
+  bool hasProfileIRInstr() const {
+    return getProfileInstr() == ProfileIRInstr;
+  }
+
+  /// \brief Check if Clang profile use is on.
+  bool hasProfileClangUse() const {
+    return getProfileUse() == ProfileClangInstr;
+  }
+
+  /// \brief Check if IR level profile use is on.
+  bool hasProfileIRUse() const {
+    return getProfileUse() == ProfileIRInstr;
   }
 };
 

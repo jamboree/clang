@@ -83,6 +83,12 @@ class Driver {
     SaveTempsObj
   } SaveTemps;
 
+  enum BitcodeEmbedMode {
+    EmbedNone,
+    EmbedMarker,
+    EmbedBitcode
+  } BitcodeEmbed;
+
   /// LTO mode selected via -f(no-)?lto(=.*)? options.
   LTOKind LTOMode;
 
@@ -262,6 +268,9 @@ public:
   bool isSaveTempsEnabled() const { return SaveTemps != SaveTempsNone; }
   bool isSaveTempsObj() const { return SaveTemps == SaveTempsObj; }
 
+  bool embedBitcodeEnabled() const { return BitcodeEmbed == EmbedBitcode; }
+  bool embedBitcodeMarkerOnly() const { return BitcodeEmbed == EmbedMarker; }
+
   /// @}
   /// @name Primary Functionality
   /// @{
@@ -414,6 +423,9 @@ public:
   /// GCC goes to extra lengths here to be a bit more robust.
   std::string GetTemporaryPath(StringRef Prefix, const char *Suffix) const;
 
+  /// Return the pathname of the pch file in clang-cl mode.
+  std::string GetClPchPath(Compilation &C, StringRef BaseName) const;
+
   /// ShouldUseClangCompiler - Should the clang compiler be used to
   /// handle this action.
   bool ShouldUseClangCompiler(const JobAction &JA) const;
@@ -463,6 +475,15 @@ public:
   static bool GetReleaseVersion(const char *Str, unsigned &Major,
                                 unsigned &Minor, unsigned &Micro,
                                 bool &HadExtra);
+
+  /// Parse digits from a string \p Str and fulfill \p Digits with
+  /// the parsed numbers. This method assumes that the max number of
+  /// digits to look for is equal to Digits.size().
+  ///
+  /// \return True if the entire string was parsed and there are
+  /// no extra characters remaining at the end.
+  static bool GetReleaseVersion(const char *Str,
+                                MutableArrayRef<unsigned> Digits);
 };
 
 /// \return True if the last defined optimization level is -Ofast.

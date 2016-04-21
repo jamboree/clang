@@ -27,6 +27,7 @@ struct ExplicitSpec_NotImported {};
 #define USEVAR(var) USEVARTYPE(int, var)
 #define USE(func) void UNIQ(use)() { func(); }
 #define USEMEMFUNC(class, func) void (class::*UNIQ(use)())() { return &class::func; }
+#define USESTATICMEMFUNC(class, func) void (*UNIQ(use)())() { return &class::func; }
 #define USECLASS(class) void UNIQ(USE)() { class x; }
 #define USECOPYASSIGN(class) class& (class::*UNIQ(use)())(class&) { return &class::operator=; }
 #define USEMOVEASSIGN(class) class& (class::*UNIQ(use)())(class&&) { return &class::operator=; }
@@ -590,6 +591,10 @@ struct __declspec(dllimport) T {
   void a() {}
   // MO1-DAG: define available_externally dllimport x86_thiscallcc void @"\01?a@T@@QAEXXZ"
 
+  static void StaticMethod();
+  // MSC-DAG: declare dllimport void @"\01?StaticMethod@T@@SAXXZ"()
+  // GNU-DAG: declare dllimport void @_ZN1T12StaticMethodEv()
+
   static int b;
   // MO1-DAG: @"\01?b@T@@2HA" = external dllimport global i32
 
@@ -602,6 +607,7 @@ struct __declspec(dllimport) T {
   // M19-DAG: define available_externally dllimport x86_thiscallcc dereferenceable({{[0-9]+}}) %struct.T* @"\01??4T@@QAEAAU0@$$QAU0@@Z"
 };
 USEMEMFUNC(T, a)
+USESTATICMEMFUNC(T, StaticMethod)
 USEVAR(T::b)
 USECOPYASSIGN(T)
 USEMOVEASSIGN(T)
@@ -735,6 +741,17 @@ namespace PR21366 {
   };
   void S::anotherInlineMethod() {}
   inline void S::outOfClassInlineMethod() {}
+}
+
+namespace PR27319 {
+  // Make sure we don't assert due to not having checked for operator delete on
+  // the destructor.
+  template <typename> struct A {
+    virtual ~A() = default;
+  };
+  extern template struct __declspec(dllimport) A<int>;
+  void f() { new A<int>(); }
+  // MO1-DAG: @"\01??_S?$A@H@PR27319@@6B@" = linkonce_odr unnamed_addr constant [1 x i8*]
 }
 
 // MS ignores DLL attributes on partial specializations.

@@ -1505,6 +1505,35 @@ C-style cast applied to each element of the first argument.
 
 Query for this feature with ``__has_builtin(__builtin_convertvector)``.
 
+``__builtin_bitreverse``
+------------------------
+
+* ``__builtin_bitreverse8``
+* ``__builtin_bitreverse16``
+* ``__builtin_bitreverse32``
+* ``__builtin_bitreverse64``
+
+**Syntax**:
+
+.. code-block:: c++
+
+     __builtin_bitreverse32(x)
+
+**Examples**:
+
+.. code-block:: c++
+
+      uint8_t rev_x = __builtin_bitreverse8(x);
+      uint16_t rev_x = __builtin_bitreverse16(x);
+      uint32_t rev_y = __builtin_bitreverse32(y);
+      uint64_t rev_z = __builtin_bitreverse64(z);
+
+**Description**:
+
+The '``__builtin_bitreverse``' family of builtins is used to reverse
+the bitpattern of an integer value; for example ``0b10110110`` becomes
+``0b01101101``.
+
 ``__builtin_unreachable``
 -------------------------
 
@@ -1727,6 +1756,24 @@ other, or as the result.  The other builtins may implicitly promote or
 convert their operands before performing the operation.
 
 Query for this feature with ``__has_builtin(__builtin_add_overflow)``, etc.
+
+Floating point builtins
+---------------------------------------
+
+``__builtin_canonicalize``
+--------------------------
+
+.. code-block:: c
+
+   double __builtin_canonicalize(double);
+   float __builtin_canonicalizef(float);
+   long double__builtin_canonicalizel(long double);
+
+Returns the platform specific canonical encoding of a floating point
+number. This canonicalization is useful for implementing certain
+numeric primitives such as frexp. See `LLVM canonicalize intrinsic
+<http://llvm.org/docs/LangRef.html#llvm-canonicalize-intrinsic>`_ for
+more information on the semantics.
 
 .. _langext-__c11_atomic:
 

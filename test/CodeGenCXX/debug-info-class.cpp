@@ -83,9 +83,9 @@ int main(int argc, char **argv) {
   return 0;
 }
 
-// RUN: %clang -target x86_64-unknown_unknown -emit-llvm -g -S %s -o - | FileCheck %s
-// RUN: %clang -target i686-cygwin -emit-llvm -g -S %s -o - | FileCheck %s
-// RUN: %clang -target armv7l-unknown-linux-gnueabihf -emit-llvm -g -S %s -o - | FileCheck %s
+// RUN: %clang_cc1 -triple x86_64-unknown_unknown -emit-llvm -debug-info-kind=limited -fexceptions %s -o - | FileCheck %s
+// RUN: %clang_cc1 -triple i686-cygwin -emit-llvm -debug-info-kind=limited -fexceptions %s -o - | FileCheck %s
+// RUN: %clang_cc1 -triple armv7l-unknown-linux-gnueabihf -emit-llvm -debug-info-kind=limited -fexceptions %s -o - | FileCheck %s
 
 // CHECK: invoke {{.+}} @_ZN1BD1Ev(%class.B* %b)
 // CHECK-NEXT: unwind label %{{.+}}, !dbg ![[EXCEPTLOC:.*]]
@@ -101,7 +101,7 @@ int main(int argc, char **argv) {
 
 // CHECK: ![[INT:[0-9]+]] = !DIBasicType(name: "int"
 
-// CHECK: [[C:![0-9]*]] = !DICompositeType(tag: DW_TAG_structure_type, name: "C",
+// CHECK: [[C:![0-9]*]] = distinct !DICompositeType(tag: DW_TAG_structure_type, name: "C",
 // CHECK-NOT:                              DIFlagFwdDecl
 // CHECK-SAME:                             elements: [[C_MEM:![0-9]*]]
 // CHECK-SAME:                             vtableHolder: !"_ZTS1C"

@@ -134,8 +134,11 @@ class Parser : public CodeCompletionHandler {
   /// \brief Identifier for "message".
   IdentifierInfo *Ident_message;
 
-  /// \brief Identifier for "nopartial".
-  IdentifierInfo *Ident_nopartial;
+  /// \brief Identifier for "strict".
+  IdentifierInfo *Ident_strict;
+
+  /// \brief Identifier for "replacement".
+  IdentifierInfo *Ident_replacement;
 
   /// C++0x contextual keywords.
   mutable IdentifierInfo *Ident_final;
@@ -2431,7 +2434,7 @@ private:
       ParsingDeclRAIIObject *DiagsFromTParams = nullptr);
   DeclGroupPtrTy ParseCXXClassMemberDeclarationWithPragmas(
       AccessSpecifier &AS, ParsedAttributesWithRange &AccessAttrs,
-      DeclSpec::TST TagType, Decl *TagDecl);
+      DeclSpec::TST TagType, Decl *Tag);
   void ParseConstructorInitializer(Decl *ConstructorDecl);
   MemInitResult ParseMemInitializer(Decl *ConstructorDecl);
   void HandleMemberFunctionDeclDelays(Declarator& DeclaratorInfo,
@@ -2459,8 +2462,17 @@ private:
 
   //===--------------------------------------------------------------------===//
   // OpenMP: Directives and clauses.
+  /// Parse clauses for '#pragma omp declare simd'.
+  DeclGroupPtrTy ParseOMPDeclareSimdClauses(DeclGroupPtrTy Ptr,
+                                            CachedTokens &Toks,
+                                            SourceLocation Loc);
   /// \brief Parses declarative OpenMP directives.
-  DeclGroupPtrTy ParseOpenMPDeclarativeDirective();
+  DeclGroupPtrTy ParseOpenMPDeclarativeDirectiveWithExtDecl(
+      AccessSpecifier &AS, ParsedAttributesWithRange &Attrs,
+      DeclSpec::TST TagType = DeclSpec::TST_unspecified,
+      Decl *TagDecl = nullptr);
+  /// \brief Parse 'omp declare reduction' construct.
+  DeclGroupPtrTy ParseOpenMPDeclareReductionDirective(AccessSpecifier AS);
   /// \brief Parses simple list of variables.
   ///
   /// \param Kind Kind of the directive.
@@ -2518,6 +2530,29 @@ private:
                                       OpenMPClauseKind Kind);
 
 public:
+  /// Parses simple expression in parens for single-expression clauses of OpenMP
+  /// constructs.
+  /// \param RLoc Returned location of right paren.
+  ExprResult ParseOpenMPParensExpr(StringRef ClauseName, SourceLocation &RLoc);
+
+  /// Data used for parsing list of variables in OpenMP clauses.
+  struct OpenMPVarListDataTy {
+    Expr *TailExpr = nullptr;
+    SourceLocation ColonLoc;
+    CXXScopeSpec ReductionIdScopeSpec;
+    DeclarationNameInfo ReductionId;
+    OpenMPDependClauseKind DepKind = OMPC_DEPEND_unknown;
+    OpenMPLinearClauseKind LinKind = OMPC_LINEAR_val;
+    OpenMPMapClauseKind MapTypeModifier = OMPC_MAP_unknown;
+    OpenMPMapClauseKind MapType = OMPC_MAP_unknown;
+    bool IsMapTypeImplicit = false;
+    SourceLocation DepLinMapLoc;
+  };
+
+  /// Parses clauses with list.
+  bool ParseOpenMPVarList(OpenMPDirectiveKind DKind, OpenMPClauseKind Kind,
+                          SmallVectorImpl<Expr *> &Vars,
+                          OpenMPVarListDataTy &Data);
   bool ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
                           bool AllowDestructorName,
                           bool AllowConstructorName,

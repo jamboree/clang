@@ -708,6 +708,19 @@ TEST(DeclarationMatcher, HasDescendantMemoizationUsesRestrictKind) {
                       decl(anyOf(hasDescendant(RD), hasDescendant(VD)))));
 }
 
+TEST(DeclarationMatcher, HasAncestorMemoization) {
+  // This triggers an hasAncestor with a TemplateArgument in the bound nodes.
+  // That node can't be memoized so we have to check for it before trying to put
+  // it on the cache.
+  DeclarationMatcher CannotMemoize = classTemplateSpecializationDecl(
+      hasAnyTemplateArgument(templateArgument().bind("targ")),
+      forEach(fieldDecl(hasAncestor(forStmt()))));
+
+  EXPECT_TRUE(notMatches("template <typename T> struct S;"
+                         "template <> struct S<int>{ int i; int j; };",
+                         CannotMemoize));
+}
+
 TEST(DeclarationMatcher, HasAttr) {
   EXPECT_TRUE(matches("struct __attribute__((warn_unused)) X {};",
                       decl(hasAttr(clang::attr::WarnUnused))));
@@ -1101,6 +1114,16 @@ TEST(HasType, MatchesTypedefDecl) {
                       typedefDecl(hasType(asString("foo")), hasName("bar"))));
 }
 
+TEST(HasType, MatchesTypedefNameDecl) {
+  EXPECT_TRUE(matches("using X = int;", typedefNameDecl(hasType(asString("int")))));
+  EXPECT_TRUE(matches("using T = const int;",
+                      typedefNameDecl(hasType(asString("const int")))));
+  EXPECT_TRUE(notMatches("using T = const int;",
+                         typedefNameDecl(hasType(asString("int")))));
+  EXPECT_TRUE(matches("using foo = int; using bar = foo;",
+                      typedefNameDecl(hasType(asString("foo")), hasName("bar"))));
+}
+
 TEST(HasTypeLoc, MatchesDeclaratorDecls) {
   EXPECT_TRUE(matches("int x;",
                       varDecl(hasName("x"), hasTypeLoc(loc(asString("int"))))));
@@ -1209,7 +1232,12 @@ TEST(Matcher, FlowControl) {
   EXPECT_TRUE(matches("void f() { while(true) { continue; } }",
                       continueStmt()));
   EXPECT_TRUE(matches("void f() { goto FOO; FOO: ;}", gotoStmt()));
-  EXPECT_TRUE(matches("void f() { goto FOO; FOO: ;}", labelStmt()));
+  EXPECT_TRUE(matches("void f() { goto FOO; FOO: ;}",
+                      labelStmt(
+                        hasDeclaration(
+                          labelDecl(hasName("FOO"))))));
+  EXPECT_TRUE(matches("void f() { FOO: ; void *ptr = &&FOO; goto *ptr; }",
+                      addrLabelExpr()));
   EXPECT_TRUE(matches("void f() { return; }", returnStmt()));
 }
 
@@ -1483,6 +1511,11 @@ TEST(IsAnyPointer, MatchesPointers) {
   EXPECT_TRUE(matches("int* i = nullptr;", varDecl(hasType(isAnyPointer()))));
 }
 
+TEST(IsAnyPointer, MatchesObjcPointer) {
+  EXPECT_TRUE(matchesObjC("@interface Foo @end Foo *f;",
+                          varDecl(hasType(isAnyPointer()))));
+}
+
 TEST(IsAnyPointer, ReportsNoFalsePositives) {
   EXPECT_TRUE(notMatches("int i = 0;", varDecl(hasType(isAnyPointer()))));
 }
@@ -1623,10 +1656,15 @@ TEST(Matcher, Argument) {
 
 TEST(Matcher, AnyArgument) {
   StatementMatcher CallArgumentY = callExpr(
-      hasAnyArgument(declRefExpr(to(varDecl(hasName("y"))))));
+      hasAnyArgument(
+          ignoringParenImpCasts(declRefExpr(to(varDecl(hasName("y")))))));
   EXPECT_TRUE(matches("void x(int, int) { int y; x(1, y); }", CallArgumentY));
   EXPECT_TRUE(matches("void x(int, int) { int y; x(y, 42); }", CallArgumentY));
   EXPECT_TRUE(notMatches("void x(int, int) { x(1, 2); }", CallArgumentY));
+  
+  StatementMatcher ImplicitCastedArgument = callExpr(
+      hasAnyArgument(implicitCastExpr()));
+  EXPECT_TRUE(matches("void x(long) { int y; x(y); }", ImplicitCastedArgument));
 }
 
 TEST(ForEachArgumentWithParam, ReportsNoFalsePositives) {
@@ -2312,6 +2350,32 @@ TEST(ConstructorDeclaration, Kinds) {
                       cxxConstructorDecl(isMoveConstructor())));
 }
 
+TEST(ConstructorDeclaration, IsUserProvided) {
+  EXPECT_TRUE(notMatches("struct S { int X = 0; };",
+                         cxxConstructorDecl(isUserProvided())));
+  EXPECT_TRUE(notMatches("struct S { S() = default; };",
+                         cxxConstructorDecl(isUserProvided())));
+  EXPECT_TRUE(notMatches("struct S { S() = delete; };",
+                         cxxConstructorDecl(isUserProvided())));
+  EXPECT_TRUE(
+      matches("struct S { S(); };", cxxConstructorDecl(isUserProvided())));
+  EXPECT_TRUE(matches("struct S { S(); }; S::S(){}",
+                      cxxConstructorDecl(isUserProvided())));
+}
+
+TEST(ConstructorDeclaration, IsDelegatingConstructor) {
+  EXPECT_TRUE(notMatches("struct S { S(); S(int); int X; };",
+                         cxxConstructorDecl(isDelegatingConstructor())));
+  EXPECT_TRUE(notMatches("struct S { S(){} S(int X) : X(X) {} int X; };",
+                         cxxConstructorDecl(isDelegatingConstructor())));
+  EXPECT_TRUE(matches(
+      "struct S { S() : S(0) {} S(int X) : X(X) {} int X; };",
+      cxxConstructorDecl(isDelegatingConstructor(), parameterCountIs(0))));
+  EXPECT_TRUE(matches(
+      "struct S { S(); S(int X); int X; }; S::S(int X) : S() {}",
+      cxxConstructorDecl(isDelegatingConstructor(), parameterCountIs(1))));
+}
+
 TEST(DestructorDeclaration, MatchesVirtualDestructor) {
   EXPECT_TRUE(matches("class Foo { virtual ~Foo(); };",
                       cxxDestructorDecl(ofClass(hasName("Foo")))));
@@ -2520,6 +2584,82 @@ TEST(Matcher, NullPtrLiteral) {
 
 TEST(Matcher, GNUNullExpr) {
   EXPECT_TRUE(matches("int* i = __null;", gnuNullExpr()));
+}
+
+TEST(Matcher, AtomicExpr) {
+  EXPECT_TRUE(matches("void foo() { int *ptr; __atomic_load_n(ptr, 1); }",
+                      atomicExpr()));
+}
+
+TEST(Matcher, Initializers) {
+  const char *ToMatch = "void foo() { struct point { double x; double y; };"
+                        "  struct point ptarray[10] = "
+                        "      { [2].y = 1.0, [2].x = 2.0, [0].x = 1.0 }; }";
+  EXPECT_TRUE(matchesConditionally(
+                ToMatch,
+                initListExpr(
+                  has(
+                    cxxConstructExpr(
+                      requiresZeroInitialization())),
+                  has(
+                    initListExpr(
+                      hasType(asString("struct point")),
+                      has(floatLiteral(equals(1.0))),
+                      has(implicitValueInitExpr(
+                            hasType(asString("double")))))),
+                  has(
+                    initListExpr(
+                      hasType(asString("struct point")),
+                      has(floatLiteral(equals(2.0))),
+                      has(floatLiteral(equals(1.0)))))
+                    ), true, "-std=gnu++98"));
+
+  EXPECT_TRUE(matchesC99(ToMatch,
+                         initListExpr(
+                           hasSyntacticForm(
+                             initListExpr(
+                               has(
+                                 designatedInitExpr(
+                                   designatorCountIs(2),
+                                   has(floatLiteral(
+                                         equals(1.0))),
+                                   has(integerLiteral(
+                                         equals(2))))),
+                               has(
+                                 designatedInitExpr(
+                                   designatorCountIs(2),
+                                   has(floatLiteral(
+                                         equals(2.0))),
+                                   has(integerLiteral(
+                                         equals(2))))),
+                               has(
+                                 designatedInitExpr(
+                                   designatorCountIs(2),
+                                   has(floatLiteral(
+                                         equals(1.0))),
+                                   has(integerLiteral(
+                                         equals(0)))))
+                               )))));
+}
+
+TEST(Matcher, ParenListExpr) {
+  EXPECT_TRUE(
+      matches("template<typename T> class foo { void bar() { foo X(*this); } };"
+              "template class foo<int>;",
+              varDecl(hasInitializer(parenListExpr(has(unaryOperator()))))));
+}
+
+TEST(Matcher, StmtExpr) {
+  EXPECT_TRUE(matches("void declToImport() { int C = ({int X=4; X;}); }",
+              varDecl(hasInitializer(stmtExpr()))));
+}
+
+TEST(Matcher, ImportPredefinedExpr) {
+  // __func__ expands as StringLiteral("foo")
+  EXPECT_TRUE(matches("void foo() { __func__; }",
+                      predefinedExpr(
+                        hasType(asString("const char [4]")),
+                        has(stringLiteral()))));
 }
 
 TEST(Matcher, AsmStatement) {
@@ -2745,6 +2885,28 @@ TEST(Matcher, ConditionalOperator) {
   EXPECT_TRUE(matches("void x() { true ? true : false; }", ConditionalFalse));
   EXPECT_TRUE(
       notMatches("void x() { true ? false : true; }", ConditionalFalse));
+
+  EXPECT_TRUE(matches("void x() { true ? true : false; }", ConditionalFalse));
+  EXPECT_TRUE(
+      notMatches("void x() { true ? false : true; }", ConditionalFalse));
+}
+
+TEST(Matcher, BinaryConditionalOperator) {
+  StatementMatcher AlwaysOne = binaryConditionalOperator(
+      hasCondition(implicitCastExpr(
+                     has(
+                       opaqueValueExpr(
+                         hasSourceExpression((integerLiteral(equals(1)))))))),
+      hasFalseExpression(integerLiteral(equals(0))));
+
+  EXPECT_TRUE(matches("void x() { 1 ?: 0; }", AlwaysOne));
+
+  StatementMatcher FourNotFive = binaryConditionalOperator(
+        hasTrueExpression(opaqueValueExpr(
+                            hasSourceExpression((integerLiteral(equals(4)))))),
+      hasFalseExpression(integerLiteral(equals(5))));
+
+  EXPECT_TRUE(matches("void x() { 4 ?: 5; }", FourNotFive));
 }
 
 TEST(ArraySubscriptMatchers, ArraySubscripts) {
@@ -2879,6 +3041,22 @@ TEST(Matcher, HasNameSupportsFunctionScope) {
   EXPECT_TRUE(matches(code, fieldDecl(hasName("F(int)::S::m"))));
   EXPECT_TRUE(matches(code, fieldDecl(hasName("a::F(int)::S::m"))));
   EXPECT_TRUE(matches(code, fieldDecl(hasName("::a::F(int)::S::m"))));
+}
+
+TEST(Matcher, HasAnyName) {
+  const std::string Code = "namespace a { namespace b { class C; } }";
+
+  EXPECT_TRUE(matches(Code, recordDecl(hasAnyName("XX", "a::b::C"))));
+  EXPECT_TRUE(matches(Code, recordDecl(hasAnyName("a::b::C", "XX"))));
+  EXPECT_TRUE(matches(Code, recordDecl(hasAnyName("XX::C", "a::b::C"))));
+  EXPECT_TRUE(matches(Code, recordDecl(hasAnyName("XX", "C"))));
+
+  EXPECT_TRUE(notMatches(Code, recordDecl(hasAnyName("::C", "::b::C"))));
+  EXPECT_TRUE(
+      matches(Code, recordDecl(hasAnyName("::C", "::b::C", "::a::b::C"))));
+
+  std::vector<StringRef> Names = {"::C", "::b::C", "::a::b::C"};
+  EXPECT_TRUE(matches(Code, recordDecl(hasAnyName(Names))));
 }
 
 TEST(Matcher, IsDefinition) {
@@ -5249,9 +5427,25 @@ TEST(EqualsBoundNodeMatcher, UnlessDescendantsOfAncestorsMatch) {
           .bind("data")));
 }
 
-TEST(TypeDefDeclMatcher, Match) {
+TEST(TypedefDeclMatcher, Match) {
   EXPECT_TRUE(matches("typedef int typedefDeclTest;",
                       typedefDecl(hasName("typedefDeclTest"))));
+  EXPECT_TRUE(notMatches("using typedefDeclTest2 = int;",
+                         typedefDecl(hasName("typedefDeclTest2"))));
+}
+
+TEST(TypeAliasDeclMatcher, Match) {
+  EXPECT_TRUE(matches("using typeAliasTest2 = int;",
+                      typeAliasDecl(hasName("typeAliasTest2"))));
+  EXPECT_TRUE(notMatches("typedef int typeAliasTest;",
+                         typeAliasDecl(hasName("typeAliasTest"))));
+}
+
+TEST(TypedefNameDeclMatcher, Match) {
+  EXPECT_TRUE(matches("typedef int typedefNameDeclTest1;",
+                      typedefNameDecl(hasName("typedefNameDeclTest1"))));
+  EXPECT_TRUE(matches("using typedefNameDeclTest2 = int;",
+                      typedefNameDecl(hasName("typedefNameDeclTest2"))));
 }
 
 TEST(IsInlineMatcher, IsInline) {
@@ -5365,6 +5559,13 @@ TEST(NullPointerConstants, Basic) {
   EXPECT_TRUE(matches("char *cp = (char *)0;", expr(nullPointerConstant())));
   EXPECT_TRUE(matches("int *ip = 0;", expr(nullPointerConstant())));
   EXPECT_TRUE(notMatches("int i = 0;", expr(nullPointerConstant())));
+}
+
+TEST(StatementMatcher, HasReturnValue) {
+  StatementMatcher RetVal = returnStmt(hasReturnValue(binaryOperator()));
+  EXPECT_TRUE(matches("int F() { int a, b; return a + b; }", RetVal));
+  EXPECT_FALSE(matches("int F() { int a; return a; }", RetVal));
+  EXPECT_FALSE(matches("void F() { return; }", RetVal));
 }
 
 } // end namespace ast_matchers

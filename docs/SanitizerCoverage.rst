@@ -244,7 +244,7 @@ Coverage counters
 =================
 
 This experimental feature is inspired by
-`AFL <http://lcamtuf.coredump.cx/afl/technical_details.txt>`_'s coverage
+`AFL <http://lcamtuf.coredump.cx/afl/technical_details.txt>`__'s coverage
 instrumentation. With additional compile-time and run-time flags you can get
 more sensitive coverage information.  In addition to boolean values assigned to
 every basic block (edge) the instrumentation will collect imprecise counters.
@@ -286,10 +286,26 @@ These counters may also be used for in-process coverage-guided fuzzers. See
 
 Tracing basic blocks
 ====================
-An *experimental* feature to support basic block (or edge) tracing.
+Experimental support for basic block (or edge) tracing.
 With ``-fsanitize-coverage=trace-bb`` the compiler will insert
 ``__sanitizer_cov_trace_basic_block(s32 *id)`` before every function, basic block, or edge
 (depending on the value of ``-fsanitize-coverage=[func,bb,edge]``).
+Example:
+
+.. code-block:: console
+
+    % clang -g -fsanitize=address -fsanitize-coverage=edge,trace-bb foo.cc
+    % ASAN_OPTIONS=coverage=1 ./a.out
+
+This will produce two files after the process exit:
+`trace-points.PID.sancov` and `trace-events.PID.sancov`.
+The first file will contain a textual description of all the instrumented points in the program
+in the form that you can feed into llvm-symbolizer (e.g. `a.out 0x4dca89`), one per line.
+The second file will contain the actual execution trace as a sequence of 4-byte integers
+-- these integers are the indices into the array of instrumented points (the first file).
+
+Basic block tracing is currently supported only for single-threaded applications.
+
 
 Tracing PCs
 ===========
@@ -301,7 +317,7 @@ With an additional ``...=trace-pc,indirect-calls`` flag
 These callbacks are not implemented in the Sanitizer run-time and should be defined
 by the user. So, these flags do not require the other sanitizer to be used.
 This mechanism is used for fuzzing the Linux kernel (https://github.com/google/syzkaller)
-and can be used with `AFL <http://lcamtuf.coredump.cx/afl>`_.
+and can be used with `AFL <http://lcamtuf.coredump.cx/afl>`__.
 
 Tracing data flow
 =================

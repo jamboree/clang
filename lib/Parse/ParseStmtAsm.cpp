@@ -390,6 +390,7 @@ StmtResult Parser::ParseMicrosoftAsmStatement(SourceLocation AsmLoc) {
     if (!InAsmComment && Tok.is(tok::l_brace)) {
       // Consume the opening brace.
       SkippedStartOfLine = Tok.isAtStartOfLine();
+      AsmToks.push_back(Tok);
       EndLoc = ConsumeBrace();
       BraceNesting++;
       LBraceLocs.push_back(EndLoc);
@@ -423,6 +424,10 @@ StmtResult Parser::ParseMicrosoftAsmStatement(SourceLocation AsmLoc) {
         // We're no longer in a comment.
         InAsmComment = false;
         if (isAsm) {
+          // If this is a new __asm {} block we want to process it seperately
+          // from the single-line __asm statements
+          if (PP.LookAhead(0).is(tok::l_brace))
+            break;
           LineNo = SrcMgr.getLineNumber(ExpLoc.first, ExpLoc.second);
           SkippedStartOfLine = Tok.isAtStartOfLine();
         }
@@ -438,6 +443,11 @@ StmtResult Parser::ParseMicrosoftAsmStatement(SourceLocation AsmLoc) {
         BraceCount == (savedBraceCount + BraceNesting)) {
       // Consume the closing brace.
       SkippedStartOfLine = Tok.isAtStartOfLine();
+      // Don't want to add the closing brace of the whole asm block
+      if (SingleLineMode || BraceNesting > 1) {
+        Tok.clearFlag(Token::LeadingSpace);
+        AsmToks.push_back(Tok);
+      }
       EndLoc = ConsumeBrace();
       BraceNesting--;
       // Finish if all of the opened braces in the inline asm section were

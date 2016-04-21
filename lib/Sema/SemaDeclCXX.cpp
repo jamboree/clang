@@ -7796,6 +7796,12 @@ bool Sema::CheckUsingShadowDecl(UsingDecl *Using, NamedDecl *Orig,
   for (LookupResult::iterator I = Previous.begin(), E = Previous.end();
          I != E; ++I) {
     NamedDecl *D = (*I)->getUnderlyingDecl();
+    // We can have UsingDecls in our Previous results because we use the same
+    // LookupResult for checking whether the UsingDecl itself is a valid
+    // redeclaration.
+    if (isa<UsingDecl>(D))
+      continue;
+
     if (IsEquivalentForUsingDecl(Context, D, Target)) {
       if (UsingShadowDecl *Shadow = dyn_cast<UsingShadowDecl>(*I))
         PrevShadow = Shadow;
@@ -8578,6 +8584,10 @@ Decl *Sema::ActOnAliasDeclaration(Scope *S,
          TemplateParamLists[TemplateParamLists.size()-1]->getRAngleLoc());
     }
     TemplateParameterList *TemplateParams = TemplateParamLists[0];
+
+    // Check that we can declare a template here.
+    if (CheckTemplateDeclScope(S, TemplateParams))
+      return nullptr;
 
     // Only consider previous declarations in the same scope.
     FilterLookupForScope(Previous, CurContext, S, /*ConsiderLinkage*/false,
@@ -9533,6 +9543,10 @@ void Sema::ActOnFinishCXXNonNestedClass(Decl *D) {
   if (RD && Context.getTargetInfo().getCXXABI().isMicrosoft())
     getDefaultArgExprsForConstructors(*this, RD);
 
+  referenceDLLExportedClassMethods();
+}
+
+void Sema::referenceDLLExportedClassMethods() {
   if (!DelayedDllExportClasses.empty()) {
     // Calling ReferenceDllExportedMethods might cause the current function to
     // be called again, so use a local copy of DelayedDllExportClasses.
@@ -13300,13 +13314,20 @@ void Sema::MarkVTableUsed(SourceLocation Loc, CXXRecordDecl *Class,
     // the deleting destructor is emitted with the vtable, not with the
     // destructor definition as in the Itanium ABI.
     // If it has a definition, we do the check at that point instead.
-    if (Context.getTargetInfo().getCXXABI().isMicrosoft() &&
-        Class->hasUserDeclaredDestructor() &&
-        !Class->getDestructor()->isDefined() &&
-        !Class->getDestructor()->isDeleted()) {
-      CXXDestructorDecl *DD = Class->getDestructor();
-      ContextRAII SavedContext(*this, DD);
-      CheckDestructor(DD);
+    if (Context.getTargetInfo().getCXXABI().isMicrosoft()) {
+      if (Class->hasUserDeclaredDestructor() &&
+          !Class->getDestructor()->isDefined() &&
+          !Class->getDestructor()->isDeleted()) {
+        CXXDestructorDecl *DD = Class->getDestructor();
+        ContextRAII SavedContext(*this, DD);
+        CheckDestructor(DD);
+      } else if (Class->hasAttr<DLLImportAttr>()) {
+        // We always synthesize vtables on the import side. To make sure
+        // CheckDestructor gets called, mark the destructor referenced.
+        assert(Class->getDestructor() &&
+               "The destructor has always been declared on a dllimport class");
+        MarkFunctionReferenced(Loc, Class->getDestructor());
+      }
     }
   }
 

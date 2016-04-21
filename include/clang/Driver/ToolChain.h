@@ -319,6 +319,11 @@ public:
     return false;
   }
 
+  /// SupportsEmbeddedBitcode - Does this tool chain support embedded bitcode.
+  virtual bool SupportsEmbeddedBitcode() const {
+    return false;
+  }
+
   /// getThreadModel() - Which thread model does this target use?
   virtual std::string getThreadModel() const { return "posix"; }
 
@@ -414,6 +419,9 @@ public:
 
   /// \brief Return sanitizers which are available in this toolchain.
   virtual SanitizerMask getSupportedSanitizers() const;
+
+  /// \brief Return sanitizers which are enabled by default.
+  virtual SanitizerMask getDefaultSanitizers() const { return 0; }
 };
 
 } // end namespace driver
