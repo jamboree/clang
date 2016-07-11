@@ -1704,6 +1704,9 @@ private:
   /// \brief Is this Declarator a redeclaration?
   unsigned Redeclaration : 1;
 
+  /// \brief Is this Declarator a designator?
+  bool Designator : 1;
+
   /// Attrs - Attributes.
   ParsedAttributes Attrs;
 
@@ -1732,7 +1735,11 @@ private:
   /// \brief If provided, the source location of the ellipsis used to describe
   /// this declarator as a parameter pack.
   SourceLocation EllipsisLoc;
-  
+
+  /// \brief If provided, the source location of the period used to describe
+  /// this declarator as a designator.
+  SourceLocation PeriodLoc;
+
   friend struct DeclaratorChunk;
 
 public:
@@ -1740,7 +1747,7 @@ public:
     : DS(ds), Range(ds.getSourceRange()), Context(C),
       InvalidType(DS.getTypeSpecType() == DeclSpec::TST_error),
       GroupingParens(false), FunctionDefinition(FDK_Declaration), 
-      Redeclaration(false),
+      Redeclaration(false), Designator(false),
       Attrs(ds.getAttributePool().getFactory()), AsmLabel(nullptr),
       InlineParamsUsed(false), Extension(false), ObjCIvar(false),
       ObjCWeakProperty(false) {
@@ -1825,6 +1832,7 @@ public:
     ObjCWeakProperty = false;
     CommaLoc = SourceLocation();
     EllipsisLoc = SourceLocation();
+    PeriodLoc = SourceLocation();
   }
 
   /// mayOmitIdentifier - Return true if the identifier is either optional or
@@ -2259,6 +2267,10 @@ public:
   SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
   void setEllipsisLoc(SourceLocation EL) { EllipsisLoc = EL; }
 
+  bool hasPeriod() const { return PeriodLoc.isValid(); }
+  SourceLocation getPeriodLoc() const { return PeriodLoc; }
+  void setPeriodLoc(SourceLocation L) { PeriodLoc = L; }
+  
   void setFunctionDefinitionKind(FunctionDefinitionKind Val) { 
     FunctionDefinition = Val; 
   }
@@ -2286,6 +2298,9 @@ public:
 
   void setRedeclaration(bool Val) { Redeclaration = Val; }
   bool isRedeclaration() const { return Redeclaration; }
+
+  void setDesignator(bool Val) { Designator = Val; }
+  bool isDesignator() const { return Designator; }
 };
 
 /// \brief This little struct is used to capture information about

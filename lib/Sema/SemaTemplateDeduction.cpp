@@ -3319,32 +3319,32 @@ DeduceTemplateArgumentByListElement(Sema &S,
 /// about template argument deduction.
 ///
 /// \returns the result of template argument deduction.
-Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
-    FunctionTemplateDecl *FunctionTemplate,
-    TemplateArgumentListInfo *ExplicitTemplateArgs, ArrayRef<Expr *> Args,
-    FunctionDecl *&Specialization, TemplateDeductionInfo &Info,
-    bool PartialOverloading) {
+Sema::TemplateDeductionResult
+Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
+                              TemplateArgumentListInfo *ExplicitTemplateArgs,
+                              ArrayRef<Expr *> Args,
+                              SmallVectorImpl<Expr *> &MappedArgs,
+                              FunctionDecl *&Specialization,
+                              TemplateDeductionInfo &Info,
+                              bool HasDesig,
+                              bool PartialOverloading) {
   if (FunctionTemplate->isInvalidDecl())
     return TDK_Invalid;
 
   FunctionDecl *Function = FunctionTemplate->getTemplatedDecl();
+  const FunctionProtoType *Proto =
+      Function->getType()->getAs<FunctionProtoType>();
   unsigned NumParams = Function->getNumParams();
 
   // C++ [temp.deduct.call]p1:
   //   Template argument deduction is done by comparing each function template
   //   parameter type (call it P) with the type of the corresponding argument
   //   of the call (call it A) as described below.
-  unsigned CheckArgs = Args.size();
-  if (Args.size() < Function->getMinRequiredArguments() && !PartialOverloading)
+  unsigned MinRequiredArgs = Function->getMinRequiredArguments();
+  if (Args.size() < MinRequiredArgs && !PartialOverloading)
     return TDK_TooFewArguments;
   else if (TooManyArguments(NumParams, Args.size(), PartialOverloading)) {
-    const FunctionProtoType *Proto
-      = Function->getType()->getAs<FunctionProtoType>();
-    if (Proto->isTemplateVariadic())
-      /* Do nothing */;
-    else if (Proto->isVariadic())
-      CheckArgs = NumParams;
-    else
+    if (!Proto->isTemplateVariadic() && !Proto->isVariadic())
       return TDK_TooManyArguments;
   }
 
@@ -3373,6 +3373,96 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
     for (unsigned I = 0; I != NumParams; ++I)
       ParamTypes.push_back(Function->getParamDecl(I)->getType());
   }
+  
+  // We can't use FunctionDecl::DesigParamFinder as we need special handling
+  // for non-deduced parameter packs.
+  class SkippedDesigParamFinder {
+    llvm::SmallDenseMap<IdentifierInfo *, unsigned> Cache;
+    FunctionDecl *Function;
+    const QualType *ParamTypes;
+    unsigned Index;
+    unsigned SubIndex;
+    unsigned SkipCount;
+    const unsigned NumParams;
+
+  public:
+    const unsigned End;
+
+    SkippedDesigParamFinder(FunctionDecl *Function,
+                            unsigned NumParams, ArrayRef<QualType> ParamTypes)
+        : Function(Function), ParamTypes(ParamTypes.data()), Index(0),
+          SubIndex(0), SkipCount(0), NumParams(NumParams),
+          End(ParamTypes.size()) {}
+
+    unsigned Find(IdentifierInfo *Id) {
+      auto I = Cache.find(Id);
+      if (I != Cache.end())
+        return I->second;
+      for (; Index != NumParams; ++Index, ++SubIndex) {
+        auto Param = Function->getParamDecl(Index);
+        if (Param->isDesignatable()) {
+          auto PId = Param->getIdentifier();
+          if (Id == PId) {
+            ++Index;
+            return SubIndex++ - SkipCount;
+          }
+          Cache[PId] = SubIndex - SkipCount;
+        } else if (Param->isParameterPack()) {
+          ++SkipCount;
+          while (!isa<PackExpansionType>(ParamTypes[SubIndex])) {
+            ++SubIndex;
+            assert(SubIndex != End);
+          }
+        }
+      }
+      return End;
+    }
+  };
+
+  if (HasDesig) {
+    // Build mapped arg-list
+    SkippedDesigParamFinder DesigParamFinder(Function, NumParams, ParamTypes);
+    unsigned MaxArgs = ParamTypes.size();
+    if (!Args.size())
+      MaxArgs = 0;
+    else if (Proto->isVariadic() ||
+             isa<PackExpansionType>(Proto->getParamType(NumParams - 1)))
+      MaxArgs += Args.size();
+    else { // Ignore non-deduced parameter packs.
+      for (unsigned I = 0, E = NumParams - 1; I != E; ++I) {
+        if (isa<PackExpansionType>(Proto->getParamType(I)))
+          --MaxArgs;
+      }
+    }
+    MappedArgs.resize(MaxArgs);
+    unsigned NumArgs = 0;
+    unsigned Index = 0;
+    for (auto Arg : Args) {
+      auto DIE = dyn_cast<DesignatedInitExpr>(Arg);
+      if (DIE) {
+        Index = DesigParamFinder.Find(DIE->getDesignator(0)->getFieldName());
+        if (Index == DesigParamFinder.End) {
+          Info.DesignationFailure = {Arg, 0};
+          return TDK_DesignatorNotFound;
+        }
+      }
+      if (Index >= MaxArgs) {
+        Info.DesignationFailure = {Arg, Index};
+        return TDK_ArgumentOutOfBounds;
+      }
+      if (MappedArgs[Index]) {
+        Info.DesignationFailure = {Arg, Index};
+        return TDK_OverlappedArguments;
+      }
+      MappedArgs[Index] = DIE ? DIE->getInit() : Arg;
+      ++Index;
+      if (Index > NumArgs)
+        NumArgs = Index;
+    }
+
+    MappedArgs.resize(NumArgs);
+    Args = MappedArgs;
+  }
 
   // Deduce template arguments from the function parameters.
   Deduced.resize(TemplateParams->size());
@@ -3387,10 +3477,22 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
       = dyn_cast<PackExpansionType>(ParamType);
     if (!ParamExpansion) {
       // Simple case: matching a function parameter to a function argument.
-      if (ArgIdx >= CheckArgs)
+      if (ArgIdx >= Args.size())
         break;
 
-      Expr *Arg = Args[ArgIdx++];
+      Expr *Arg = Args[ArgIdx];
+
+      if (!Arg) {
+        if (ArgIdx < MinRequiredArgs) {
+          Info.DesignationFailure = {nullptr, ArgIdx};
+          return TDK_MissingArgument;
+        }
+        ++ArgIdx;
+        continue;
+      }
+
+      ++ArgIdx;
+
       QualType ArgType = Arg->getType();
       
       unsigned TDF = 0;
@@ -3441,7 +3543,7 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
     //   not occur at the end of the parameter-declaration-list, the type of
     //   the parameter pack is a non-deduced context.
     if (ParamIdx + 1 < NumParamTypes)
-      break;
+      continue;
 
     QualType ParamPattern = ParamExpansion->getPattern();
     PackDeductionScope PackScope(*this, TemplateParams, Deduced, Info,

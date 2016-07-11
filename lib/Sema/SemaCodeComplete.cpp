@@ -4062,11 +4062,14 @@ void Sema::CodeCompleteCall(Scope *S, Expr *Fn, ArrayRef<Expr *> Args) {
       if (!getLangOpts().CPlusPlus ||
           !FD->getType()->getAs<FunctionProtoType>())
         Results.push_back(ResultCandidate(FD));
-      else
+      else {
+        bool HasDesig = AnyDesignated(Args);
+        SmallVector<Expr *, 32> MappedArgs;
         AddOverloadCandidate(FD, DeclAccessPair::make(FD, FD->getAccess()),
-                             Args, CandidateSet,
+                             Args, MappedArgs, CandidateSet, HasDesig,
                              /*SuppressUsedConversions=*/false,
                              /*PartialOverloading=*/true);
+      }
 
     } else if (auto DC = NakedFn->getType()->getAsCXXRecordDecl()) {
       // If expression's type is CXXRecordDecl, it may overload the function
@@ -4127,21 +4130,24 @@ void Sema::CodeCompleteConstructor(Scope *S, QualType Type, SourceLocation Loc,
   // FIXME: Provide support for variadic template constructors.
 
   OverloadCandidateSet CandidateSet(Loc, OverloadCandidateSet::CSK_Normal);
+  bool HasDesig = AnyDesignated(Args);
+  SmallVector<Expr *, 32> MappedArgs;
 
   for (auto C : LookupConstructors(RD)) {
     if (auto FD = dyn_cast<FunctionDecl>(C)) {
-      AddOverloadCandidate(FD, DeclAccessPair::make(FD, C->getAccess()),
-                           Args, CandidateSet,
+      AddOverloadCandidate(FD, DeclAccessPair::make(FD, C->getAccess()), Args,
+                           MappedArgs, CandidateSet, HasDesig,
                            /*SuppressUsedConversions=*/false,
                            /*PartialOverloading=*/true);
     } else if (auto FTD = dyn_cast<FunctionTemplateDecl>(C)) {
       AddTemplateOverloadCandidate(FTD,
                                    DeclAccessPair::make(FTD, C->getAccess()),
-                                   /*ExplicitTemplateArgs=*/nullptr,
-                                   Args, CandidateSet,
+                                   /*ExplicitTemplateArgs=*/nullptr, Args,
+                                   MappedArgs, CandidateSet, HasDesig,
                                    /*SuppressUsedConversions=*/false,
                                    /*PartialOverloading=*/true);
     }
+    MappedArgs.clear();
   }
 
   SmallVector<ResultCandidate, 8> Results;

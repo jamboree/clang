@@ -3218,7 +3218,6 @@ recurse:
   case Expr::BlockExprClass:
   case Expr::ChooseExprClass:
   case Expr::CompoundLiteralExprClass:
-  case Expr::DesignatedInitExprClass:
   case Expr::ExtVectorElementExprClass:
   case Expr::GenericSelectionExprClass:
   case Expr::ObjCEncodeExprClass:
@@ -3929,6 +3928,20 @@ recurse:
     Out << "v18co_yield";
     mangleExpression(cast<CoawaitExpr>(E)->getOperand());
     break;
+
+  case Expr::DesignatedInitExprClass: {
+    auto *DIE = cast<DesignatedInitExpr>(E);
+    if (DIE->size() != 1 || !DIE->getDesignator(0)->isFieldDesignator()) {
+      DiagnosticsEngine &Diags = Context.getDiags();
+      unsigned DiagID = Diags.getCustomDiagID(
+          DiagnosticsEngine::Error, "cannot yet mangle C99 style designator");
+      Diags.Report(E->getExprLoc(), DiagID) << DIE->getDesignatorsSourceRange();
+      break;
+    }
+    mangleSourceName(DIE->getDesignator(0)->getFieldName());
+    mangleExpression(DIE->getInit());
+    break;
+  }
   }
 }
 

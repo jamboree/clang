@@ -10910,10 +10910,18 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   if (D.isInvalidType())
     New->setInvalidDecl();
 
+
   assert(S->isFunctionPrototypeScope());
   assert(S->getFunctionPrototypeDepth() >= 1);
   New->setScopeInfo(S->getFunctionPrototypeDepth() - 1,
                     S->getNextFunctionPrototypeIndex());
+
+  if (D.isDesignator()) {
+    if (New->isParameterPack())
+      Diag(D.getPeriodLoc(), diag::err_param_designator_on_parameter_pack);
+    else
+      New->setDesignatable(D.isDesignator());
+  }
 
   // Add the parameter declaration into this scope.
   S->AddDecl(New);

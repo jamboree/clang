@@ -2148,7 +2148,9 @@ public:
 class CallExpr : public Expr {
   enum { FN=0, PREARGS_START=1 };
   Stmt **SubExprs;
+  Expr **SyntacticArgs;
   unsigned NumArgs;
+  unsigned NumSyntacticArgs;
   SourceLocation RParenLoc;
 
   void updateDependenciesFromArg(Expr *Arg);
@@ -2233,6 +2235,13 @@ public:
   /// Any orphaned expressions are deleted by this, and any new operands are set
   /// to null.
   void setNumArgs(const ASTContext& C, unsigned NumArgs);
+
+  /// setSyntacticArgs - Only if there's any designated args will this be set.
+  void setSyntacticArgs(const ASTContext &C, ArrayRef<Expr *> Args);
+
+  ArrayRef<Expr *> getSyntacticArgs() const {
+    return {SyntacticArgs, NumSyntacticArgs};
+  }
 
   typedef ExprIterator arg_iterator;
   typedef ConstExprIterator const_arg_iterator;
@@ -4162,6 +4171,10 @@ public:
   }
 
   Designator *getDesignator(unsigned Idx) { return &designators()[Idx]; }
+
+  const Designator *getDesignator(unsigned Idx) const {
+    return &designators()[Idx];
+  }
 
   void setDesignators(const ASTContext &C, const Designator *Desigs,
                       unsigned NumDesigs);

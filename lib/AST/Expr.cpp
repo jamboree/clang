@@ -1132,7 +1132,7 @@ CallExpr::CallExpr(const ASTContext &C, StmtClass SC, Expr *fn,
     : Expr(SC, t, VK, OK_Ordinary, fn->isTypeDependent(),
            fn->isValueDependent(), fn->isInstantiationDependent(),
            fn->containsUnexpandedParameterPack()),
-      NumArgs(args.size()) {
+      SyntacticArgs(nullptr), NumArgs(args.size()), NumSyntacticArgs(0) {
 
   unsigned NumPreArgs = preargs.size();
   SubExprs = new (C) Stmt *[args.size()+PREARGS_START+NumPreArgs];
@@ -1142,7 +1142,8 @@ CallExpr::CallExpr(const ASTContext &C, StmtClass SC, Expr *fn,
     SubExprs[i+PREARGS_START] = preargs[i];
   }
   for (unsigned i = 0; i != args.size(); ++i) {
-    updateDependenciesFromArg(args[i]);
+    if (args[i]) // designated args may leave some args null
+      updateDependenciesFromArg(args[i]);
     SubExprs[i+PREARGS_START+NumPreArgs] = args[i];
   }
 
@@ -1165,9 +1166,10 @@ CallExpr::CallExpr(const ASTContext &C, StmtClass SC, EmptyShell Empty)
 
 CallExpr::CallExpr(const ASTContext &C, StmtClass SC, unsigned NumPreArgs,
                    EmptyShell Empty)
-  : Expr(SC, Empty), SubExprs(nullptr), NumArgs(0) {
+    : Expr(SC, Empty), SubExprs(nullptr), SyntacticArgs(nullptr), NumArgs(0),
+      NumSyntacticArgs(0) {
   // FIXME: Why do we allocate this?
-  SubExprs = new (C) Stmt*[PREARGS_START+NumPreArgs]();
+  SubExprs = new (C) Stmt *[PREARGS_START + NumPreArgs]();
   CallExprBits.NumPreArgs = NumPreArgs;
 }
 
@@ -1237,6 +1239,16 @@ void CallExpr::setNumArgs(const ASTContext& C, unsigned NumArgs) {
   if (SubExprs) C.Deallocate(SubExprs);
   SubExprs = NewSubExprs;
   this->NumArgs = NumArgs;
+}
+
+/// setSyntacticArgs - Only if there's any designated args will this be set.
+void CallExpr::setSyntacticArgs(const ASTContext &C, ArrayRef<Expr *> Args) {
+  Expr **NewSyntacticArgs = new (C) Expr *[Args.size()];
+  std::copy(Args.begin(), Args.end(), NewSyntacticArgs);
+  if (SyntacticArgs)
+    C.Deallocate(SyntacticArgs);
+  SyntacticArgs = NewSyntacticArgs;
+  NumSyntacticArgs = Args.size();
 }
 
 /// getBuiltinCallee - If this is a call to a builtin, return the builtin ID. If
