@@ -23,6 +23,12 @@ struct DeducedPack;
 class TemplateArgumentList;
 class Sema;
 
+// Not quite the right place for this, but for convenience...
+struct DesignationFailureInfo {
+  Expr *Arg;
+  unsigned ParamIndex;
+};
+
 namespace sema {
 
 /// \brief Provides information about an attempted template argument
@@ -175,6 +181,9 @@ public:
     ///   TDK_DeducedMismatch: this is the index of the argument that had a
     ///   different argument type from its substituted parameter type.
     unsigned CallArgIndex;
+
+    /// \brief The failure during arguments designation.
+    DesignationFailureInfo DesignationFailure;
   };
 
   /// \brief Information on packs that we're currently expanding.
@@ -202,6 +211,7 @@ struct DeductionFailureInfo {
   union {
     void *Align;
     char Diagnostic[sizeof(PartialDiagnosticAt)];
+    DesignationFailureInfo DesignationFailure;
   };
 
   /// \brief Retrieve the diagnostic which caused this deduction failure,

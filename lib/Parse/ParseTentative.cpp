@@ -858,7 +858,8 @@ Parser::TPResult Parser::TryParseOperatorId() {
 ///           template-id                                                 [TODO]
 ///
 Parser::TPResult Parser::TryParseDeclarator(bool mayBeAbstract,
-                                            bool mayHaveIdentifier) {
+                                            bool mayHaveIdentifier,
+                                            bool mayBeDesignator) {
   // declarator:
   //   direct-declarator
   //   ptr-operator declarator
@@ -868,6 +869,10 @@ Parser::TPResult Parser::TryParseDeclarator(bool mayBeAbstract,
   // direct-declarator:
   // direct-abstract-declarator:
   if (Tok.is(tok::ellipsis))
+    ConsumeToken();
+
+  // designator
+  if (mayBeDesignator && Tok.is(tok::period))
     ConsumeToken();
 
   if ((Tok.isOneOf(tok::identifier, tok::kw_operator) ||
@@ -904,7 +909,8 @@ Parser::TPResult Parser::TryParseDeclarator(bool mayBeAbstract,
                       tok::kw___stdcall, tok::kw___fastcall, tok::kw___thiscall,
                       tok::kw___vectorcall))
         return TPResult::True; // attributes indicate declaration
-      TPResult TPR = TryParseDeclarator(mayBeAbstract, mayHaveIdentifier);
+      TPResult TPR =
+          TryParseDeclarator(mayBeAbstract, mayHaveIdentifier, mayBeDesignator);
       if (TPR != TPResult::Ambiguous)
         return TPR;
       if (Tok.isNot(tok::r_paren))
@@ -1778,7 +1784,8 @@ Parser::TryParseParameterDeclarationClause(bool *InvalidAsDeclaration,
 
     // declarator
     // abstract-declarator[opt]
-    TPR = TryParseDeclarator(true/*mayBeAbstract*/);
+    TPR = TryParseDeclarator(true /*mayBeAbstract*/, true /*mayHaveIdentifier*/,
+                             true /*mayBeDesignator*/);
     if (TPR != TPResult::Ambiguous)
       return TPR;
 

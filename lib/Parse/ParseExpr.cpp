@@ -26,6 +26,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/Basic/PrettyStackTrace.h"
 #include "clang/Sema/DeclSpec.h"
+#include "clang/Sema/Designator.h"
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/TypoCorrection.h"
@@ -2630,6 +2631,48 @@ ExprResult Parser::ParseFoldExpression(ExprResult LHS,
                                   EllipsisLoc, RHS.get(), T.getCloseLocation());
 }
 
+ExprResult clang::Parser::ParseArgument() {
+  // Designated argument
+  if (getLangOpts().CPlusPlus && Tok.is(tok::period)) {
+    // designator: '.' identifier
+    SourceLocation DotLoc = ConsumeToken();
+
+    if (Tok.isNot(tok::identifier)) {
+      Diag(Tok.getLocation(), diag::err_expected_field_designator);
+      return ExprError();
+    }
+
+    Designator Desig = Designator::getField(Tok.getIdentifierInfo(), DotLoc,
+                                            Tok.getLocation());
+
+    ConsumeToken(); // Eat the identifier.
+
+    // Handle a normal designator sequence end, which is an equal.
+    if (Tok.is(tok::equal)) {
+      SourceLocation EqualLoc = ConsumeToken();
+      return Actions.ActOnDesignatedArgument(Desig, EqualLoc,
+                                             ParseInitializer());
+    }
+
+    Diag(Tok, diag::err_expected_equal_designator) << 1/*C++*/;
+    return ExprError();
+  }
+
+  // Positional argument
+  ExprResult Expr;
+
+  if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace)) {
+    Diag(Tok, diag::warn_cxx98_compat_generalized_initializer_lists);
+    Expr = ParseBraceInitializer();
+  } else
+    Expr = ParseAssignmentExpression();
+
+  if (Tok.is(tok::ellipsis))
+    Expr = Actions.ActOnPackExpansion(Expr.get(), ConsumeToken());
+
+  return Expr;
+}
+
 /// ParseExpressionList - Used for C/C++ (argument-)expression-list.
 ///
 /// \verbatim
@@ -2647,6 +2690,8 @@ ExprResult Parser::ParseFoldExpression(ExprResult LHS,
 /// [C++0x] initializer-list
 /// [C++0x]   initializer-clause ...[opt]
 /// [C++0x]   initializer-list , initializer-clause ...[opt]
+/// [C++Ex]   designation initializer-clause
+/// [C++Ex]   initializer-list , designation initializer-clause
 ///
 /// [C++0x] initializer-clause:
 /// [C++0x]   assignment-expression
@@ -2666,15 +2711,8 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr *> &Exprs,
       return true;
     }
 
-    ExprResult Expr;
-    if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace)) {
-      Diag(Tok, diag::warn_cxx98_compat_generalized_initializer_lists);
-      Expr = ParseBraceInitializer();
-    } else
-      Expr = ParseAssignmentExpression();
+    ExprResult Expr = ParseArgument();
 
-    if (Tok.is(tok::ellipsis))
-      Expr = Actions.ActOnPackExpansion(Expr.get(), ConsumeToken());    
     if (Expr.isInvalid()) {
       SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
       SawError = true;

@@ -24,7 +24,7 @@ using namespace clang;
 /// MayBeDesignationStart - Return true if the current token might be the start 
 /// of a designator.  If we can tell it is impossible that it is a designator, 
 /// return false.
-bool Parser::MayBeDesignationStart() {
+bool Parser::MayBeDesignationStart(bool InInitList) {
   switch (Tok.getKind()) {
   default: 
     return false;
@@ -35,6 +35,9 @@ bool Parser::MayBeDesignationStart() {
   case tok::l_square: {  // designator: array-designator
     if (!PP.getLangOpts().CPlusPlus11)
       return true;
+
+    if (!InInitList)
+      return false;
     
     // C++11 lambda expressions and C99 designators can be ambiguous all the
     // way through the closing ']' and to the next character. Handle the easy
@@ -101,7 +104,8 @@ static void CheckArrayDesignatorSyntax(Parser &P, SourceLocation Loc,
        Desig.getDesignator(0).isArrayRangeDesignator()))
     P.Diag(Loc, diag::ext_gnu_missing_equal_designator);
   else if (Desig.getNumDesignators() > 0)
-    P.Diag(Loc, diag::err_expected_equal_designator);
+    P.Diag(Loc, diag::err_expected_equal_designator)
+        << P.getLangOpts().CPlusPlus;
 }
 
 /// ParseInitializerWithPotentialDesignator - Parse the 'initializer' production
@@ -369,7 +373,7 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator() {
                                               true, ParseInitializer());
   }
 
-  Diag(Tok, diag::err_expected_equal_designator);
+  Diag(Tok, diag::err_expected_equal_designator) << getLangOpts().CPlusPlus;
   return ExprError();
 }
 
@@ -383,8 +387,10 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator() {
 /// [GNU]   '{' '}'
 ///
 ///       initializer-list:
-///         designation[opt] initializer ...[opt]
-///         initializer-list ',' designation[opt] initializer ...[opt]
+///         initializer ...[opt]
+///         initializer-list ',' initializer ...[opt]
+///         designation initializer
+///         initializer-list ',' designation initializer
 ///
 ExprResult Parser::ParseBraceInitializer() {
   InMessageExpressionRAIIObject InMessage(*this, false);
@@ -419,7 +425,8 @@ ExprResult Parser::ParseBraceInitializer() {
       continue;
     }
 
-    // Parse: designation[opt] initializer
+    // Parse: initializer ...[opt]
+    //        designation initializer
 
     // If we know that this cannot be a designation, just parse the nested
     // initializer directly.
@@ -429,7 +436,8 @@ ExprResult Parser::ParseBraceInitializer() {
     else
       SubElt = ParseInitializer();
 
-    if (Tok.is(tok::ellipsis))
+    if (Tok.is(tok::ellipsis) &&
+        (SubElt.isInvalid() || !isa<DesignatedInitExpr>(SubElt.get())))
       SubElt = Actions.ActOnPackExpansion(SubElt.get(), ConsumeToken());
 
     SubElt = Actions.CorrectDelayedTyposInExpr(SubElt.get());

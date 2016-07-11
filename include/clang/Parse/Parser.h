@@ -1619,9 +1619,11 @@ private:
       return ParseAssignmentExpression();
     return ParseBraceInitializer();
   }
-  bool MayBeDesignationStart();
+  bool MayBeDesignationStart(bool InInitList = true);
   ExprResult ParseBraceInitializer();
   ExprResult ParseInitializerWithPotentialDesignator();
+
+  ExprResult ParseArgument();
 
   //===--------------------------------------------------------------------===//
   // clang Expressions
@@ -2057,7 +2059,8 @@ private:
   TPResult TryParsePtrOperatorSeq();
   TPResult TryParseOperatorId();
   TPResult TryParseInitDeclaratorList();
-  TPResult TryParseDeclarator(bool mayBeAbstract, bool mayHaveIdentifier=true);
+  TPResult TryParseDeclarator(bool mayBeAbstract, bool mayHaveIdentifier = true,
+                              bool mayBeDesignator = false);
   TPResult
   TryParseParameterDeclarationClause(bool *InvalidAsDeclaration = nullptr,
                                      bool VersusTemplateArg = false);

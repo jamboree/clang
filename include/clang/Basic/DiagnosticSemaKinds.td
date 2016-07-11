@@ -161,8 +161,8 @@ def err_field_designator_unknown : Error<
 def err_field_designator_nonfield : Error<
   "field designator %0 does not refer to a non-static data member">;
 def note_field_designator_found : Note<"field designator refers here">;
-def err_designator_for_scalar_init : Error<
-  "designator in initializer for scalar type %0">;
+def err_designator_for_non_record_init : Error<
+  "designator in initializer for %select{scalar|reference}0 type %1">;
 def warn_subobject_initializer_overrides : Warning<
   "subobject initialization overrides initialization of other fields "
   "within its enclosing subobject">, InGroup<InitializerOverrides>;
@@ -178,6 +178,13 @@ def note_flexible_array_member : Note<
   "initialized flexible array member %0 is here">;
 def ext_flexible_array_init : Extension<
   "flexible array initialization is a GNU extension">, InGroup<GNUFlexibleArrayInitializer>;
+
+def err_duplicate_designators : Error<
+  "duplicate designators %0">;
+def note_previous_designator : Note<
+  "previous designator is here">;
+def err_designator_chain_in_ctor : Error<
+  "designator chain cannot initialize non-aggregate type %0">;
 
 // Declarations.
 def ext_duplicate_declspec : ExtWarn<"duplicate '%0' declaration specifier">,
@@ -3077,6 +3084,8 @@ def err_param_default_argument : Error<
   "C does not support default arguments">;
 def err_param_default_argument_redefinition : Error<
   "redefinition of default argument">;
+def err_param_prototype_redefinition : Error<
+  "prototype with designatable parameters or default arguments cannot be redefined">;
 def ext_param_default_argument_redefinition : ExtWarn<
   err_param_default_argument_redefinition.Text>,
   InGroup<MicrosoftDefaultArgRedefinition>;
@@ -3102,6 +3111,8 @@ def err_param_default_argument_member_template_redecl : Error<
   "class in a template}0">;
 def err_param_default_argument_on_parameter_pack : Error<
   "parameter pack cannot have a default argument">;
+def err_param_designator_on_parameter_pack : Error<
+  "parameter pack is not designatable">;
 def err_uninitialized_member_for_assign : Error<
   "cannot define the implicit copy assignment operator for %0, because "
   "non-static %select{reference|const}1 member %2 cannot use copy "
@@ -3456,6 +3467,37 @@ def note_implicit_member_target_infer_collision : Note<
     "%select{__device__|__global__|__host__|__host__ __device__}1 and "
     "%select{__device__|__global__|__host__|__host__ __device__}2 members">;
 
+def note_ovl_designator_not_found : Note<"candidate "
+    "%select{function|function|constructor|function|function|constructor|"
+    "constructor (the implicit default constructor)|"
+    "constructor (the implicit copy constructor)|"
+    "constructor (the implicit move constructor)|"
+    "function (the implicit copy assignment operator)|"
+    "function (the implicit move assignment operator)|"
+    "constructor (inherited)}0 %select{|template }1"
+    "not viable: %select{no corresponding designatable parameter|parameter}2 %3"
+    "%select{| is not designatable}2">;
+
+def note_ovl_argument_out_of_bounds : Note<"candidate "
+    "%select{function|function|constructor|function|function|constructor|"
+    "constructor (the implicit default constructor)|"
+    "constructor (the implicit copy constructor)|"
+    "constructor (the implicit move constructor)|"
+    "function (the implicit copy assignment operator)|"
+    "function (the implicit move assignment operator)|"
+    "constructor (inherited)}0 %select{|template }1"
+    "not viable: argument index %2 is out of bounds, max %3 parameter%s3">;
+
+def note_ovl_bad_argument_pos : Note<"candidate "
+    "%select{function|function|constructor|function|function|constructor|"
+    "constructor (the implicit default constructor)|"
+    "constructor (the implicit copy constructor)|"
+    "constructor (the implicit move constructor)|"
+    "function (the implicit copy assignment operator)|"
+    "function (the implicit move assignment operator)|"
+    "constructor (inherited)}0 %select{|template }1"
+    "not viable: %select{multiple arguments provided|missing argument}2 for %ordinal3 parameter">;
+
 def note_ambiguous_type_conversion: Note<
     "because of ambiguity in conversion %diff{of $ to $|between types}0,1">;
 def note_ovl_builtin_binary_candidate : Note<
@@ -3518,6 +3560,9 @@ def err_ovl_deleted_object_call : Error<
 def note_ovl_surrogate_cand : Note<"conversion candidate of type %0">;
 def err_member_call_without_object : Error<
   "call to non-static member function without an object argument">;
+def note_ovl_surrogate_desig : Note<
+  "designated arguments cannot be used by surrogate "
+  "(implicit conversion to function pointer)">;
 
 // C++ Address of Overloaded Function
 def err_addr_ovl_no_viable : Error<
@@ -6514,7 +6559,19 @@ def err_typecheck_call_too_many_args_at_most_suggest : Error<
   "too many %select{|||execution configuration }0arguments to "
   "%select{function|block|method|kernel function}0 call, "
   "expected at most %1, have %2; did you mean %3?">;
-  
+
+def err_protocheck_designator_not_found : Error<
+  "%select{no corresponding designatable parameter|parameter}0 %1"
+  "%select{| is not designatable}0">;
+def err_protocheck_bad_argument_pos : Error<
+  "%select{multiple arguments provided|missing argument}0 for %ordinal1 parameter">;
+def err_protocheck_argument_out_of_bounds : Error<
+  "argument index %0 is out of bounds, max %1 parameter%s1">;
+
+def err_designated_arguments_indirect_callee : Error<
+  "designated arguments cannot be used by "
+  "%select{function pointer|member function pointer}0">;
+
 def err_arc_typecheck_convert_incompatible_pointer : Error<
   "incompatible pointer types passing retainable parameter of type %0"
   "to a CF function expecting %1 type">;

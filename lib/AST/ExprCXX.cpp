@@ -63,20 +63,20 @@ SourceLocation CXXScalarValueInitExpr::getLocStart() const {
 CXXNewExpr::CXXNewExpr(const ASTContext &C, bool globalNew,
                        FunctionDecl *operatorNew, FunctionDecl *operatorDelete,
                        bool usualArrayDeleteWantsSize,
-                       ArrayRef<Expr*> placementArgs,
-                       SourceRange typeIdParens, Expr *arraySize,
-                       InitializationStyle initializationStyle,
+                       ArrayRef<Expr *> placementArgs, SourceRange typeIdParens,
+                       Expr *arraySize, InitializationStyle initializationStyle,
                        Expr *initializer, QualType ty,
-                       TypeSourceInfo *allocatedTypeInfo,
-                       SourceRange Range, SourceRange directInitRange)
-  : Expr(CXXNewExprClass, ty, VK_RValue, OK_Ordinary,
-         ty->isDependentType(), ty->isDependentType(),
-         ty->isInstantiationDependentType(),
-         ty->containsUnexpandedParameterPack()),
-    SubExprs(nullptr), OperatorNew(operatorNew), OperatorDelete(operatorDelete),
-    AllocatedTypeInfo(allocatedTypeInfo), TypeIdParens(typeIdParens),
-    Range(Range), DirectInitRange(directInitRange),
-    GlobalNew(globalNew), UsualArrayDeleteWantsSize(usualArrayDeleteWantsSize) {
+                       TypeSourceInfo *allocatedTypeInfo, SourceRange Range,
+                       SourceRange directInitRange)
+    : Expr(CXXNewExprClass, ty, VK_RValue, OK_Ordinary, ty->isDependentType(),
+           ty->isDependentType(), ty->isInstantiationDependentType(),
+           ty->containsUnexpandedParameterPack()),
+      SubExprs(nullptr), SyntacticPlacementArgs(nullptr),
+      OperatorNew(operatorNew), OperatorDelete(operatorDelete),
+      AllocatedTypeInfo(allocatedTypeInfo), TypeIdParens(typeIdParens),
+      Range(Range), DirectInitRange(directInitRange), GlobalNew(globalNew),
+      UsualArrayDeleteWantsSize(usualArrayDeleteWantsSize),
+      NumSyntacticPlacementArgs(0) {
   assert((initializer != nullptr || initializationStyle == NoInit) &&
          "Only NoInit can have no initializer.");
   StoredInitializationStyle = initializer ? initializationStyle + 1 : 0;
@@ -122,6 +122,16 @@ CXXNewExpr::CXXNewExpr(const ASTContext &C, bool globalNew,
       this->Range.setEnd(TypeIdParens.getEnd());
     break;
   }
+}
+
+void CXXNewExpr::setSyntacticPlacementArgs(const ASTContext &C,
+                                           ArrayRef<Expr *> Args) {
+  Expr **NewSyntacticPlacementArgs = new (C) Expr *[Args.size()];
+  std::copy(Args.begin(), Args.end(), NewSyntacticPlacementArgs);
+  if (SyntacticPlacementArgs)
+    C.Deallocate(SyntacticPlacementArgs);
+  SyntacticPlacementArgs = NewSyntacticPlacementArgs;
+  NumSyntacticPlacementArgs = Args.size();
 }
 
 void CXXNewExpr::AllocateArgsArray(const ASTContext &C, bool isArray,
@@ -783,12 +793,12 @@ CXXConstructExpr::CXXConstructExpr(const ASTContext &C, StmtClass SC,
          T->isInstantiationDependentType(),
          T->containsUnexpandedParameterPack()),
     Constructor(Ctor), Loc(Loc), ParenOrBraceRange(ParenOrBraceRange),
-    NumArgs(Args.size()),
+    NumArgs(Args.size()), NumSyntacticArgs(0),
     Elidable(Elidable), HadMultipleCandidates(HadMultipleCandidates),
     ListInitialization(ListInitialization),
     StdInitListInitialization(StdInitListInitialization),
     ZeroInitialization(ZeroInitialization),
-    ConstructKind(ConstructKind), Args(nullptr)
+    ConstructKind(ConstructKind), Args(nullptr), SyntacticArgs(nullptr)
 {
   if (NumArgs) {
     this->Args = new (C) Stmt*[Args.size()];
@@ -808,6 +818,15 @@ CXXConstructExpr::CXXConstructExpr(const ASTContext &C, StmtClass SC,
   }
 }
 
+void CXXConstructExpr::setSyntacticArgs(const ASTContext &C,
+                                        ArrayRef<Expr *> Args) {
+  Expr **NewSyntacticArgs = new (C) Expr *[Args.size()];
+  std::copy(Args.begin(), Args.end(), NewSyntacticArgs);
+  if (SyntacticArgs)
+    C.Deallocate(SyntacticArgs);
+  SyntacticArgs = NewSyntacticArgs;
+  NumSyntacticArgs = Args.size();
+}
 LambdaCapture::LambdaCapture(SourceLocation Loc, bool Implicit,
                              LambdaCaptureKind Kind, VarDecl *Var,
                              SourceLocation EllipsisLoc)

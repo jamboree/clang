@@ -1048,6 +1048,9 @@ void ASTDumper::dumpDecl(const Decl *D) {
     if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
       if (FD->isConstexpr())
         OS << " constexpr";
+    if (const ParmVarDecl *PD = dyn_cast<ParmVarDecl>(D))
+      if (PD->isDesignatable())
+        OS << " designatable";
 
 
     ConstDeclVisitor<ASTDumper>::Visit(D);
