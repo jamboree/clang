@@ -482,7 +482,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   };
 /// \endcode
 /// fieldDecl(isPublic())
-///   matches 'int a;' 
+///   matches 'int a;'
 AST_MATCHER(Decl, isPublic) {
   return Node.getAccess() == AS_public;
 }
@@ -498,7 +498,7 @@ AST_MATCHER(Decl, isPublic) {
 ///   };
 /// \endcode
 /// fieldDecl(isProtected())
-///   matches 'int b;' 
+///   matches 'int b;'
 AST_MATCHER(Decl, isProtected) {
   return Node.getAccess() == AS_protected;
 }
@@ -514,9 +514,41 @@ AST_MATCHER(Decl, isProtected) {
 ///   };
 /// \endcode
 /// fieldDecl(isPrivate())
-///   matches 'int c;' 
+///   matches 'int c;'
 AST_MATCHER(Decl, isPrivate) {
   return Node.getAccess() == AS_private;
+}
+
+/// \brief Matches non-static data members that are bit-fields.
+///
+/// Given
+/// \code
+///   class C {
+///     int a : 2;
+///     int b;
+///   };
+/// \endcode
+/// fieldDecl(isBitField())
+///   matches 'int a;' but not 'int b;'.
+AST_MATCHER(FieldDecl, isBitField) {
+  return Node.isBitField();
+}
+
+/// \brief Matches non-static data members that are bit-fields.
+///
+/// Given
+/// \code
+///   class C {
+///     int a : 2;
+///     int b : 4;
+///     int c : 2;
+///   };
+/// \endcode
+/// fieldDecl(isBitField())
+///   matches 'int a;' and 'int c;' but not 'int b;'.
+AST_MATCHER_P(FieldDecl, hasBitWidth, unsigned, Width) {
+  return Node.isBitField() &&
+         Node.getBitWidthValue(Finder->getASTContext()) == Width;
 }
 
 /// \brief Matches a declaration that has been implicitly added
@@ -546,6 +578,32 @@ AST_POLYMORPHIC_MATCHER_P(
       internal::getTemplateSpecializationArgs(Node);
   return matchesFirstInRange(InnerMatcher, List.begin(), List.end(), Finder,
                              Builder);
+}
+
+/// \brief Matches expressions that match InnerMatcher after any implicit AST
+/// nodes are stripped off.
+///
+/// Parentheses and explicit casts are not discarded.
+/// Given
+/// \code
+///   class C {};
+///   C a = C();
+///   C b;
+///   C c = b;
+/// \endcode
+/// The matchers
+/// \code
+///    varDecl(hasInitializer(ignoringImplicit(cxxConstructExpr())))
+/// \endcode
+/// would match the declarations for a, b, and c.
+/// While
+/// \code
+///    varDecl(hasInitializer(cxxConstructExpr()))
+/// \endcode
+/// only match the declarations for b and c.
+AST_MATCHER_P(Expr, ignoringImplicit, ast_matchers::internal::Matcher<Expr>,
+              InnerMatcher) {
+  return InnerMatcher.matches(*Node.IgnoreImplicit(), Finder, Builder);
 }
 
 /// \brief Matches expressions that match InnerMatcher after any implicit casts
@@ -623,6 +681,22 @@ AST_MATCHER_P(Expr, ignoringParenCasts, internal::Matcher<Expr>, InnerMatcher) {
 AST_MATCHER_P(Expr, ignoringParenImpCasts,
               internal::Matcher<Expr>, InnerMatcher) {
   return InnerMatcher.matches(*Node.IgnoreParenImpCasts(), Finder, Builder);
+}
+
+/// \brief Matches types that match InnerMatcher after any parens are stripped.
+///
+/// Given
+/// \code
+///   void (*fp)(void);
+/// \endcode
+/// The matcher
+/// \code
+///   varDecl(hasType(pointerType(pointee(ignoringParens(functionType())))))
+/// \endcode
+/// would match the declaration for fp.
+AST_MATCHER_P(QualType, ignoringParens,
+              internal::Matcher<QualType>, InnerMatcher) {
+  return InnerMatcher.matches(Node.IgnoreParens(), Finder, Builder);
 }
 
 /// \brief Matches classTemplateSpecializations where the n'th TemplateArgument
@@ -1085,6 +1159,24 @@ const internal::VariadicDynCastAllOfMatcher<Decl, UsingDecl> usingDecl;
 const internal::VariadicDynCastAllOfMatcher<
   Decl,
   UsingDirectiveDecl> usingDirectiveDecl;
+
+/// \brief Matches reference to a name that can be looked up during parsing
+/// but could not be resolved to a specific declaration.
+///
+/// Given
+/// \code
+///   template<typename T>
+///   T foo() { T a; return a; }
+///   template<typename T>
+///   void bar() {
+///     foo<T>();
+///   }
+/// \endcode
+/// unresolvedLookupExpr()
+///   matches \code foo<T>() \endcode
+const internal::VariadicDynCastAllOfMatcher<
+   Stmt,
+   UnresolvedLookupExpr> unresolvedLookupExpr;
 
 /// \brief Matches unresolved using value declarations.
 ///
@@ -1560,7 +1652,8 @@ const internal::VariadicDynCastAllOfMatcher<
 ///
 /// Example matches "abcd", L"abcd"
 /// \code
-///   char *s = "abcd"; wchar_t *ws = L"abcd"
+///   char *s = "abcd";
+///   wchar_t *ws = L"abcd";
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<
   Stmt,
@@ -1573,7 +1666,8 @@ const internal::VariadicDynCastAllOfMatcher<
 ///
 /// Example matches 'a', L'a'
 /// \code
-///   char ch = 'a'; wchar_t chw = L'a';
+///   char ch = 'a';
+///   wchar_t chw = L'a';
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<
   Stmt,
@@ -1609,7 +1703,8 @@ const internal::VariadicDynCastAllOfMatcher<
 ///
 /// Example match: {1}, (1, 2)
 /// \code
-///   int array[4] = {1}; vector int myvec = (vector int)(1, 2);
+///   int array[4] = {1};
+///   vector int myvec = (vector int)(1, 2);
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<
   Stmt,
@@ -2134,6 +2229,19 @@ AST_MATCHER_P(CXXRecordDecl, hasMethod, internal::Matcher<CXXMethodDecl>,
                                     Node.method_end(), Finder, Builder);
 }
 
+/// \brief Matches the generated class of lambda expressions.
+///
+/// Given:
+/// \code
+///   auto x = []{};
+/// \endcode
+///
+/// \c cxxRecordDecl(isLambda()) matches the implicit class declaration of
+/// \c decltype(x)
+AST_MATCHER(CXXRecordDecl, isLambda) {
+  return Node.isLambda();
+}
+
 /// \brief Matches AST nodes that have child AST nodes that match the
 /// provided matcher.
 ///
@@ -2148,6 +2256,10 @@ AST_MATCHER_P(CXXRecordDecl, hasMethod, internal::Matcher<CXXMethodDecl>,
 /// ChildT must be an AST base type.
 ///
 /// Usable as: Any Matcher
+/// Note that has is direct matcher, so it also matches things like implicit
+/// casts and paren casts. If you are matching with expr then you should
+/// probably consider using ignoringParenImpCasts like:
+/// has(ignoringParenImpCasts(expr())).
 const internal::ArgumentAdaptingMatcherFunc<internal::HasMatcher>
 LLVM_ATTRIBUTE_UNUSED has = {};
 
@@ -3074,8 +3186,11 @@ AST_MATCHER_P2(FunctionDecl, hasParameter,
 ///   int y;
 ///   f(y);
 /// \endcode
-/// callExpr(declRefExpr(to(varDecl(hasName("y")))),
-/// parmVarDecl(hasType(isInteger())))
+/// callExpr(
+///   forEachArgumentWithParam(
+///     declRefExpr(to(varDecl(hasName("y")))),
+///     parmVarDecl(hasType(isInteger()))
+/// ))
 ///   matches f(y);
 /// with declRefExpr(...)
 ///   matching int y
@@ -3212,6 +3327,29 @@ AST_MATCHER(FunctionDecl, isDefaulted) {
   return Node.isDefaulted();
 }
 
+/// \brief Matches functions that have a dynamic exception specification.
+///
+/// Given:
+/// \code
+///   void f();
+///   void g() noexcept;
+///   void h() noexcept(true);
+///   void i() noexcept(false);
+///   void j() throw();
+///   void k() throw(int);
+///   void l() throw(...);
+/// \endcode
+/// functionDecl(hasDynamicExceptionSpec()) and
+///   functionProtoType(hasDynamicExceptionSpec())
+///   match the declarations of j, k, and l, but not f, g, h, or i.
+AST_POLYMORPHIC_MATCHER(hasDynamicExceptionSpec,
+                        AST_POLYMORPHIC_SUPPORTED_TYPES(FunctionDecl,
+                                                        FunctionProtoType)) {
+  if (const FunctionProtoType *FnTy = internal::getFunctionProtoType(Node))
+    return FnTy->hasDynamicExceptionSpec();
+  return false;
+}
+
 /// \brief Matches functions that have a non-throwing exception specification.
 ///
 /// Given:
@@ -3222,10 +3360,12 @@ AST_MATCHER(FunctionDecl, isDefaulted) {
 ///   void i() throw(int);
 ///   void j() noexcept(false);
 /// \endcode
-/// functionDecl(isNoThrow())
-///   matches the declarations of g, and h, but not f, i or j.
-AST_MATCHER(FunctionDecl, isNoThrow) {
-  const auto *FnTy = Node.getType()->getAs<FunctionProtoType>();
+/// functionDecl(isNoThrow()) and functionProtoType(isNoThrow())
+///   match the declarations of g, and h, but not f, i or j.
+AST_POLYMORPHIC_MATCHER(isNoThrow,
+                        AST_POLYMORPHIC_SUPPORTED_TYPES(FunctionDecl,
+                                                        FunctionProtoType)) {
+  const FunctionProtoType *FnTy = internal::getFunctionProtoType(Node);
 
   // If the function does not have a prototype, then it is assumed to be a
   // throwing function (as it would if the function did not have any exception
@@ -3237,7 +3377,7 @@ AST_MATCHER(FunctionDecl, isNoThrow) {
   if (isUnresolvedExceptionSpec(FnTy->getExceptionSpecType()))
     return true;
 
-  return FnTy->isNothrow(Node.getASTContext());
+  return FnTy->isNothrow(Finder->getASTContext());
 }
 
 /// \brief Matches constexpr variable and function declarations.
@@ -3258,7 +3398,7 @@ AST_POLYMORPHIC_MATCHER(isConstexpr,
 }
 
 /// \brief Matches the condition expression of an if statement, for loop,
-/// or conditional operator.
+/// switch statement or conditional operator.
 ///
 /// Example matches true (matcher = hasCondition(cxxBoolLiteral(equals(true))))
 /// \code
@@ -3267,7 +3407,7 @@ AST_POLYMORPHIC_MATCHER(isConstexpr,
 AST_POLYMORPHIC_MATCHER_P(
     hasCondition,
     AST_POLYMORPHIC_SUPPORTED_TYPES(IfStmt, ForStmt, WhileStmt, DoStmt,
-                                    AbstractConditionalOperator),
+                                    SwitchStmt, AbstractConditionalOperator),
     internal::Matcher<Expr>, InnerMatcher) {
   const Expr *const Condition = Node.getCond();
   return (Condition != nullptr &&
@@ -3548,6 +3688,17 @@ AST_POLYMORPHIC_MATCHER_P(hasSourceExpression,
           InnerMatcher.matches(*SubExpression, Finder, Builder));
 }
 
+/// \brief Matches casts that has a given cast kind.
+///
+/// Example: matches the implicit cast around \c 0
+/// (matcher = castExpr(hasCastKind(CK_NullToPointer)))
+/// \code
+///   int *p = 0;
+/// \endcode
+AST_MATCHER_P(CastExpr, hasCastKind, CastKind, Kind) {
+  return Node.getCastKind() == Kind;
+}
+
 /// \brief Matches casts whose destination type matches a given matcher.
 ///
 /// (Note: Clang's AST refers to other conversions as "casts" too, and calls
@@ -3691,6 +3842,47 @@ AST_MATCHER_P(CXXMethodDecl, ofClass,
   const CXXRecordDecl *Parent = Node.getParent();
   return (Parent != nullptr &&
           InnerMatcher.matches(*Parent, Finder, Builder));
+}
+
+/// \brief Matches each method overriden by the given method. This matcher may
+/// produce multiple matches.
+///
+/// Given
+/// \code
+///   class A { virtual void f(); };
+///   class B : public A { void f(); };
+///   class C : public B { void f(); };
+/// \endcode
+/// cxxMethodDecl(ofClass(hasName("C")),
+///               forEachOverridden(cxxMethodDecl().bind("b"))).bind("d")
+///   matches once, with "b" binding "A::f" and "d" binding "C::f" (Note
+///   that B::f is not overridden by C::f).
+///
+/// The check can produce multiple matches in case of multiple inheritance, e.g.
+/// \code
+///   class A1 { virtual void f(); };
+///   class A2 { virtual void f(); };
+///   class C : public A1, public A2 { void f(); };
+/// \endcode
+/// cxxMethodDecl(ofClass(hasName("C")),
+///               forEachOverridden(cxxMethodDecl().bind("b"))).bind("d")
+///   matches twice, once with "b" binding "A1::f" and "d" binding "C::f", and
+///   once with "b" binding "A2::f" and "d" binding "C::f".
+AST_MATCHER_P(CXXMethodDecl, forEachOverridden,
+              internal::Matcher<CXXMethodDecl>, InnerMatcher) {
+  BoundNodesTreeBuilder Result;
+  bool Matched = false;
+  for (const auto *Overridden : Node.overridden_methods()) {
+    BoundNodesTreeBuilder OverriddenBuilder(*Builder);
+    const bool OverriddenMatched =
+        InnerMatcher.matches(*Overridden, Finder, &OverriddenBuilder);
+    if (OverriddenMatched) {
+      Matched = true;
+      Result.addMatch(OverriddenBuilder);
+    }
+  }
+  *Builder = std::move(Result);
+  return Matched;
 }
 
 /// \brief Matches if the given method declaration is virtual.
@@ -4228,18 +4420,26 @@ AST_TYPELOC_TRAVERSE_MATCHER(hasElementType, getElement,
 ///   matches "int a[2]"
 AST_TYPE_MATCHER(ConstantArrayType, constantArrayType);
 
-/// \brief Matches \c ConstantArrayType nodes that have the specified size.
+/// \brief Matches nodes that have the specified size.
 ///
 /// Given
 /// \code
 ///   int a[42];
 ///   int b[2 * 21];
 ///   int c[41], d[43];
+///   char *s = "abcd";
+///   wchar_t *ws = L"abcd";
+///   char *w = "a";
 /// \endcode
 /// constantArrayType(hasSize(42))
 ///   matches "int a[42]" and "int b[2 * 21]"
-AST_MATCHER_P(ConstantArrayType, hasSize, unsigned, N) {
-  return Node.getSize() == N;
+/// stringLiteral(hasSize(4))
+///   matches "abcd", L"abcd"
+AST_POLYMORPHIC_MATCHER_P(hasSize,
+                          AST_POLYMORPHIC_SUPPORTED_TYPES(ConstantArrayType,
+                                                          StringLiteral),
+                          unsigned, N) {
+  return internal::HasSizeMatcher<NodeType>::hasSize(Node, N);
 }
 
 /// \brief Matches C++ arrays whose size is a value-dependent expression.
@@ -4529,6 +4729,21 @@ AST_TYPELOC_TRAVERSE_MATCHER(pointee, getPointee,
 /// typedefType()
 ///   matches "typedef int X"
 AST_TYPE_MATCHER(TypedefType, typedefType);
+
+/// \brief Matches enum types.
+///
+/// Given
+/// \code
+///   enum C { Green };
+///   enum class S { Red };
+///
+///   C c;
+///   S s;
+/// \endcode
+//
+/// \c enumType() matches the type of the variable declarations of both \c c and
+/// \c s.
+AST_TYPE_MATCHER(EnumType, enumType);
 
 /// \brief Matches template specialization types.
 ///
@@ -5108,6 +5323,45 @@ AST_MATCHER_FUNCTION(internal::Matcher<Expr>, nullPointerConstant) {
       gnuNullExpr(), cxxNullPtrLiteralExpr(),
       integerLiteral(equals(0), hasParent(expr(hasType(pointerType())))));
 }
+
+/// \brief Matches declaration of the function the statemenet belongs to
+///
+/// Given:
+/// \code
+/// F& operator=(const F& o) {
+///   std::copy_if(o.begin(), o.end(), begin(), [](V v) { return v > 0; });
+///   return *this;
+/// }
+/// \endcode
+/// returnStmt(forFunction(hasName("operator=")))
+///   matches 'return *this'
+///   but does match 'return > 0'
+AST_MATCHER_P(Stmt, forFunction, internal::Matcher<FunctionDecl>,
+              InnerMatcher) {
+  const auto &Parents = Finder->getASTContext().getParents(Node);
+
+  llvm::SmallVector<ast_type_traits::DynTypedNode, 8> Stack(Parents.begin(),
+                                                            Parents.end());
+  while(!Stack.empty()) {
+    const auto &CurNode = Stack.back();
+    Stack.pop_back();
+    if(const auto *FuncDeclNode = CurNode.get<FunctionDecl>()) {
+      if(InnerMatcher.matches(*FuncDeclNode, Finder, Builder)) {
+        return true;
+      }
+    } else if(const auto *LambdaExprNode = CurNode.get<LambdaExpr>()) {
+      if(InnerMatcher.matches(*LambdaExprNode->getCallOperator(),
+                              Finder, Builder)) {
+        return true;
+      }
+    } else {
+      for(const auto &Parent: Finder->getASTContext().getParents(CurNode))
+        Stack.push_back(Parent);
+    }
+  }
+  return false;
+}
+
 } // end namespace ast_matchers
 } // end namespace clang
 

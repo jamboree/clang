@@ -490,8 +490,6 @@ private:
   /// MDNodes.
   llvm::DenseMap<QualType, llvm::Metadata *> MetadataIdMap;
 
-  SanitizerBlacklist WholeProgramVTablesBlacklist;
-
 public:
   CodeGenModule(ASTContext &C, const HeaderSearchOptions &headersearchopts,
                 const PreprocessorOptions &ppopts,
@@ -1115,36 +1113,32 @@ public:
   void EmitOMPDeclareReduction(const OMPDeclareReductionDecl *D,
                                CodeGenFunction *CGF = nullptr);
 
-  /// Returns whether we need bit sets attached to vtables.
-  bool NeedVTableBitSets();
+  /// Returns whether the given record has hidden LTO visibility and therefore
+  /// may participate in (single-module) CFI and whole-program vtable
+  /// optimization.
+  bool HasHiddenLTOVisibility(const CXXRecordDecl *RD);
 
-  /// Returns whether the given record is blacklisted from whole-program
-  /// transformations (i.e. CFI or whole-program vtable optimization).
-  bool IsBitSetBlacklistedRecord(const CXXRecordDecl *RD);
+  /// Emit type metadata for the given vtable using the given layout.
+  void EmitVTableTypeMetadata(llvm::GlobalVariable *VTable,
+                              const VTableLayout &VTLayout);
 
-  /// Emit bit set entries for the given vtable using the given layout if
-  /// vptr CFI is enabled.
-  void EmitVTableBitSetEntries(llvm::GlobalVariable *VTable,
-                               const VTableLayout &VTLayout);
-
-  /// Generate a cross-DSO type identifier for type.
-  llvm::ConstantInt *CreateCfiIdForTypeMetadata(llvm::Metadata *MD);
+  /// Generate a cross-DSO type identifier for MD.
+  llvm::ConstantInt *CreateCrossDsoCfiTypeId(llvm::Metadata *MD);
 
   /// Create a metadata identifier for the given type. This may either be an
   /// MDString (for external identifiers) or a distinct unnamed MDNode (for
   /// internal identifiers).
   llvm::Metadata *CreateMetadataIdentifierForType(QualType T);
 
-  /// Create a bitset entry for the given function and add it to BitsetsMD.
-  void CreateFunctionBitSetEntry(const FunctionDecl *FD, llvm::Function *F);
+  /// Create and attach type metadata to the given function.
+  void CreateFunctionTypeMetadata(const FunctionDecl *FD, llvm::Function *F);
 
-  /// Returns whether this module needs the "all-vtables" bitset.
-  bool NeedAllVtablesBitSet() const;
+  /// Returns whether this module needs the "all-vtables" type identifier.
+  bool NeedAllVtablesTypeId() const;
 
-  /// Create a bitset entry for the given vtable and add it to BitsetsMD.
-  void CreateVTableBitSetEntry(llvm::NamedMDNode *BitsetsMD,
-                               llvm::GlobalVariable *VTable, CharUnits Offset,
-                               const CXXRecordDecl *RD);
+  /// Create and attach type metadata for the given vtable.
+  void AddVTableTypeMetadata(llvm::GlobalVariable *VTable, CharUnits Offset,
+                             const CXXRecordDecl *RD);
 
   /// \breif Get the declaration of std::terminate for the platform.
   llvm::Constant *getTerminateFn();

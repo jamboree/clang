@@ -647,6 +647,8 @@ private:
   /// Should only be used in Objective-C language modes.
   bool isObjCInstancetype() {
     assert(getLangOpts().ObjC1);
+    if (Tok.isAnnotation())
+      return false;
     if (!Ident_instancetype)
       Ident_instancetype = PP.getIdentifierInfo("instancetype");
     return Tok.getIdentifierInfo() == Ident_instancetype;
@@ -713,6 +715,16 @@ private:
       assert(!isActive && "Forgot to call Commit or Revert!");
     }
   };
+  /// A TentativeParsingAction that automatically reverts in its destructor.
+  /// Useful for disambiguation parses that will always be reverted.
+  class RevertingTentativeParsingAction
+      : private Parser::TentativeParsingAction {
+  public:
+    RevertingTentativeParsingAction(Parser &P)
+        : Parser::TentativeParsingAction(P) {}
+    ~RevertingTentativeParsingAction() { Revert(); }
+  };
+
   class UnannotatedTentativeParsingAction;
 
   /// ObjCDeclContextSwitch - An object used to switch context from
@@ -1588,8 +1600,9 @@ private:
 
   //===--------------------------------------------------------------------===//
   // C++ if/switch/while condition expression.
-  bool ParseCXXCondition(ExprResult &ExprResult, Decl *&DeclResult,
-                         SourceLocation Loc, bool ConvertToBoolean);
+  Sema::ConditionResult ParseCXXCondition(StmtResult *InitStmt,
+                                          SourceLocation Loc,
+                                          Sema::ConditionKind CK);
 
   //===--------------------------------------------------------------------===//
   // C++ Coroutines
@@ -1680,10 +1693,10 @@ private:
                                     unsigned ScopeFlags);
   void ParseCompoundStatementLeadingPragmas();
   StmtResult ParseCompoundStatementBody(bool isStmtExpr = false);
-  bool ParseParenExprOrCondition(ExprResult &ExprResult,
-                                 Decl *&DeclResult,
+  bool ParseParenExprOrCondition(StmtResult *InitStmt,
+                                 Sema::ConditionResult &CondResult,
                                  SourceLocation Loc,
-                                 bool ConvertToBoolean);
+                                 Sema::ConditionKind CK);
   StmtResult ParseIfStatement(SourceLocation *TrailingElseLoc);
   StmtResult ParseSwitchStatement(SourceLocation *TrailingElseLoc);
   StmtResult ParseWhileStatement(SourceLocation *TrailingElseLoc);
@@ -1877,7 +1890,6 @@ private:
 
   bool isDeclarationSpecifier(bool DisambiguatingWithExpression = false);
   bool isTypeSpecifierQualifier();
-  bool isTypeQualifier() const;
 
   /// isKnownToBeTypeSpecifier - Return true if we know that the specified token
   /// is definitely a type-specifier.  Return false if it isn't part of a type
@@ -1978,11 +1990,18 @@ private:
   /// the function returns true to let the declaration parsing code handle it.
   bool isCXXFunctionDeclarator(bool *IsAmbiguous = nullptr);
 
-  /// isCXXConditionDeclaration - Disambiguates between a declaration or an
-  /// expression for a condition of a if/switch/while/for statement.
-  /// If during the disambiguation process a parsing error is encountered,
-  /// the function returns true to let the declaration parsing code handle it.
-  bool isCXXConditionDeclaration();
+  struct ConditionDeclarationOrInitStatementState;
+  enum class ConditionOrInitStatement {
+    Expression,    ///< Disambiguated as an expression (either kind).
+    ConditionDecl, ///< Disambiguated as the declaration form of condition.
+    InitStmtDecl,  ///< Disambiguated as a simple-declaration init-statement.
+    Error          ///< Can't be any of the above!
+  };
+  /// \brief Disambiguates between the different kinds of things that can happen
+  /// after 'if (' or 'switch ('. This could be one of two different kinds of
+  /// declaration (depending on whether there is a ';' later) or an expression.
+  ConditionOrInitStatement
+  isCXXConditionDeclarationOrInitStatement(bool CanBeInitStmt);
 
   bool isCXXTypeId(TentativeCXXTypeIdContext Context, bool &isAmbiguous);
   bool isCXXTypeId(TentativeCXXTypeIdContext Context) {
@@ -2473,16 +2492,19 @@ private:
       Decl *TagDecl = nullptr);
   /// \brief Parse 'omp declare reduction' construct.
   DeclGroupPtrTy ParseOpenMPDeclareReductionDirective(AccessSpecifier AS);
+
   /// \brief Parses simple list of variables.
   ///
   /// \param Kind Kind of the directive.
-  /// \param [out] VarList List of referenced variables.
+  /// \param Callback Callback function to be called for the list elements.
   /// \param AllowScopeSpecifier true, if the variables can have fully
   /// qualified names.
   ///
-  bool ParseOpenMPSimpleVarList(OpenMPDirectiveKind Kind,
-                                SmallVectorImpl<Expr *> &VarList,
-                                bool AllowScopeSpecifier);
+  bool ParseOpenMPSimpleVarList(
+      OpenMPDirectiveKind Kind,
+      const llvm::function_ref<void(CXXScopeSpec &, DeclarationNameInfo)> &
+          Callback,
+      bool AllowScopeSpecifier);
   /// \brief Parses declarative or executable directive.
   ///
   /// \param Allowed ACK_Any, if any directives are allowed,

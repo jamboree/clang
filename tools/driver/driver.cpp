@@ -308,8 +308,9 @@ static int ExecuteCC1Tool(ArrayRef<const char *> argv, StringRef Tool) {
 }
 
 int main(int argc_, const char **argv_) {
-  llvm::sys::PrintStackTraceOnErrorSignal();
+  llvm::sys::PrintStackTraceOnErrorSignal(argv_[0]);
   llvm::PrettyStackTraceProgram X(argc_, argv_);
+  llvm::llvm_shutdown_obj Y; // Call llvm_shutdown() on exit.
 
   if (llvm::sys::Process::FixupStandardFileDescriptors())
     return 1;
@@ -345,17 +346,24 @@ int main(int argc_, const char **argv_) {
       }) != argv.end()) {
     ClangCLMode = true;
   }
+  enum { Default, POSIX, Windows } RSPQuoting = Default;
+  for (const char *F : argv) {
+    if (strcmp(F, "--rsp-quoting=posix") == 0)
+      RSPQuoting = POSIX;
+    else if (strcmp(F, "--rsp-quoting=windows") == 0)
+      RSPQuoting = Windows;
+  }
 
   // Determines whether we want nullptr markers in argv to indicate response
   // files end-of-lines. We only use this for the /LINK driver argument with
   // clang-cl.exe on Windows.
-  bool MarkEOLs = false;
+  bool MarkEOLs = ClangCLMode;
 
-  llvm::cl::TokenizerCallback Tokenizer = &llvm::cl::TokenizeGNUCommandLine;
-  if (ClangCLMode) {
+  llvm::cl::TokenizerCallback Tokenizer;
+  if (RSPQuoting == Windows || (RSPQuoting == Default && ClangCLMode))
     Tokenizer = &llvm::cl::TokenizeWindowsCommandLine;
-    MarkEOLs = true;
-  }
+  else
+    Tokenizer = &llvm::cl::TokenizeGNUCommandLine;
 
   if (MarkEOLs && argv.size() > 1 && StringRef(argv[1]).startswith("-cc1"))
     MarkEOLs = false;
@@ -489,8 +497,6 @@ int main(int argc_, const char **argv_) {
   // If any timers were active but haven't been destroyed yet, print their
   // results now.  This happens in -disable-free mode.
   llvm::TimerGroup::printAll(llvm::errs());
-
-  llvm::llvm_shutdown();
 
 #ifdef LLVM_ON_WIN32
   // Exit status should not be negative on Win32, unless abnormal termination.

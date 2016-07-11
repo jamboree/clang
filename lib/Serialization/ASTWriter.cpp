@@ -1104,6 +1104,7 @@ void ASTWriter::WriteBlockInfoBlock() {
   RECORD(DECL_CXX_RECORD);
   RECORD(DECL_CXX_METHOD);
   RECORD(DECL_CXX_CONSTRUCTOR);
+  RECORD(DECL_CXX_INHERITED_CONSTRUCTOR);
   RECORD(DECL_CXX_DESTRUCTOR);
   RECORD(DECL_CXX_CONVERSION);
   RECORD(DECL_ACCESS_SPEC);
@@ -2187,30 +2188,29 @@ void ASTWriter::WritePreprocessor(const Preprocessor &PP, bool IsModule) {
 
     // Write out any exported module macros.
     bool EmittedModuleMacros = false;
-    if (IsModule) {
-      auto Leafs = PP.getLeafModuleMacros(Name);
-      SmallVector<ModuleMacro*, 8> Worklist(Leafs.begin(), Leafs.end());
-      llvm::DenseMap<ModuleMacro*, unsigned> Visits;
-      while (!Worklist.empty()) {
-        auto *Macro = Worklist.pop_back_val();
+    // We write out exported module macros for PCH as well.
+    auto Leafs = PP.getLeafModuleMacros(Name);
+    SmallVector<ModuleMacro*, 8> Worklist(Leafs.begin(), Leafs.end());
+    llvm::DenseMap<ModuleMacro*, unsigned> Visits;
+    while (!Worklist.empty()) {
+      auto *Macro = Worklist.pop_back_val();
 
-        // Emit a record indicating this submodule exports this macro.
-        ModuleMacroRecord.push_back(
-            getSubmoduleID(Macro->getOwningModule()));
-        ModuleMacroRecord.push_back(getMacroRef(Macro->getMacroInfo(), Name));
-        for (auto *M : Macro->overrides())
-          ModuleMacroRecord.push_back(getSubmoduleID(M->getOwningModule()));
+      // Emit a record indicating this submodule exports this macro.
+      ModuleMacroRecord.push_back(
+          getSubmoduleID(Macro->getOwningModule()));
+      ModuleMacroRecord.push_back(getMacroRef(Macro->getMacroInfo(), Name));
+      for (auto *M : Macro->overrides())
+        ModuleMacroRecord.push_back(getSubmoduleID(M->getOwningModule()));
 
-        Stream.EmitRecord(PP_MODULE_MACRO, ModuleMacroRecord);
-        ModuleMacroRecord.clear();
+      Stream.EmitRecord(PP_MODULE_MACRO, ModuleMacroRecord);
+      ModuleMacroRecord.clear();
 
-        // Enqueue overridden macros once we've visited all their ancestors.
-        for (auto *M : Macro->overrides())
-          if (++Visits[M] == M->getNumOverridingMacros())
-            Worklist.push_back(M);
+      // Enqueue overridden macros once we've visited all their ancestors.
+      for (auto *M : Macro->overrides())
+        if (++Visits[M] == M->getNumOverridingMacros())
+          Worklist.push_back(M);
 
-        EmittedModuleMacros = true;
-      }
+      EmittedModuleMacros = true;
     }
 
     if (Record.empty() && !EmittedModuleMacros)
@@ -3107,11 +3107,20 @@ static NamedDecl *getDeclForLocalLookup(const LangOptions &LangOpts,
   if (Decl *Redecl = D->getPreviousDecl()) {
     // For Redeclarable decls, a prior declaration might be local.
     for (; Redecl; Redecl = Redecl->getPreviousDecl()) {
-      if (!Redecl->isFromASTFile())
+      // If we find a local decl, we're done.
+      if (!Redecl->isFromASTFile()) {
+        // Exception: in very rare cases (for injected-class-names), not all
+        // redeclarations are in the same semantic context. Skip ones in a
+        // different context. They don't go in this lookup table at all.
+        if (!Redecl->getDeclContext()->getRedeclContext()->Equals(
+                D->getDeclContext()->getRedeclContext()))
+          continue;
         return cast<NamedDecl>(Redecl);
+      }
+
       // If we find a decl from a (chained-)PCH stop since we won't find a
       // local one.
-      if (D->getOwningModuleID() == 0)
+      if (Redecl->getOwningModuleID() == 0)
         break;
     }
   } else if (Decl *First = D->getCanonicalDecl()) {
@@ -4182,6 +4191,8 @@ uint64_t ASTWriter::WriteASTCore(Sema &SemaRef, StringRef isysroot,
                      PREDEF_DECL_CF_CONSTANT_STRING_ID);
   RegisterPredefDecl(Context.CFConstantStringTagDecl,
                      PREDEF_DECL_CF_CONSTANT_STRING_TAG_ID);
+  RegisterPredefDecl(Context.TypePackElementDecl,
+                     PREDEF_DECL_TYPE_PACK_ELEMENT_ID);
 
   // Build a record containing all of the tentative definitions in this file, in
   // TentativeDefinitions order.  Generally, this record will be empty for
@@ -4377,6 +4388,19 @@ uint64_t ASTWriter::WriteASTCore(Sema &SemaRef, StringRef isysroot,
       }
     }
   }
+
+  // For method pool in the module, if it contains an entry for a selector,
+  // the entry should be complete, containing everything introduced by that
+  // module and all modules it imports. It's possible that the entry is out of
+  // date, so we need to pull in the new content here.
+
+  // It's possible that updateOutOfDateSelector can update SelectorIDs. To be
+  // safe, we copy all selectors out.
+  llvm::SmallVector<Selector, 256> AllSelectors;
+  for (auto &SelectorAndID : SelectorIDs)
+    AllSelectors.push_back(SelectorAndID.first);
+  for (auto &Selector : AllSelectors)
+    SemaRef.updateOutOfDateSelector(Selector);
 
   // Form the record of special types.
   RecordData SpecialTypes;
@@ -5467,6 +5491,8 @@ void ASTRecordWriter::AddCXXDefinitionData(const CXXRecordDecl *D) {
   Record->push_back(Data.HasInClassInitializer);
   Record->push_back(Data.HasUninitializedReferenceMember);
   Record->push_back(Data.HasUninitializedFields);
+  Record->push_back(Data.HasInheritedConstructor);
+  Record->push_back(Data.HasInheritedAssignment);
   Record->push_back(Data.NeedOverloadResolutionForMoveConstructor);
   Record->push_back(Data.NeedOverloadResolutionForMoveAssignment);
   Record->push_back(Data.NeedOverloadResolutionForDestructor);
@@ -5631,10 +5657,6 @@ static bool isImportedDeclContext(ASTReader *Chain, const Decl *D) {
   if (D->isFromASTFile())
     return true;
 
-  // If we've not loaded any modules, this can't be imported.
-  if (!Chain || !Chain->getModuleManager().size())
-    return false;
-
   // The predefined __va_list_tag struct is imported if we imported any decls.
   // FIXME: This is a gross hack.
   return D == D->getASTContext().getVaListTagDecl();
@@ -5775,8 +5797,13 @@ void ASTWriter::AddedObjCCategoryToInterface(const ObjCCategoryDecl *CatD,
 
 void ASTWriter::DeclarationMarkedUsed(const Decl *D) {
   assert(!WritingAST && "Already writing the AST!");
-  if (!D->isFromASTFile())
-    return;
+
+  // If there is *any* declaration of the entity that's not from an AST file,
+  // we can skip writing the update record. We make sure that isUsed() triggers
+  // completion of the redeclaration chain of the entity.
+  for (auto Prev = D->getMostRecentDecl(); Prev; Prev = Prev->getPreviousDecl())
+    if (IsLocalDecl(Prev))
+      return;
 
   DeclUpdates[D].push_back(DeclUpdate(UPD_DECL_MARKED_USED));
 }
@@ -5789,12 +5816,14 @@ void ASTWriter::DeclarationMarkedOpenMPThreadPrivate(const Decl *D) {
   DeclUpdates[D].push_back(DeclUpdate(UPD_DECL_MARKED_OPENMP_THREADPRIVATE));
 }
 
-void ASTWriter::DeclarationMarkedOpenMPDeclareTarget(const Decl *D) {
+void ASTWriter::DeclarationMarkedOpenMPDeclareTarget(const Decl *D,
+                                                     const Attr *Attr) {
   assert(!WritingAST && "Already writing the AST!");
   if (!D->isFromASTFile())
     return;
 
-  DeclUpdates[D].push_back(DeclUpdate(UPD_DECL_MARKED_OPENMP_DECLARETARGET));
+  DeclUpdates[D].push_back(
+      DeclUpdate(UPD_DECL_MARKED_OPENMP_DECLARETARGET, Attr));
 }
 
 void ASTWriter::RedefinedHiddenDefinition(const NamedDecl *D, Module *M) {

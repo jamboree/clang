@@ -91,6 +91,9 @@ serialization::TypeIdxFromBuiltin(const BuiltinType *BT) {
   case BuiltinType::LongDouble:
     ID = PREDEF_TYPE_LONGDOUBLE_ID;
     break;
+  case BuiltinType::Float128:
+    ID = PREDEF_TYPE_FLOAT128_ID;
+    break;
   case BuiltinType::NullPtr:
     ID = PREDEF_TYPE_NULLPTR_ID;
     break;
@@ -255,6 +258,7 @@ bool serialization::isRedeclarableDeclKind(unsigned Kind) {
   case Decl::CXXDestructor:
   case Decl::CXXConversion:
   case Decl::UsingShadow:
+  case Decl::ConstructorUsingShadow:
   case Decl::Var:
   case Decl::FunctionTemplate:
   case Decl::ClassTemplate:

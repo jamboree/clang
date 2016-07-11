@@ -952,6 +952,9 @@ public:
   step_iterator step_begin() const { return Steps.begin(); }
   step_iterator step_end()   const { return Steps.end(); }
 
+  typedef llvm::iterator_range<step_iterator> step_range;
+  step_range steps() const { return {step_begin(), step_end()}; }
+
   /// \brief Determine whether this initialization is a direct reference 
   /// binding (C++ [dcl.init.ref]).
   bool isDirectReferenceBinding() const;
@@ -1046,8 +1049,8 @@ public:
   /// \param FromInitList The constructor call is syntactically an initializer
   /// list.
   /// \param AsInitList The constructor is called as an init list constructor.
-  void AddConstructorInitializationStep(CXXConstructorDecl *Constructor,
-                                        AccessSpecifier Access,
+  void AddConstructorInitializationStep(DeclAccessPair FoundDecl,
+                                        CXXConstructorDecl *Constructor,
                                         QualType T,
                                         bool HadMultipleCandidates,
                                         bool FromInitList, bool AsInitList);

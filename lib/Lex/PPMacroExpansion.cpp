@@ -330,18 +330,11 @@ void Preprocessor::RegisterBuiltinMacros() {
   Ident__is_identifier    = RegisterBuiltinMacro(*this, "__is_identifier");
 
   // Modules.
-  if (LangOpts.Modules) {
-    Ident__building_module  = RegisterBuiltinMacro(*this, "__building_module");
-
-    // __MODULE__
-    if (!LangOpts.CurrentModule.empty())
-      Ident__MODULE__ = RegisterBuiltinMacro(*this, "__MODULE__");
-    else
-      Ident__MODULE__ = nullptr;
-  } else {
-    Ident__building_module = nullptr;
+  Ident__building_module  = RegisterBuiltinMacro(*this, "__building_module");
+  if (!LangOpts.CurrentModule.empty())
+    Ident__MODULE__ = RegisterBuiltinMacro(*this, "__MODULE__");
+  else
     Ident__MODULE__ = nullptr;
-  }
 }
 
 /// isTrivialSingleTokenExpansion - Return true if MI, which has a single token
@@ -1100,6 +1093,8 @@ static bool HasFeature(const Preprocessor &PP, StringRef Feature) {
       .Case("memory_sanitizer", LangOpts.Sanitize.has(SanitizerKind::Memory))
       .Case("thread_sanitizer", LangOpts.Sanitize.has(SanitizerKind::Thread))
       .Case("dataflow_sanitizer", LangOpts.Sanitize.has(SanitizerKind::DataFlow))
+      .Case("efficiency_sanitizer",
+            LangOpts.Sanitize.hasOneOf(SanitizerKind::Efficiency))
       // Objective-C features
       .Case("objc_arr", LangOpts.ObjCAutoRefCount) // FIXME: REMOVE?
       .Case("objc_arc", LangOpts.ObjCAutoRefCount)
@@ -1192,6 +1187,8 @@ static bool HasFeature(const Preprocessor &PP, StringRef Feature) {
       // FIXME: Should this be __has_feature or __has_extension?
       //.Case("raw_invocation_type", LangOpts.CPlusPlus)
       // Type traits
+      // N.B. Additional type traits should not be added to the following list.
+      // Instead, they should be detected by has_extension.
       .Case("has_nothrow_assign", LangOpts.CPlusPlus)
       .Case("has_nothrow_copy", LangOpts.CPlusPlus)
       .Case("has_nothrow_constructor", LangOpts.CPlusPlus)
@@ -1212,7 +1209,7 @@ static bool HasFeature(const Preprocessor &PP, StringRef Feature) {
       .Case("is_standard_layout", LangOpts.CPlusPlus)
       .Case("is_pod", LangOpts.CPlusPlus)
       .Case("is_polymorphic", LangOpts.CPlusPlus)
-      .Case("is_sealed", LangOpts.MicrosoftExt)
+      .Case("is_sealed", LangOpts.CPlusPlus && LangOpts.MicrosoftExt)
       .Case("is_trivial", LangOpts.CPlusPlus)
       .Case("is_trivially_assignable", LangOpts.CPlusPlus)
       .Case("is_trivially_constructible", LangOpts.CPlusPlus)
@@ -1698,6 +1695,7 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
           const LangOptions &LangOpts = getLangOpts();
           return llvm::StringSwitch<bool>(II->getName())
                       .Case("__make_integer_seq", LangOpts.CPlusPlus)
+                      .Case("__type_pack_element", LangOpts.CPlusPlus)
                       .Default(false);
         }
       });

@@ -33,6 +33,7 @@
 
 int test() {
   A *a = [[A alloc] init];
+  a.c; // expected-error {{property 'c' is a class property; did you mean to access it with class 'A'}}
   return a.x + A.c;
 }
 
@@ -43,3 +44,16 @@ void message_id(id me) {
 void message_class(Class me) {
   [me c2];
 }
+
+@interface NSObject
+@end
+
+@interface MyClass : NSObject
+@property(class, readonly) int classProp; // expected-note {{property declared here}}
+@end
+
+@implementation MyClass // expected-warning {{class property 'classProp' requires method 'classProp' to be defined}}
+- (int)classProp { // Oops, mistakenly made this an instance method.
+  return 8;
+}
+@end

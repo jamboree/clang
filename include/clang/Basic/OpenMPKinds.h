@@ -120,6 +120,13 @@ enum OpenMPDefaultmapClauseModifier {
   OMPC_DEFAULTMAP_MODIFIER_last
 };
 
+/// Scheduling data for loop-based OpenMP directives.
+struct OpenMPScheduleTy final {
+  OpenMPScheduleClauseKind Schedule = OMPC_SCHEDULE_unknown;
+  OpenMPScheduleClauseModifier M1 = OMPC_SCHEDULE_MODIFIER_unknown;
+  OpenMPScheduleClauseModifier M2 = OMPC_SCHEDULE_MODIFIER_unknown;
+};
+
 OpenMPDirectiveKind getOpenMPDirectiveKind(llvm::StringRef Str);
 const char *getOpenMPDirectiveName(OpenMPDirectiveKind Kind);
 
@@ -206,6 +213,11 @@ bool isOpenMPThreadPrivate(OpenMPClauseKind Kind);
 /// Checks if the specified directive kind is one of tasking directives - task,
 /// taskloop or taksloop simd.
 bool isOpenMPTaskingDirective(OpenMPDirectiveKind Kind);
+
+/// Checks if the specified directive kind is one of the composite or combined
+/// directives that need loop bound sharing across loops outlined in nested
+/// functions
+bool isOpenMPLoopBoundSharingDirective(OpenMPDirectiveKind Kind);
 }
 
 #endif

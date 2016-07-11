@@ -27,6 +27,8 @@ def err_msasm_unable_to_create_target : Error<
   "MS-style inline assembly is not available: %0">;
 def err_gnu_inline_asm_disabled : Error<
   "GNU-style inline assembly is disabled">;
+def err_asm_goto_not_supported_yet : Error<
+  "'asm goto' constructs are not supported yet">;
 }
 
 let CategoryName = "Parse Issue" in {
@@ -514,6 +516,11 @@ def err_function_is_not_record : Error<
   "unexpected %0 in function call; perhaps remove the %0?">;
 def err_super_in_using_declaration : Error<
   "'__super' cannot be used with a using declaration">;
+def ext_constexpr_if : ExtWarn<
+  "constexpr if is a C++1z extension">, InGroup<CXX1z>;
+def warn_cxx14_compat_constexpr_if : Warning<
+  "constexpr if is incompatible with C++ standards before C++1z">,
+  DefaultIgnore, InGroup<CXXPre1zCompat>;
 
 // C++ derived classes
 def err_dup_virtual : Error<"duplicate 'virtual' in base specifier">;
@@ -557,6 +564,14 @@ def err_cxx11_attribute_forbids_ellipsis : Error<
   "attribute '%0' cannot be used as an attribute pack">;
 def err_cxx11_attribute_repeated : Error<
   "attribute %0 cannot appear multiple times in an attribute specifier">;
+def warn_cxx14_compat_using_attribute_ns : Warning<
+  "default scope specifier for attributes is incompatible with C++ standards "
+  "before C++1z">, InGroup<CXXPre1zCompat>, DefaultIgnore;
+def ext_using_attribute_ns : ExtWarn<
+  "default scope specifier for attributes is a C++1z extension">,
+  InGroup<CXX1z>;
+def err_using_attribute_ns_conflict : Error<
+  "attribute with scope specifier cannot follow default scope specifier">;
 def err_attributes_not_allowed : Error<"an attribute list cannot appear here">;
 def err_l_square_l_square_not_attribute : Error<
   "C++11 only allows consecutive left square brackets when "
@@ -798,7 +813,7 @@ def warn_expected_consistent_version_separator : Warning<
 def err_zero_version : Error<
   "version number must have non-zero major, minor, or sub-minor version">;
 def err_availability_expected_platform : Error<
-  "expected a platform name, e.g., 'macosx'">;
+  "expected a platform name, e.g., 'macos'">;
   
 // objc_bridge_related attribute
 def err_objcbridge_related_expected_related_class : Error<
@@ -934,6 +949,10 @@ def warn_pragma_expected_enable_disable : Warning<
   "expected 'enable' or 'disable' - ignoring">, InGroup<IgnoredPragmas>;
 def warn_pragma_unknown_extension : Warning<
   "unknown OpenCL extension %0 - ignoring">, InGroup<IgnoredPragmas>;
+def warn_pragma_unsupported_extension : Warning<
+  "unsupported OpenCL extension %0 - ignoring">, InGroup<IgnoredPragmas>;
+def warn_pragma_extension_is_core : Warning<
+  "OpenCL extension %0 is core feature or supported optional core feature - ignoring">, InGroup<DiagGroup<"pedantic-core-features">>, DefaultIgnore;
 
 // OpenCL errors.
 def err_opencl_taking_function_address_parser : Error<
@@ -975,16 +994,18 @@ def err_omp_declare_simd_inbranch_notinbranch : Error<
   "unexpected '%0' clause, '%1' is specified already">;
 def err_expected_end_declare_target : Error<
   "expected '#pragma omp end declare target'">;
+def err_omp_declare_target_unexpected_clause: Error<
+  "unexpected '%0' clause, only 'to' or 'link' clauses expected">;
 
 // Pragma loop support.
 def err_pragma_loop_missing_argument : Error<
   "missing argument; expected %select{an integer value|"
-  "'enable', %select{'assume_safety'|'full'}1 or 'disable'}0">;
+  "'enable'%select{|, 'full'}1%select{|, 'assume_safety'}2 or 'disable'}0">;
 def err_pragma_loop_invalid_option : Error<
   "%select{invalid|missing}0 option%select{ %1|}0; expected vectorize, "
-  "vectorize_width, interleave, interleave_count, unroll, or unroll_count">;
+  "vectorize_width, interleave, interleave_count, unroll, unroll_count, or distribute">;
 def err_pragma_invalid_keyword : Error<
-  "invalid argument; expected 'enable', %select{'assume_safety'|'full'}0 or 'disable'">;
+  "invalid argument; expected 'enable'%select{|, 'full'}0%select{|, 'assume_safety'}1 or 'disable'">;
 
 // Pragma unroll support.
 def warn_pragma_unroll_cuda_value_in_parens : Warning<

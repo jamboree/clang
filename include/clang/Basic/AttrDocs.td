@@ -283,6 +283,32 @@ their address taken, unless all of the conditions specified by said
     ptr = &i; // OK: 'TrueConstant' is a truthy constant
     ptr = &j; // error: 'FalseConstant' is a constant, but not truthy
   }
+
+Because ``enable_if`` evaluation happens during overload resolution,
+``enable_if`` may give unintuitive results when used with templates, depending
+on when overloads are resolved. In the example below, clang will emit a
+diagnostic about no viable overloads for ``foo`` in ``bar``, but not in ``baz``:
+
+.. code-block:: c++
+
+  double foo(int i) __attribute__((enable_if(i > 0, "")));
+  void *foo(int i) __attribute__((enable_if(i <= 0, "")));
+  template <int I>
+  auto bar() { return foo(I); }
+
+  template <typename T>
+  auto baz() { return foo(T::number); }
+
+  struct WithNumber { constexpr static int number = 1; };
+  void callThem() {
+    bar<sizeof(WithNumber)>();
+    baz<WithNumber>();
+  }
+
+This is because, in ``bar``, ``foo`` is resolved prior to template
+instantiation, so the value for ``I`` isn't known (thus, both ``enable_if``
+conditions for ``foo`` fail). However, in ``baz``, ``foo`` is resolved during
+template instantiation, so the value for ``T::number`` is known.
   }];
 }
 
@@ -494,6 +520,15 @@ Query for this feature with ``__has_attribute(objc_method_family)``.
   }];
 }
 
+def NoDebugDocs : Documentation {
+  let Category = DocCatVariable;
+  let Content = [{
+The ``nodebug`` attribute allows you to suppress debugging information for a
+function or method, or for a variable that is not a parameter or a non-static
+data member.
+  }];
+}
+
 def NoDuplicateDocs : Documentation {
   let Category = DocCatFunction;
   let Content = [{
@@ -656,7 +691,7 @@ the function declaration for a hypothetical function ``f``:
 
 .. code-block:: c++
 
-  void f(void) __attribute__((availability(macosx,introduced=10.4,deprecated=10.6,obsoleted=10.7)));
+  void f(void) __attribute__((availability(macos,introduced=10.4,deprecated=10.6,obsoleted=10.7)));
 
 The availability attribute states that ``f`` was introduced in Mac OS X 10.4,
 deprecated in Mac OS X 10.6, and obsoleted in Mac OS X 10.7.  This information
@@ -708,9 +743,11 @@ are:
   the ``-mios-version-min=*version*`` or ``-miphoneos-version-min=*version*``
   command-line arguments.
 
-``macosx``
+``macos``
   Apple's Mac OS X operating system.  The minimum deployment target is
   specified by the ``-mmacosx-version-min=*version*`` command-line argument.
+  ``macosx`` is supported for backward-compatibility reasons, but it is
+  deprecated.
 
 ``tvos``
   Apple's tvOS operating system.  The minimum deployment target is specified by
@@ -742,24 +779,24 @@ platform. For example:
 
 .. code-block:: c
 
-  void g(void) __attribute__((availability(macosx,introduced=10.4)));
-  void g(void) __attribute__((availability(macosx,introduced=10.4))); // okay, matches
+  void g(void) __attribute__((availability(macos,introduced=10.4)));
+  void g(void) __attribute__((availability(macos,introduced=10.4))); // okay, matches
   void g(void) __attribute__((availability(ios,introduced=4.0))); // okay, adds a new platform
-  void g(void); // okay, inherits both macosx and ios availability from above.
-  void g(void) __attribute__((availability(macosx,introduced=10.5))); // error: mismatch
+  void g(void); // okay, inherits both macos and ios availability from above.
+  void g(void) __attribute__((availability(macos,introduced=10.5))); // error: mismatch
 
 When one method overrides another, the overriding method can be more widely available than the overridden method, e.g.,:
 
 .. code-block:: objc
 
   @interface A
-  - (id)method __attribute__((availability(macosx,introduced=10.4)));
-  - (id)method2 __attribute__((availability(macosx,introduced=10.4)));
+  - (id)method __attribute__((availability(macos,introduced=10.4)));
+  - (id)method2 __attribute__((availability(macos,introduced=10.4)));
   @end
 
   @interface B : A
-  - (id)method __attribute__((availability(macosx,introduced=10.3))); // okay: method moved into base class later
-  - (id)method __attribute__((availability(macosx,introduced=10.5))); // error: this method was available via the base class in 10.4
+  - (id)method __attribute__((availability(macos,introduced=10.3))); // okay: method moved into base class later
+  - (id)method __attribute__((availability(macos,introduced=10.5))); // error: this method was available via the base class in 10.4
   @end
   }];
 }
@@ -1515,6 +1552,26 @@ This attribute can be added to an enumerator to signal to the compiler that it
 is intended to be used as a flag type. This will cause the compiler to assume
 that the range of the type includes all of the values that you can get by
 manipulating bits of the enumerator when issuing warnings.
+  }];
+}
+
+def EmptyBasesDocs : Documentation {
+  let Category = DocCatType;
+  let Content = [{
+The empty_bases attribute permits the compiler to utilize the
+empty-base-optimization more frequently.
+This attribute only applies to struct, class, and union types.
+It is only supported when using the Microsoft C++ ABI.
+  }];
+}
+
+def LayoutVersionDocs : Documentation {
+  let Category = DocCatType;
+  let Content = [{
+The layout_version attribute requests that the compiler utilize the class
+layout rules of a particular compiler version.
+This attribute only applies to struct, class, and union types.
+It is only supported when using the Microsoft C++ ABI.
   }];
 }
 
@@ -2369,5 +2426,27 @@ The symbol name of the resolver function is given in quotes.  A function with th
 The ``ifunc`` attribute may only be used on a function declaration.  A function declaration with an ``ifunc`` attribute is considered to be a definition of the declared entity.  The entity must not have weak linkage; for example, in C++, it cannot be applied to a declaration if a definition at that location would be considered inline.
 
 Not all targets support this attribute.  ELF targets support this attribute when using binutils v2.20.1 or higher and glibc v2.11.1 or higher.  Non-ELF targets currently do not support this attribute.
+  }];
+}
+
+def LTOVisibilityDocs : Documentation {
+  let Category = DocCatType;
+  let Content = [{
+See :doc:`LTOVisibility`.
+  }];
+}
+
+def RenderScriptKernelAttributeDocs : Documentation {
+  let Category = DocCatFunction;
+  let Content = [{
+``__attribute__((kernel))`` is used to mark a ``kernel`` function in
+RenderScript.
+
+In RenderScript, ``kernel`` functions are used to express data-parallel
+computations.  The RenderScript runtime efficiently parallelizes ``kernel``
+functions to run on computational resources such as multi-core CPUs and GPUs.
+See the RenderScript_ documentation for more information.
+
+.. _RenderScript: https://developer.android.com/guide/topics/renderscript/compute.html
   }];
 }

@@ -23,6 +23,7 @@
 #include "clang/Driver/ToolChain.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -41,6 +42,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include <map>
 #include <memory>
+#include <utility>
 
 using namespace clang::driver;
 using namespace clang;
@@ -49,9 +51,9 @@ using namespace llvm::opt;
 Driver::Driver(StringRef ClangExecutable, StringRef DefaultTargetTriple,
                DiagnosticsEngine &Diags,
                IntrusiveRefCntPtr<vfs::FileSystem> VFS)
-    : Opts(createDriverOptTable()), Diags(Diags), VFS(VFS), Mode(GCCMode),
-      SaveTemps(SaveTempsNone), BitcodeEmbed(EmbedNone), LTOMode(LTOK_None),
-      ClangExecutable(ClangExecutable),
+    : Opts(createDriverOptTable()), Diags(Diags), VFS(std::move(VFS)),
+      Mode(GCCMode), SaveTemps(SaveTempsNone), BitcodeEmbed(EmbedNone),
+      LTOMode(LTOK_None), ClangExecutable(ClangExecutable),
       SysRoot(DEFAULT_SYSROOT), UseStdLib(true),
       DefaultTargetTriple(DefaultTargetTriple),
       DriverTitle("clang LLVM compiler"), CCPrintOptionsFilename(nullptr),
@@ -278,6 +280,10 @@ DerivedArgList *Driver::TranslateInputArgs(const InputArgList &Args) const {
     DAL->append(A);
   }
 
+  // Enforce -static if -miamcu is present.
+  if (Args.hasFlag(options::OPT_miamcu, options::OPT_mno_iamcu, false))
+    DAL->AddFlagArg(0, Opts->getOption(options::OPT_static));
+
 // Add a default value of -mlinker-version=, if one was given and the user
 // didn't specify one.
 #if defined(HOST_LINK_VERSION)
@@ -296,7 +302,8 @@ DerivedArgList *Driver::TranslateInputArgs(const InputArgList &Args) const {
 ///
 /// This routine provides the logic to compute a target triple from various
 /// args passed to the driver and the default triple string.
-static llvm::Triple computeTargetTriple(StringRef DefaultTargetTriple,
+static llvm::Triple computeTargetTriple(const Driver &D,
+                                        StringRef DefaultTargetTriple,
                                         const ArgList &Args,
                                         StringRef DarwinArchName = "") {
   // FIXME: Already done in Compilation *Driver::BuildCompilation
@@ -341,8 +348,9 @@ static llvm::Triple computeTargetTriple(StringRef DefaultTargetTriple,
     return Target;
 
   // Handle pseudo-target flags '-m64', '-mx32', '-m32' and '-m16'.
-  if (Arg *A = Args.getLastArg(options::OPT_m64, options::OPT_mx32,
-                               options::OPT_m32, options::OPT_m16)) {
+  Arg *A = Args.getLastArg(options::OPT_m64, options::OPT_mx32,
+                           options::OPT_m32, options::OPT_m16);
+  if (A) {
     llvm::Triple::ArchType AT = llvm::Triple::UnknownArch;
 
     if (A->getOption().matches(options::OPT_m64)) {
@@ -365,6 +373,25 @@ static llvm::Triple computeTargetTriple(StringRef DefaultTargetTriple,
 
     if (AT != llvm::Triple::UnknownArch && AT != Target.getArch())
       Target.setArch(AT);
+  }
+
+  // Handle -miamcu flag.
+  if (Args.hasFlag(options::OPT_miamcu, options::OPT_mno_iamcu, false)) {
+    if (Target.get32BitArchVariant().getArch() != llvm::Triple::x86)
+      D.Diag(diag::err_drv_unsupported_opt_for_target) << "-miamcu"
+                                                       << Target.str();
+
+    if (A && !A->getOption().matches(options::OPT_m32))
+      D.Diag(diag::err_drv_argument_not_allowed_with)
+          << "-miamcu" << A->getBaseArg().getAsString(Args);
+
+    Target.setArch(llvm::Triple::x86);
+    Target.setArchName("i586");
+    Target.setEnvironment(llvm::Triple::UnknownEnvironment);
+    Target.setEnvironmentName("");
+    Target.setOS(llvm::Triple::ELFIAMCU);
+    Target.setVendor(llvm::Triple::UnknownVendor);
+    Target.setVendorName("intel");
   }
 
   return Target;
@@ -394,6 +421,31 @@ void Driver::setLTOMode(const llvm::opt::ArgList &Args) {
     Diag(diag::err_drv_unsupported_option_argument) << A->getOption().getName()
                                                     << A->getValue();
   }
+}
+
+void Driver::CreateOffloadingDeviceToolChains(Compilation &C,
+                                              InputList &Inputs) {
+
+  //
+  // CUDA
+  //
+  // We need to generate a CUDA toolchain if any of the inputs has a CUDA type.
+  if (llvm::any_of(Inputs, [](std::pair<types::ID, const llvm::opt::Arg *> &I) {
+        return types::isCuda(I.first);
+      })) {
+    const ToolChain &TC = getToolChain(
+        C.getInputArgs(),
+        llvm::Triple(C.getOffloadingHostToolChain()->getTriple().isArch64Bit()
+                         ? "nvptx64-nvidia-cuda"
+                         : "nvptx-nvidia-cuda"));
+    C.addOffloadDeviceToolChain(&TC, Action::OFK_Cuda);
+  }
+
+  //
+  // TODO: Add support for other offloading programming models here.
+  //
+
+  return;
 }
 
 Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
@@ -479,20 +531,29 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
                     .Default(SaveTempsCwd);
   }
 
+  setLTOMode(Args);
+
   // Ignore -fembed-bitcode options with LTO
   // since the output will be bitcode anyway.
-  if (!Args.hasFlag(options::OPT_flto, options::OPT_fno_lto, false)) {
-    if (Args.hasArg(options::OPT_fembed_bitcode))
-      BitcodeEmbed = EmbedBitcode;
-    else if (Args.hasArg(options::OPT_fembed_bitcode_marker))
-      BitcodeEmbed = EmbedMarker;
+  if (getLTOMode() == LTOK_None) {
+    if (Arg *A = Args.getLastArg(options::OPT_fembed_bitcode_EQ)) {
+      StringRef Name = A->getValue();
+      unsigned Model = llvm::StringSwitch<unsigned>(Name)
+          .Case("off", EmbedNone)
+          .Case("all", EmbedBitcode)
+          .Case("bitcode", EmbedBitcode)
+          .Case("marker", EmbedMarker)
+          .Default(~0U);
+      if (Model == ~0U) {
+        Diags.Report(diag::err_drv_invalid_value) << A->getAsString(Args)
+                                                  << Name;
+      } else
+        BitcodeEmbed = static_cast<BitcodeEmbedMode>(Model);
+    }
   } else {
     // claim the bitcode option under LTO so no warning is issued.
-    Args.ClaimAllArgs(options::OPT_fembed_bitcode);
-    Args.ClaimAllArgs(options::OPT_fembed_bitcode_marker);
+    Args.ClaimAllArgs(options::OPT_fembed_bitcode_EQ);
   }
-
-  setLTOMode(Args);
 
   std::unique_ptr<llvm::opt::InputArgList> UArgs =
       llvm::make_unique<InputArgList>(std::move(Args));
@@ -501,8 +562,8 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   DerivedArgList *TranslatedArgs = TranslateInputArgs(*UArgs);
 
   // Owned by the host.
-  const ToolChain &TC =
-      getToolChain(*UArgs, computeTargetTriple(DefaultTargetTriple, *UArgs));
+  const ToolChain &TC = getToolChain(
+      *UArgs, computeTargetTriple(*this, DefaultTargetTriple, *UArgs));
 
   // The compilation takes ownership of Args.
   Compilation *C = new Compilation(*this, TC, UArgs.release(), TranslatedArgs);
@@ -514,18 +575,8 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   InputList Inputs;
   BuildInputs(C->getDefaultToolChain(), *TranslatedArgs, Inputs);
 
-  // Initialize the CUDA device TC only if we have any CUDA Inputs.  This is
-  // necessary so that we don't break compilations that pass flags that are
-  // incompatible with the NVPTX TC (e.g. -mthread-model single).
-  if (llvm::any_of(Inputs, [](const std::pair<types::ID, const Arg *> &I) {
-        return I.first == types::TY_CUDA || I.first == types::TY_PP_CUDA ||
-               I.first == types::TY_CUDA_DEVICE;
-      })) {
-    C->setCudaDeviceToolChain(
-        &getToolChain(C->getArgs(), llvm::Triple(TC.getTriple().isArch64Bit()
-                                                     ? "nvptx64-nvidia-cuda"
-                                                     : "nvptx-nvidia-cuda")));
-  }
+  // Populate the tool chains for the offloading devices, if any.
+  CreateOffloadingDeviceToolChains(*C, Inputs);
 
   // Construct the list of abstract actions to perform for this compilation. On
   // MachO targets this uses the driver-driver and universal actions.
@@ -972,9 +1023,10 @@ static unsigned PrintActions1(const Compilation &C, Action *A,
     os << '"' << BIA->getArchName() << '"' << ", {"
        << PrintActions1(C, *BIA->input_begin(), Ids) << "}";
   } else if (CudaDeviceAction *CDA = dyn_cast<CudaDeviceAction>(A)) {
-    os << '"'
-       << (CDA->getGpuArchName() ? CDA->getGpuArchName() : "(multiple archs)")
-       << '"' << ", {" << PrintActions1(C, *CDA->input_begin(), Ids) << "}";
+    CudaArch Arch = CDA->getGpuArch();
+    if (Arch != CudaArch::UNKNOWN)
+      os << "'" << CudaArchToString(Arch) << "', ";
+    os << "{" << PrintActions1(C, *CDA->input_begin(), Ids) << "}";
   } else {
     const ActionList *AL;
     if (CudaHostAction *CHA = dyn_cast<CudaHostAction>(A)) {
@@ -1330,24 +1382,25 @@ static Action *buildCudaActions(Compilation &C, DerivedArgList &Args,
     return C.MakeAction<CudaHostAction>(HostAction, ActionList());
 
   // Collect all cuda_gpu_arch parameters, removing duplicates.
-  SmallVector<const char *, 4> GpuArchList;
-  llvm::StringSet<> GpuArchNames;
+  SmallVector<CudaArch, 4> GpuArchList;
+  llvm::SmallSet<CudaArch, 4> GpuArchs;
   for (Arg *A : Args) {
     if (!A->getOption().matches(options::OPT_cuda_gpu_arch_EQ))
       continue;
     A->claim();
 
-    const auto& Arch = A->getValue();
-    if (!CudaDeviceAction::IsValidGpuArchName(Arch))
-      C.getDriver().Diag(clang::diag::err_drv_cuda_bad_gpu_arch) << Arch;
-    else if (GpuArchNames.insert(Arch).second)
+    const auto &ArchStr = A->getValue();
+    CudaArch Arch = StringToCudaArch(ArchStr);
+    if (Arch == CudaArch::UNKNOWN)
+      C.getDriver().Diag(clang::diag::err_drv_cuda_bad_gpu_arch) << ArchStr;
+    else if (GpuArchs.insert(Arch).second)
       GpuArchList.push_back(Arch);
   }
 
   // Default to sm_20 which is the lowest common denominator for supported GPUs.
   // sm_20 code should work correctly, if suboptimally, on all newer GPUs.
   if (GpuArchList.empty())
-    GpuArchList.push_back("sm_20");
+    GpuArchList.push_back(CudaArch::SM_20);
 
   // Replicate inputs for each GPU architecture.
   Driver::InputList CudaDeviceInputs;
@@ -1355,7 +1408,7 @@ static Action *buildCudaActions(Compilation &C, DerivedArgList &Args,
     CudaDeviceInputs.push_back(std::make_pair(types::TY_CUDA_DEVICE, InputArg));
 
   // Build actions for all device inputs.
-  assert(C.getCudaDeviceToolChain() &&
+  assert(C.getSingleOffloadToolChain<Action::OFK_Cuda>() &&
          "Missing toolchain for device-side compilation.");
   ActionList CudaDeviceActions;
   C.getDriver().BuildActions(C, Args, CudaDeviceInputs, CudaDeviceActions);
@@ -1413,7 +1466,7 @@ static Action *buildCudaActions(Compilation &C, DerivedArgList &Args,
   }
   auto FatbinAction = C.MakeAction<CudaDeviceAction>(
       C.MakeAction<LinkJobAction>(DeviceActions, types::TY_CUDA_FATBIN),
-      /* GpuArchName = */ nullptr,
+      CudaArch::UNKNOWN,
       /* AtTopLevel = */ false);
   // Return a new host action that incorporates original host action and all
   // device actions.
@@ -1538,25 +1591,6 @@ void Driver::BuildActions(Compilation &C, DerivedArgList &Args,
     PL.clear();
     types::getCompilationPhases(InputType, PL);
 
-    if (YcArg) {
-      // Add a separate precompile phase for the compile phase.
-      if (FinalPhase >= phases::Compile) {
-        llvm::SmallVector<phases::ID, phases::MaxNumberOfPhases> PCHPL;
-        types::getCompilationPhases(types::TY_CXXHeader, PCHPL);
-        Arg *PchInputArg = MakeInputArg(Args, Opts, YcArg->getValue());
-
-        // Build the pipeline for the pch file.
-        Action *ClangClPch = C.MakeAction<InputAction>(*PchInputArg, InputType);
-        for (phases::ID Phase : PCHPL)
-          ClangClPch = ConstructPhaseAction(C, Args, Phase, ClangClPch);
-        assert(ClangClPch);
-        Actions.push_back(ClangClPch);
-        // The driver currently exits after the first failed command.  This
-        // relies on that behavior, to make sure if the pch generation fails,
-        // the main compilation won't run.
-      }
-    }
-
     // If the first step comes after the final phase we are doing as part of
     // this compilation, warn the user about it.
     phases::ID InitialPhase = PL[0];
@@ -1587,6 +1621,25 @@ void Driver::BuildActions(Compilation &C, DerivedArgList &Args,
             << !!FinalPhaseArg
             << (FinalPhaseArg ? FinalPhaseArg->getOption().getName() : "");
       continue;
+    }
+
+    if (YcArg) {
+      // Add a separate precompile phase for the compile phase.
+      if (FinalPhase >= phases::Compile) {
+        llvm::SmallVector<phases::ID, phases::MaxNumberOfPhases> PCHPL;
+        types::getCompilationPhases(types::TY_CXXHeader, PCHPL);
+        Arg *PchInputArg = MakeInputArg(Args, Opts, YcArg->getValue());
+
+        // Build the pipeline for the pch file.
+        Action *ClangClPch = C.MakeAction<InputAction>(*PchInputArg, InputType);
+        for (phases::ID Phase : PCHPL)
+          ClangClPch = ConstructPhaseAction(C, Args, Phase, ClangClPch);
+        assert(ClangClPch);
+        Actions.push_back(ClangClPch);
+        // The driver currently exits after the first failed command.  This
+        // relies on that behavior, to make sure if the pch generation fails,
+        // the main compilation won't run.
+      }
     }
 
     phases::ID CudaInjectionPhase =
@@ -1788,8 +1841,9 @@ void Driver::BuildJobs(Compilation &C) const {
   // Claim -### here.
   (void)C.getArgs().hasArg(options::OPT__HASH_HASH_HASH);
 
-  // Claim --driver-mode, it was handled earlier.
+  // Claim --driver-mode, --rsp-quoting, it was handled earlier.
   (void)C.getArgs().hasArg(options::OPT_driver_mode);
+  (void)C.getArgs().hasArg(options::OPT_rsp_quoting);
 
   for (Arg *A : C.getArgs()) {
     // FIXME: It would be nice to be able to send the argument to the
@@ -1981,9 +2035,9 @@ InputInfo Driver::BuildJobsForActionNoCache(
     const char *ArchName = BAA->getArchName();
 
     if (ArchName)
-      TC = &getToolChain(
-          C.getArgs(),
-          computeTargetTriple(DefaultTargetTriple, C.getArgs(), ArchName));
+      TC = &getToolChain(C.getArgs(),
+                         computeTargetTriple(*this, DefaultTargetTriple,
+                                             C.getArgs(), ArchName));
     else
       TC = &C.getDefaultToolChain();
 
@@ -1995,9 +2049,9 @@ InputInfo Driver::BuildJobsForActionNoCache(
     // Initial processing of CudaDeviceAction carries host params.
     // Call BuildJobsForAction() again, now with correct device parameters.
     InputInfo II = BuildJobsForAction(
-        C, *CDA->input_begin(), C.getCudaDeviceToolChain(),
-        CDA->getGpuArchName(), CDA->isAtTopLevel(), /*MultipleArchs=*/true,
-        LinkingOutput, CachedResults);
+        C, *CDA->input_begin(), C.getSingleOffloadToolChain<Action::OFK_Cuda>(),
+        CudaArchToString(CDA->getGpuArch()), CDA->isAtTopLevel(),
+        /*MultipleArchs=*/true, LinkingOutput, CachedResults);
     // Currently II's Action is *CDA->input_begin().  Set it to CDA instead, so
     // that one can retrieve II's GPU arch.
     II.setAction(A);
@@ -2399,6 +2453,9 @@ const ToolChain &Driver::getToolChain(const ArgList &Args,
   ToolChain *&TC = ToolChains[Target.str()];
   if (!TC) {
     switch (Target.getOS()) {
+    case llvm::Triple::Haiku:
+      TC = new toolchains::Haiku(*this, Target, Args);
+      break;
     case llvm::Triple::CloudABI:
       TC = new toolchains::CloudABI(*this, Target, Args);
       break;
@@ -2428,6 +2485,7 @@ const ToolChain &Driver::getToolChain(const ArgList &Args,
       TC = new toolchains::Minix(*this, Target, Args);
       break;
     case llvm::Triple::Linux:
+    case llvm::Triple::ELFIAMCU:
       if (Target.getArch() == llvm::Triple::hexagon)
         TC = new toolchains::HexagonToolChain(*this, Target, Args);
       else if ((Target.getVendor() == llvm::Triple::MipsTechnologies) &&

@@ -52,13 +52,14 @@ ModuleLoader &Sema::getModuleLoader() const { return PP.getModuleLoader(); }
 PrintingPolicy Sema::getPrintingPolicy(const ASTContext &Context,
                                        const Preprocessor &PP) {
   PrintingPolicy Policy = Context.getPrintingPolicy();
+  // Our printing policy is copied over the ASTContext printing policy whenever
+  // a diagnostic is emitted, so recompute it.
   Policy.Bool = Context.getLangOpts().Bool;
   if (!Policy.Bool) {
-    if (const MacroInfo *
-          BoolMacro = PP.getMacroInfo(&Context.Idents.get("bool"))) {
+    if (const MacroInfo *BoolMacro = PP.getMacroInfo(Context.getBoolName())) {
       Policy.Bool = BoolMacro->isObjectLike() &&
-        BoolMacro->getNumTokens() == 1 &&
-        BoolMacro->getReplacementToken(0).is(tok::kw__Bool);
+                    BoolMacro->getNumTokens() == 1 &&
+                    BoolMacro->getReplacementToken(0).is(tok::kw__Bool);
     }
   }
 
@@ -79,14 +80,15 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
     Diags(PP.getDiagnostics()), SourceMgr(PP.getSourceManager()),
     CollectStats(false), CodeCompleter(CodeCompleter),
     CurContext(nullptr), OriginalLexicalContext(nullptr),
-    PackContext(nullptr), MSStructPragmaOn(false),
+    MSStructPragmaOn(false),
     MSPointerToMemberRepresentationMethod(
         LangOpts.getMSPointerToMemberRepresentationMethod()),
-    VtorDispModeStack(1, MSVtorDispAttr::Mode(LangOpts.VtorDispMode)),
-    DataSegStack(nullptr), BSSSegStack(nullptr), ConstSegStack(nullptr),
-    CodeSegStack(nullptr), CurInitSeg(nullptr), VisContext(nullptr),
+    VtorDispStack(MSVtorDispAttr::Mode(LangOpts.VtorDispMode)),
+    PackStack(0), DataSegStack(nullptr), BSSSegStack(nullptr),
+    ConstSegStack(nullptr), CodeSegStack(nullptr), CurInitSeg(nullptr),
+    VisContext(nullptr),
     IsBuildingRecoveryCallExpr(false),
-    ExprNeedsCleanups(false), LateTemplateParser(nullptr),
+    Cleanup{}, LateTemplateParser(nullptr),
     LateTemplateParserCleanup(nullptr),
     OpaqueParser(nullptr), IdResolver(pp), StdInitializerList(nullptr),
     CXXTypeInfoDecl(nullptr), MSVCGuidDecl(nullptr),
@@ -122,7 +124,8 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
   // Tell diagnostics how to render things from the AST library.
   Diags.SetArgToStringFn(&FormatASTNodeDiagnosticArgument, &Context);
 
-  ExprEvalContexts.emplace_back(PotentiallyEvaluated, 0, false, nullptr, false);
+  ExprEvalContexts.emplace_back(PotentiallyEvaluated, 0, CleanupInfo{}, nullptr,
+                                false);
 
   FunctionScopes.push_back(new FunctionScopeInfo(Diags));
 
@@ -206,8 +209,14 @@ void Sema::Initialize() {
     addImplicitTypedef("size_t", Context.getSizeType());
   }
 
-  // Initialize predefined OpenCL types.
+  // Initialize predefined OpenCL types and supported optional core features.
   if (getLangOpts().OpenCL) {
+#define OPENCLEXT(Ext) \
+     if (Context.getTargetInfo().getSupportedOpenCLOpts().is_##Ext##_supported_core( \
+         getLangOpts().OpenCLVersion)) \
+       getOpenCLOptions().Ext = 1;
+#include "clang/Basic/OpenCLExtensions.def"
+
     addImplicitTypedef("sampler_t", Context.OCLSamplerTy);
     addImplicitTypedef("event_t", Context.OCLEventTy);
     if (getLangOpts().OpenCLVersion >= 200) {
@@ -252,7 +261,6 @@ void Sema::Initialize() {
 
 Sema::~Sema() {
   llvm::DeleteContainerSeconds(LateParsedTemplateMap);
-  if (PackContext) FreePackedContext();
   if (VisContext) FreeVisContext();
   // Kill all the active scopes.
   for (unsigned I = 1, E = FunctionScopes.size(); I != E; ++I)
@@ -461,7 +469,8 @@ static bool ShouldRemoveFromUnused(Sema *SemaRef, const DeclaratorDecl *D) {
   return false;
 }
 
-/// Obtains a sorted list of functions that are undefined but ODR-used.
+/// Obtains a sorted list of functions and variables that are undefined but
+/// ODR-used.
 void Sema::getUndefinedButUsed(
     SmallVectorImpl<std::pair<NamedDecl *, SourceLocation> > &Undefined) {
   for (const auto &UndefinedUse : UndefinedButUsed) {
@@ -480,9 +489,10 @@ void Sema::getUndefinedButUsed(
           !FD->getMostRecentDecl()->isInlined())
         continue;
     } else {
-      if (cast<VarDecl>(ND)->hasDefinition() != VarDecl::DeclarationOnly)
+      auto *VD = cast<VarDecl>(ND);
+      if (VD->hasDefinition() != VarDecl::DeclarationOnly)
         continue;
-      if (ND->isExternallyVisible())
+      if (VD->isExternallyVisible() && !VD->getMostRecentDecl()->isInline())
         continue;
     }
 
@@ -514,10 +524,16 @@ static void checkUndefinedButUsed(Sema &S) {
     if (!ND->isExternallyVisible()) {
       S.Diag(ND->getLocation(), diag::warn_undefined_internal)
         << isa<VarDecl>(ND) << ND;
-    } else {
-      assert(cast<FunctionDecl>(ND)->getMostRecentDecl()->isInlined() &&
+    } else if (auto *FD = dyn_cast<FunctionDecl>(ND)) {
+      (void)FD;
+      assert(FD->getMostRecentDecl()->isInlined() &&
              "used object requires definition but isn't inline or internal?");
+      // FIXME: This is ill-formed; we should reject.
       S.Diag(ND->getLocation(), diag::warn_undefined_inline) << ND;
+    } else {
+      assert(cast<VarDecl>(ND)->getMostRecentDecl()->isInline() &&
+             "used var requires definition but isn't inline or internal?");
+      S.Diag(ND->getLocation(), diag::err_undefined_inline_var) << ND;
     }
     if (I->second.isValid())
       S.Diag(I->second, diag::note_used_here);
@@ -1237,6 +1253,7 @@ void Sema::ActOnComment(SourceRange Comment) {
 ExternalSemaSource::~ExternalSemaSource() {}
 
 void ExternalSemaSource::ReadMethodPool(Selector Sel) { }
+void ExternalSemaSource::updateOutOfDateSelector(Selector Sel) { }
 
 void ExternalSemaSource::ReadKnownNamespaces(
                            SmallVectorImpl<NamespaceDecl *> &Namespaces) {
@@ -1257,10 +1274,10 @@ void PrettyDeclStackTraceEntry::print(raw_ostream &OS) const {
   }
   OS << Message;
 
-  if (TheDecl && isa<NamedDecl>(TheDecl)) {
-    std::string Name = cast<NamedDecl>(TheDecl)->getNameAsString();
-    if (!Name.empty())
-      OS << " '" << Name << '\'';
+  if (auto *ND = dyn_cast_or_null<NamedDecl>(TheDecl)) {
+    OS << " '";
+    ND->getNameForDiagnostic(OS, ND->getASTContext().getPrintingPolicy(), true);
+    OS << "'";
   }
 
   OS << '\n';
@@ -1485,7 +1502,8 @@ IdentifierInfo *Sema::getFloat128Identifier() const {
 void Sema::PushCapturedRegionScope(Scope *S, CapturedDecl *CD, RecordDecl *RD,
                                    CapturedRegionKind K) {
   CapturingScopeInfo *CSI = new CapturedRegionScopeInfo(
-      getDiagnostics(), S, CD, RD, CD->getContextParam(), K);
+      getDiagnostics(), S, CD, RD, CD->getContextParam(), K,
+      (getLangOpts().OpenMP && K == CR_OpenMP) ? getOpenMPNestingLevel() : 0);
   CSI->ReturnType = Context.VoidTy;
   FunctionScopes.push_back(CSI);
 }
