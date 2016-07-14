@@ -82,9 +82,9 @@ DeclarationName *Parser::ParseDeclName(Declarator::TheContext /*Context*/) {
     IdentifierInfo *Name = Tok.getIdentifierInfo();
     SourceLocation NameLoc = ConsumeToken();
     return Actions.ActOnDeclName(getCurScope(), QuestionLoc, NameLoc, Name);
-  } else if (QuestionLoc.isInvalid()) {
-    Diag(Tok, diag::err_expected_declname_name);
   }
+  if (QuestionLoc.isInvalid())
+    Diag(Tok, diag::err_expected_declname_name);
   return nullptr;
 }
 
