@@ -2076,6 +2076,8 @@ public:
                            Decl **OwnedType = nullptr,
                            ParsedAttributes *Attrs = nullptr);
 
+  DeclarationName *ParseDeclName(Declarator::TheContext Context);
+
 private:
   void ParseBlockId(SourceLocation CaretLoc);
 
@@ -2606,10 +2608,15 @@ private:
   bool ParseTemplateParameterList(unsigned Depth,
                                   SmallVectorImpl<Decl*> &TemplateParams);
   bool isStartOfTemplateTypeParameter();
+  bool ParseTypeOrNameParameter(SourceLocation &KeyLoc,
+                                SourceLocation &EllipsisLoc,
+                                SourceLocation &NameLoc,
+                                IdentifierInfo *&ParamName);
   Decl *ParseTemplateParameter(unsigned Depth, unsigned Position);
   Decl *ParseTypeParameter(unsigned Depth, unsigned Position);
   Decl *ParseTemplateTemplateParameter(unsigned Depth, unsigned Position);
   Decl *ParseNonTypeTemplateParameter(unsigned Depth, unsigned Position);
+  Decl *ParseDeclNameParameter(unsigned Depth, unsigned Position);
   void DiagnoseMisplacedEllipsis(SourceLocation EllipsisLoc,
                                  SourceLocation CorrectLoc,
                                  bool AlreadyHasEllipsis,

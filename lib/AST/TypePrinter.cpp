@@ -1165,6 +1165,17 @@ void TypePrinter::printPackExpansionAfter(const PackExpansionType *T,
   OS << "...";
 }
 
+void TypePrinter::printDesignatingBefore(const DesignatingType *T,
+                                           raw_ostream &OS) {
+  // FIXME: what to do?
+  printBefore(T->getMasterType(), OS);
+}
+void TypePrinter::printDesignatingAfter(const DesignatingType *T,
+                                          raw_ostream &OS) {
+  // FIXME: what to do?
+  printAfter(T->getMasterType(), OS);
+}
+
 void TypePrinter::printAttributedBefore(const AttributedType *T,
                                         raw_ostream &OS) {
   // Prefer the macro forms of the GC and ownership qualifiers.

@@ -2325,6 +2325,31 @@ TemplateDeclInstantiator::VisitTemplateTemplateParmDecl(
   return Param;
 }
 
+Decl *TemplateDeclInstantiator::VisitTemplateDeclNameParmDecl(
+    TemplateDeclNameParmDecl *D) {
+  TemplateDeclNameParmDecl *Param = TemplateDeclNameParmDecl::Create(
+      SemaRef.Context, Owner, D->getLocStart(), D->getLocation(),
+      D->getDepth() - TemplateArgs.getNumLevels(), D->getPosition(),
+      D->isParameterPack(), D->getIdentifier());
+  Param->setAccess(AS_public);
+
+  if (D->hasDefaultArgument() && !D->defaultArgumentWasInherited()) {
+    DeclarationNameInfo Info(
+        D->getDefaultArgument().getArgument().getAsDeclName(),
+        D->getDefaultArgument().getDeclNameLoc());
+    Info = SemaRef.SubstDeclarationNameInfo(Info, TemplateArgs);
+    Param->setDefaultArgument(
+        SemaRef.Context,
+        TemplateArgumentLoc(TemplateArgument(Info.getName()), Info.getLoc()));
+  }
+
+  // Introduce this template parameter's instantiation into the instantiation
+  // scope.
+  SemaRef.CurrentInstantiationScope->InstantiatedLocal(D, Param);
+
+  return Param;
+}
+
 Decl *TemplateDeclInstantiator::VisitUsingDirectiveDecl(UsingDirectiveDecl *D) {
   // Using directives are never dependent (and never contain any types or
   // expressions), so they require no explicit instantiation work.

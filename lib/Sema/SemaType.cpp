@@ -2045,6 +2045,18 @@ QualType Sema::BuildPipeType(QualType T, SourceLocation Loc) {
   return Context.getPipeType(T);
 }
 
+QualType Sema::BuildDesignatingType(QualType T, DeclarationName DesigName,
+                              SourceLocation Loc) {
+  if (T->isDesignatingType()) {
+    Diag(Loc, diag::err_designator_on_designating_type)
+      << T;
+    return QualType();
+  }
+
+  // Build the pointer type.
+  return Context.getDesignatingType(T, DesigName);
+}
+
 /// Check whether the specified array size makes the array type a VLA.  If so,
 /// return true, if not, return the size of the array in SizeVal.
 static bool isArraySizeVLA(Sema &S, Expr *ArraySize, llvm::APSInt &SizeVal) {
@@ -5218,6 +5230,12 @@ TypeResult Sema::ActOnTypeName(Scope *S, Declarator &D) {
   }
 
   return CreateParsedType(T, TInfo);
+}
+
+DeclarationName *Sema::ActOnDeclName(Scope *S, SourceLocation NameLoc,
+                                     SourceLocation QuestionLoc,
+                                     IdentifierInfo *Name) {
+  return nullptr;
 }
 
 ParsedType Sema::ActOnObjCInstanceType(SourceLocation Loc) {

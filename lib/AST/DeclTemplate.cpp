@@ -658,6 +658,38 @@ void TemplateTemplateParmDecl::setDefaultArgument(
 }
 
 //===----------------------------------------------------------------------===//
+// TemplateDeclNameParmDecl Method Implementations
+//===----------------------------------------------------------------------===//
+TemplateDeclNameParmDecl *
+TemplateDeclNameParmDecl::Create(const ASTContext &C, DeclContext *DC,
+                                 SourceLocation KeyLoc, SourceLocation IdLoc,
+                                 unsigned D, unsigned P, bool ParameterPack,
+                                 IdentifierInfo *Id) {
+  return new (C, DC)
+      TemplateDeclNameParmDecl(DC, KeyLoc, IdLoc, D, P, ParameterPack, Id);
+}
+
+SourceLocation TemplateDeclNameParmDecl::getDefaultArgumentLoc() const {
+  return hasDefaultArgument() ? getDefaultArgument().getLocation()
+                              : SourceLocation();
+}
+
+void TemplateDeclNameParmDecl::setDefaultArgument(
+    const ASTContext &C, const TemplateArgumentLoc &DefArg) {
+  if (DefArg.getArgument().isNull())
+    DefaultArgument.set(nullptr);
+  else
+    DefaultArgument.set(new (C) TemplateArgumentLoc(DefArg));
+}
+
+SourceRange TemplateDeclNameParmDecl::getSourceRange() const {
+  SourceLocation End = getLocation();
+  if (hasDefaultArgument() && !defaultArgumentWasInherited())
+    End = getDefaultArgument().getSourceRange().getEnd();
+  return SourceRange(getLocStart(), End);
+}
+
+//===----------------------------------------------------------------------===//
 // TemplateArgumentList Implementation
 //===----------------------------------------------------------------------===//
 TemplateArgumentList::TemplateArgumentList(ArrayRef<TemplateArgument> Args)

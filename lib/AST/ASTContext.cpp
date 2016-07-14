@@ -3676,6 +3676,36 @@ QualType ASTContext::getPackExpansionType(QualType Pattern,
   return QualType(T, 0);
 }
 
+QualType ASTContext::getDesignatingType(QualType T,
+                                        DeclarationName DesigName) const {
+  // Unique pointers, to guarantee there is only one pointer of a particular
+  // structure.
+  llvm::FoldingSetNodeID ID;
+  DesignatingType::Profile(ID, T);
+
+  void *InsertPos = nullptr;
+  if (DesignatingType *PT = DesignatingTypes.FindNodeOrInsertPos(ID, InsertPos))
+    return QualType(PT, 0);
+
+  // If the master type isn't canonical, this won't be a canonical type either,
+  // so fill in the canonical type field.
+  QualType Canonical;
+  if (!T.isCanonical()) {
+    Canonical = getDesignatingType(getCanonicalType(T), DesigName);
+
+    // Get the new insert position for the node we care about.
+    DesignatingType *NewIP =
+        DesignatingTypes.FindNodeOrInsertPos(ID, InsertPos);
+    assert(!NewIP && "Shouldn't be in the map!");
+    (void)NewIP;
+  }
+  DesignatingType *New =
+      new (*this, TypeAlignment) DesignatingType(T, DesigName, Canonical);
+  Types.push_back(New);
+  DesignatingTypes.InsertNode(New, InsertPos);
+  return QualType(New, 0);
+}
+
 /// CmpProtocolNames - Comparison predicate for sorting protocols
 /// alphabetically.
 static int CmpProtocolNames(ObjCProtocolDecl *const *LHS,

@@ -2875,6 +2875,13 @@ void CXXNameMangler::mangleType(const PackExpansionType *T) {
   mangleType(T->getPattern());
 }
 
+void CXXNameMangler::mangleType(const DesignatingType *T) {
+  // FIXME: define a rule
+  //Out << ??;
+  //mangleSourceName(T->getDesigName().getAsIdentifierInfo());
+  mangleType(T->getMasterType());
+}
+
 void CXXNameMangler::mangleType(const ObjCInterfaceType *T) {
   mangleSourceName(T->getDecl()->getIdentifier());
 }

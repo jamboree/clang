@@ -26,6 +26,7 @@ namespace clang {
   class CXXLiteralOperatorIdName;
   class CXXOperatorIdName;
   class CXXSpecialName;
+  class CXXTemplateDeclNameParmName;
   class DeclarationNameExtra;
   class IdentifierInfo;
   class MultiKeywordSelector;
@@ -35,6 +36,7 @@ namespace clang {
   class Type;
   class TypeSourceInfo;
   class UsingDirectiveDecl;
+  class TemplateDeclNameParmDecl;
 
   template <typename> class CanQual;
   typedef CanQual<Type> CanQualType;
@@ -58,9 +60,10 @@ public:
     CXXConversionFunctionName,
     CXXOperatorName,
     CXXLiteralOperatorName,
-    CXXUsingDirective
+    CXXUsingDirective,
+    CXXTemplatedName
   };
-  static const unsigned NumNameKinds = CXXUsingDirective + 1;
+  static const unsigned NumNameKinds = CXXTemplatedName + 1;
 
 private:
   /// StoredNameKind - The kind of name that is actually stored in the
@@ -132,6 +135,12 @@ private:
   CXXLiteralOperatorIdName *getAsCXXLiteralOperatorIdName() const {
     if (getNameKind() == CXXLiteralOperatorName)
       return reinterpret_cast<CXXLiteralOperatorIdName *>(Ptr & ~PtrMask);
+    return nullptr;
+  }
+
+  CXXTemplateDeclNameParmName *getAsCXXTemplateDeclNameParmName() const {
+    if (getNameKind() == CXXTemplatedName)
+      return reinterpret_cast<CXXTemplateDeclNameParmName *>(Ptr & ~PtrMask);
     return nullptr;
   }
 
@@ -260,6 +269,10 @@ public:
   /// getCXXLiteralIdentifier - If this name is the name of a literal
   /// operator, retrieve the identifier associated with it.
   IdentifierInfo *getCXXLiteralIdentifier() const;
+
+  /// getAsCXXTemplatedName - If this name is the name of a template
+  /// declname parameter, retrieve the decl associated with it.
+  TemplateDeclNameParmDecl *getCXXTemplatedName() const;
 
   /// getObjCSelector - Get the Objective-C selector stored in this
   /// declaration name.

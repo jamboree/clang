@@ -808,6 +808,7 @@ public:
 #include "clang/Basic/OperatorKinds.def"
     CXXLiteralOperator,
     CXXUsingDirective,
+    CXXTemplatedName,
     NUM_EXTRA_KINDS
   };
 

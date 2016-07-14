@@ -1049,6 +1049,12 @@ public:
                                         NumExpansions);
   }
 
+  /// \brief Build a new type with designator.
+  QualType RebuildDesignatingType(QualType T, DeclarationName DesigName,
+                                  SourceLocation Loc) {
+    return SemaRef.BuildDesignatingType(T, DesigName, Loc);
+  }
+
   /// \brief Build a new atomic type given its value type.
   ///
   /// By default, performs semantic analysis when building the atomic type.
@@ -5908,6 +5914,28 @@ QualType TreeTransform<Derived>::TransformPackExpansionType(TypeLocBuilder &TLB,
 
   PackExpansionTypeLoc NewT = TLB.push<PackExpansionTypeLoc>(Result);
   NewT.setEllipsisLoc(TL.getEllipsisLoc());
+  return Result;
+}
+
+template <typename Derived>
+QualType
+TreeTransform<Derived>::TransformDesignatingType(TypeLocBuilder &TLB,
+                                                 DesignatingTypeLoc TL) {
+  QualType MasterType = getDerived().TransformType(TLB, TL.getMasterLoc());
+  if (MasterType.isNull())
+    return QualType();
+
+  QualType Result = TL.getType();
+  if (getDerived().AlwaysRebuild() ||
+      MasterType != TL.getMasterLoc().getType()) {
+    Result = getDerived().RebuildDesignatingType(
+        MasterType, TL.getTypePtr()->getDesigName(), TL.getDotLoc());
+    if (Result.isNull())
+      return QualType();
+  }
+
+  DesignatingTypeLoc NewT = TLB.push<DesignatingTypeLoc>(Result);
+  NewT.setDotLoc(TL.getDotLoc());
   return Result;
 }
 

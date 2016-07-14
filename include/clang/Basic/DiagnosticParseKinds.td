@@ -795,6 +795,8 @@ def warn_cxx14_compat_constexpr_on_lambda : Warning<
 def ext_constexpr_on_lambda_cxx1z : ExtWarn<
   "'constexpr' on lambda expressions is a C++1z extension">, InGroup<CXX1z>;
 
+def err_expected_declname_name : Error<"expected declname name">;
+
 // Availability attribute
 def err_expected_version : Error<
   "expected a version of the form 'major[.minor[.subminor]]'">;

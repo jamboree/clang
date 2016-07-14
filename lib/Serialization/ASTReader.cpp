@@ -966,6 +966,7 @@ ASTDeclContextNameLookupTrait::ReadKey(const unsigned char *d, unsigned) {
   case DeclarationName::CXXDestructorName:
   case DeclarationName::CXXConversionFunctionName:
   case DeclarationName::CXXUsingDirective:
+  case DeclarationName::CXXTemplatedName:
     Data = 0;
     break;
   }
@@ -5927,6 +5928,9 @@ void TypeLocReader::VisitDependentTemplateSpecializationTypeLoc(
 }
 void TypeLocReader::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
   TL.setEllipsisLoc(ReadSourceLocation(Record, Idx));
+}
+void TypeLocReader::VisitDesignatingTypeLoc(DesignatingTypeLoc TL) {
+  TL.setDotLoc(ReadSourceLocation(Record, Idx));
 }
 void TypeLocReader::VisitObjCInterfaceTypeLoc(ObjCInterfaceTypeLoc TL) {
   TL.setNameLoc(ReadSourceLocation(Record, Idx));

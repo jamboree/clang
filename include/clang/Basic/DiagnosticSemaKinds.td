@@ -5100,6 +5100,8 @@ def err_atomic_specifier_bad_type : Error<
   "_Atomic cannot be applied to "
   "%select{incomplete |array |function |reference |atomic |qualified |}0type "
   "%1 %select{||||||which is not trivially copyable}0">;
+def err_designator_on_designating_type : Error<
+  "cannot add designator on type %0 which already has a designator">;
 
 // Expressions.
 def ext_sizeof_alignof_function_type : Extension<

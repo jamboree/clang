@@ -428,6 +428,12 @@ void ASTTypeWriter::VisitPackExpansionType(const PackExpansionType *T) {
   Code = TYPE_PACK_EXPANSION;
 }
 
+void ASTTypeWriter::VisitDesignatingType(const DesignatingType *T) {
+  Record.AddTypeRef(T->getMasterType());
+  Record.AddDeclarationName(T->getDesigName());
+  Code = TYPE_DESIGNATING;
+}
+
 void ASTTypeWriter::VisitParenType(const ParenType *T) {
   Record.AddTypeRef(T->getInnerType());
   Code = TYPE_PAREN;
@@ -683,6 +689,9 @@ void TypeLocWriter::VisitDependentTemplateSpecializationTypeLoc(
 }
 void TypeLocWriter::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
   Record.AddSourceLocation(TL.getEllipsisLoc());
+}
+void TypeLocWriter::VisitDesignatingTypeLoc(DesignatingTypeLoc TL) {
+  Record.AddSourceLocation(TL.getDotLoc());
 }
 void TypeLocWriter::VisitObjCInterfaceTypeLoc(ObjCInterfaceTypeLoc TL) {
   Record.AddSourceLocation(TL.getNameLoc());
@@ -4901,6 +4910,13 @@ void ASTRecordWriter::AddTemplateArgumentLocInfo(
   case TemplateArgument::Pack:
     // FIXME: Is this right?
     break;
+  case TemplateArgument::DeclName:
+    AddSourceLocation(Arg.getDeclNameLoc());
+    break;
+  case TemplateArgument::DeclNameExpansion:
+    AddSourceLocation(Arg.getDeclNameLoc());
+    AddSourceLocation(Arg.getDeclNameEllipsisLoc());
+    break;
   }
 }
 
@@ -5095,6 +5111,10 @@ void ASTRecordWriter::AddDeclarationName(DeclarationName Name) {
   case DeclarationName::CXXUsingDirective:
     // No extra data to emit
     break;
+
+  case DeclarationName::CXXTemplatedName:
+    AddDeclRef(Name.getCXXTemplatedName());
+    break;
   }
 }
 
@@ -5145,6 +5165,7 @@ void ASTRecordWriter::AddDeclarationNameLoc(const DeclarationNameLoc &DNLoc,
   case DeclarationName::ObjCOneArgSelector:
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::CXXUsingDirective:
+  case DeclarationName::CXXTemplatedName:
     break;
   }
 }
@@ -5351,6 +5372,17 @@ void ASTRecordWriter::AddTemplateArgument(const TemplateArgument &Arg) {
     Record->push_back(Arg.pack_size());
     for (const auto &P : Arg.pack_elements())
       AddTemplateArgument(P);
+    break;
+
+  case TemplateArgument::DeclName:
+    AddDeclarationName(Arg.getAsDeclName());
+    break;
+  case TemplateArgument::DeclNameExpansion:
+    AddDeclarationName(Arg.getAsDeclNameOrDeclNamePattern());
+    if (Optional<unsigned> NumExpansions = Arg.getNumDeclNameExpansions())
+      Record->push_back(*NumExpansions + 1);
+    else
+      Record->push_back(0);
     break;
   }
 }

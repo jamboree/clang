@@ -228,6 +228,11 @@ public:
   /// \returns false if the visitation was terminated early, true otherwise.
   bool TraverseDeclarationNameInfo(DeclarationNameInfo NameInfo);
 
+  /// \brief Recursively visit a declaration name.
+  ///
+  /// \returns false if the visitation was terminated early, true otherwise.
+  bool TraverseDeclarationName(DeclarationName Name);
+
   /// \brief Recursively visit a template name and dispatch to the
   /// appropriate method.
   ///
@@ -764,9 +769,17 @@ bool RecursiveASTVisitor<Derived>::TraverseDeclarationNameInfo(
   case DeclarationName::CXXOperatorName:
   case DeclarationName::CXXLiteralOperatorName:
   case DeclarationName::CXXUsingDirective:
+  case DeclarationName::CXXTemplatedName:
     break;
   }
 
+  return true;
+}
+
+template <typename Derived>
+bool RecursiveASTVisitor<Derived>::TraverseDeclarationName(
+    DeclarationName Name) {
+  // FIXME: what to do?
   return true;
 }
 
@@ -804,6 +817,11 @@ bool RecursiveASTVisitor<Derived>::TraverseTemplateArgument(
   case TemplateArgument::Pack:
     return getDerived().TraverseTemplateArguments(Arg.pack_begin(),
                                                   Arg.pack_size());
+
+  case TemplateArgument::DeclName:
+  case TemplateArgument::DeclNameExpansion:
+    return getDerived().TraverseDeclarationName(
+        Arg.getAsDeclNameOrDeclNamePattern());
   }
 
   return true;
@@ -1033,6 +1051,8 @@ DEF_TRAVERSE_TYPE(DependentTemplateSpecializationType, {
 })
 
 DEF_TRAVERSE_TYPE(PackExpansionType, { TRY_TO(TraverseType(T->getPattern())); })
+
+DEF_TRAVERSE_TYPE(DesignatingType, { TRY_TO(TraverseType(T->getMasterType())); })
 
 DEF_TRAVERSE_TYPE(ObjCInterfaceType, {})
 
@@ -1264,6 +1284,9 @@ DEF_TRAVERSE_TYPELOC(DependentTemplateSpecializationType, {
 
 DEF_TRAVERSE_TYPELOC(PackExpansionType,
                      { TRY_TO(TraverseTypeLoc(TL.getPatternLoc())); })
+
+DEF_TRAVERSE_TYPELOC(DesignatingType,
+                     { TRY_TO(TraverseTypeLoc(TL.getMasterLoc())); })
 
 DEF_TRAVERSE_TYPELOC(ObjCInterfaceType, {})
 
@@ -1656,6 +1679,11 @@ DEF_TRAVERSE_DECL(TemplateTypeParmDecl, {
     TRY_TO(TraverseType(QualType(D->getTypeForDecl(), 0)));
   if (D->hasDefaultArgument() && !D->defaultArgumentWasInherited())
     TRY_TO(TraverseTypeLoc(D->getDefaultArgumentInfo()->getTypeLoc()));
+})
+
+DEF_TRAVERSE_DECL(TemplateDeclNameParmDecl, {
+  // D is the "T" in something like "template<declname T> class S;"
+  TRY_TO(TraverseDeclarationName(D->getDeclName()));;
 })
 
 DEF_TRAVERSE_DECL(TypedefDecl, {

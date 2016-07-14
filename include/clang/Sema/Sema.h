@@ -1293,6 +1293,8 @@ public:
   QualType BuildAtomicType(QualType T, SourceLocation Loc);
   QualType BuildPipeType(QualType T,
                          SourceLocation Loc);
+  QualType BuildDesignatingType(QualType T, DeclarationName DesigName,
+                                SourceLocation Loc);
 
   TypeSourceInfo *GetTypeForDeclarator(Declarator &D, Scope *S);
   TypeSourceInfo *GetTypeForDeclaratorCast(Declarator &D, QualType FromTy);
@@ -1333,6 +1335,10 @@ public:
       const FunctionProtoType *Source, SourceLocation SourceLoc);
 
   TypeResult ActOnTypeName(Scope *S, Declarator &D);
+
+  DeclarationName *ActOnDeclName(Scope *S, SourceLocation NameLoc,
+                                 SourceLocation QuestionLoc,
+                                 IdentifierInfo *Name);
 
   /// \brief The parser has parsed the context-sensitive type 'instancetype'
   /// in an Objective-C message declaration. Return the appropriate type.
@@ -5757,6 +5763,12 @@ public:
                                        unsigned Position,
                                        SourceLocation EqualLoc,
                                        ParsedTemplateArgument DefaultArg);
+
+  Decl *ActOnDeclNameParameter(Scope *S, SourceLocation EllipsisLoc,
+                               SourceLocation KeyLoc, IdentifierInfo *ParamName,
+                               SourceLocation ParamNameLoc, unsigned Depth,
+                               unsigned Position, SourceLocation EqualLoc,
+                               DeclarationName *DefaultArg);
 
   TemplateParameterList *
   ActOnTemplateParameterList(unsigned Depth,

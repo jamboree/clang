@@ -818,6 +818,15 @@ Decl *Sema::ActOnTemplateTemplateParameter(Scope* S,
   return Param;
 }
 
+Decl *Sema::ActOnDeclNameParameter(Scope *S, SourceLocation EllipsisLoc,
+                                   SourceLocation KeyLoc,
+                                   IdentifierInfo *ParamName,
+                                   SourceLocation ParamNameLoc, unsigned Depth,
+                                   unsigned Position, SourceLocation EqualLoc,
+                                   DeclarationName *DefaultArg) {
+  return nullptr;
+}
+
 /// ActOnTemplateParameterList - Builds a TemplateParameterList, optionally
 /// constrained by RequiresClause, that contains the template parameters in
 /// Params.
@@ -2453,6 +2462,7 @@ static bool isTemplateArgumentTemplateParameter(
   case TemplateArgument::Declaration:
   case TemplateArgument::Pack:
   case TemplateArgument::TemplateExpansion:
+  case TemplateArgument::DeclNameExpansion:
     return false;
 
   case TemplateArgument::Type: {
@@ -2472,11 +2482,18 @@ static bool isTemplateArgumentTemplateParameter(
     return NTTP && NTTP->getDepth() == Depth && NTTP->getIndex() == Index;
   }
 
-  case TemplateArgument::Template:
+  case TemplateArgument::Template: {
     const TemplateTemplateParmDecl *TTP =
         dyn_cast_or_null<TemplateTemplateParmDecl>(
             Arg.getAsTemplateOrTemplatePattern().getAsTemplateDecl());
     return TTP && TTP->getDepth() == Depth && TTP->getIndex() == Index;
+  }
+
+  case TemplateArgument::DeclName: {
+    const TemplateDeclNameParmDecl *TDP =
+        Arg.getAsDeclName().getCXXTemplatedName();
+    return TDP && TDP->getDepth() == Depth && TDP->getIndex() == Index;
+  }
   }
   llvm_unreachable("unexpected kind of template argument");
 }
@@ -4201,6 +4218,11 @@ bool UnnamedLocalNoLinkageFinder::VisitDependentTemplateSpecializationType(
 bool UnnamedLocalNoLinkageFinder::VisitPackExpansionType(
                                                    const PackExpansionType* T) {
   return Visit(T->getPattern());
+}
+
+bool UnnamedLocalNoLinkageFinder::VisitDesignatingType(
+    const DesignatingType *T) {
+  return Visit(T->getMasterType());
 }
 
 bool UnnamedLocalNoLinkageFinder::VisitObjCObjectType(const ObjCObjectType *) {

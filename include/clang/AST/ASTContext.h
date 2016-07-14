@@ -127,6 +127,7 @@ class ASTContext : public RefCountedBase<ASTContext> {
                                      ASTContext&>
     DependentTemplateSpecializationTypes;
   llvm::FoldingSet<PackExpansionType> PackExpansionTypes;
+  mutable llvm::FoldingSet<DesignatingType> DesignatingTypes;
   mutable llvm::FoldingSet<ObjCObjectTypeImpl> ObjCObjectTypes;
   mutable llvm::FoldingSet<ObjCObjectPointerType> ObjCObjectPointerTypes;
   mutable llvm::FoldingSet<DependentUnaryTransformType>
@@ -1273,6 +1274,8 @@ public:
 
   QualType getPackExpansionType(QualType Pattern,
                                 Optional<unsigned> NumExpansions);
+
+  QualType getDesignatingType(QualType T, DeclarationName DesigName) const;
 
   QualType getObjCInterfaceType(const ObjCInterfaceDecl *Decl,
                                 ObjCInterfaceDecl *PrevDecl = nullptr) const;

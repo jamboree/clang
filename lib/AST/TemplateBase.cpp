@@ -133,6 +133,12 @@ bool TemplateArgument::isDependent() const {
       if (P.isDependent())
         return true;
     return false;
+
+  case DeclName:
+    return getAsDeclName().isDependentName();
+
+  case DeclNameExpansion:
+    return true;
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -172,6 +178,12 @@ bool TemplateArgument::isInstantiationDependent() const {
       if (P.isInstantiationDependent())
         return true;
     return false;
+
+  case DeclName:
+    return getAsDeclName().isDependentName();
+    
+  case DeclNameExpansion:
+    return true;
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -195,6 +207,12 @@ bool TemplateArgument::isPackExpansion() const {
           
   case Expression:
     return isa<PackExpansionExpr>(getAsExpr());
+
+  case DeclName:
+    return false;
+
+  case DeclNameExpansion:
+    return true;
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -206,6 +224,8 @@ bool TemplateArgument::containsUnexpandedParameterPack() const {
   case Declaration:
   case Integral:
   case TemplateExpansion:
+  case DeclName:
+  case DeclNameExpansion:
   case NullPtr:
     break;
 
@@ -237,6 +257,14 @@ bool TemplateArgument::containsUnexpandedParameterPack() const {
 
 Optional<unsigned> TemplateArgument::getNumTemplateExpansions() const {
   assert(getKind() == TemplateExpansion);
+  if (TemplateArg.NumExpansions)
+    return TemplateArg.NumExpansions - 1;
+  
+  return None; 
+}
+
+Optional<unsigned> TemplateArgument::getNumDeclNameExpansions() const {
+  assert(getKind() == DeclNameExpansion);
   if (TemplateArg.NumExpansions)
     return TemplateArg.NumExpansions - 1;
   
@@ -293,6 +321,22 @@ void TemplateArgument::Profile(llvm::FoldingSetNodeID &ID,
     ID.AddInteger(Args.NumArgs);
     for (unsigned I = 0; I != Args.NumArgs; ++I)
       Args.Args[I].Profile(ID, Context);
+
+  case DeclName:
+  case DeclNameExpansion: {
+    DeclarationName Name = getAsDeclNameOrDeclNamePattern();
+    if (TemplateDeclNameParmDecl *TDP = Name.getCXXTemplatedName()) {
+      ID.AddBoolean(true);
+      ID.AddInteger(TDP->getDepth());
+      ID.AddInteger(TDP->getPosition());
+      ID.AddBoolean(TDP->isParameterPack());
+      // FIXME: should we differentiate it from TemplateTemplateParmDecl above?
+    } else {
+      ID.AddBoolean(false);
+      ID.AddPointer(Name.getAsIdentifierInfo());
+    }
+    break;
+  }
   }
 }
 
@@ -321,6 +365,11 @@ bool TemplateArgument::structurallyEquals(const TemplateArgument &Other) const {
       if (!Args.Args[I].structurallyEquals(Other.Args.Args[I]))
         return false;
     return true;
+
+  case DeclName:
+  case DeclNameExpansion:
+    return getAsDeclNameOrDeclNamePattern() ==
+           Other.getAsDeclNameOrDeclNamePattern();
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -345,7 +394,11 @@ TemplateArgument TemplateArgument::getPackExpansionPattern() const {
   case Null:
   case Template:
   case NullPtr:
+  case DeclName:
     return TemplateArgument();
+
+  case DeclNameExpansion:
+    return TemplateArgument(getAsDeclNameOrDeclNamePattern());
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -398,8 +451,8 @@ void TemplateArgument::print(const PrintingPolicy &Policy,
   case Expression:
     getAsExpr()->printPretty(Out, nullptr, Policy);
     break;
-    
-  case Pack:
+
+  case Pack: {
     Out << "<";
     bool First = true;
     for (const auto &P : pack_elements()) {
@@ -407,11 +460,21 @@ void TemplateArgument::print(const PrintingPolicy &Policy,
         First = false;
       else
         Out << ", ";
-      
+
       P.print(Policy, Out);
     }
     Out << ">";
-    break;        
+    break;
+  }
+
+  case DeclName:
+    getAsDeclName().print(Out, Policy);
+    break;
+
+  case DeclNameExpansion:
+    getAsDeclNameOrDeclNamePattern().print(Out, Policy);
+    Out << "...";
+    break;
   }
 }
 
@@ -467,6 +530,12 @@ SourceRange TemplateArgumentLoc::getSourceRange() const {
   case TemplateArgument::Pack:
   case TemplateArgument::Null:
     return SourceRange();
+
+  case TemplateArgument::DeclName:
+    return SourceRange(getDeclNameLoc());
+
+  case TemplateArgument::DeclNameExpansion:
+    return SourceRange(getDeclNameLoc(), getDeclNameEllipsisLoc());
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -521,6 +590,12 @@ const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
     Arg.print(Policy, OS);
     return DB << OS.str();
   }
+
+  case TemplateArgument::DeclName:
+    return DB << Arg.getAsDeclName();
+
+  case TemplateArgument::DeclNameExpansion:
+    return DB << Arg.getAsDeclNameOrDeclNamePattern();
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");

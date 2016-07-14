@@ -19,6 +19,7 @@
 
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/TemplateName.h"
+#include "clang/AST/DeclarationName.h"
 #include "clang/Basic/AddressSpaces.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/ExceptionSpecificationType.h"
@@ -99,6 +100,7 @@ namespace clang {
   class ElaboratedType;
   class ExtQuals;
   class ExtQualsTypeCommonBase;
+  class DeclarationName;
   struct PrintingPolicy;
 
   template <typename> class CanQual;
@@ -1730,6 +1732,7 @@ public:
   bool isTemplateTypeParmType() const;          // C++ template type parameter
   bool isNullPtrType() const;                   // C++0x nullptr_t
   bool isAtomicType() const;                    // C11 _Atomic()
+  bool isDesignatingType() const;
 
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
   bool is##Id##Type() const;
@@ -4696,6 +4699,32 @@ public:
   }
 };
 
+/// \brief Represents a type with a designator.
+///
+class DesignatingType : public Type, public llvm::FoldingSetNode {
+  QualType MasterType;
+  DeclarationName DesigName;
+
+  DesignatingType(QualType Master, DeclarationName DesigName, QualType Canon);
+
+  friend class ASTContext; // ASTContext creates these.
+
+public:
+  QualType getMasterType() const { return MasterType; }
+
+  DeclarationName getDesigName() const { return DesigName; }
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  void Profile(llvm::FoldingSetNodeID &ID) { Profile(ID, getMasterType()); }
+  static void Profile(llvm::FoldingSetNodeID &ID, QualType Master) {
+    ID.AddPointer(Master.getAsOpaquePtr());
+  }
+
+  static bool classof(const Type *T) { return T->getTypeClass() == Designating; }
+};
+
 /// Represents a class type in Objective C.
 ///
 /// Every Objective C type is a combination of a base type, a set of
@@ -5563,6 +5592,9 @@ inline bool Type::isObjCObjectOrInterfaceType() const {
 }
 inline bool Type::isAtomicType() const {
   return isa<AtomicType>(CanonicalType);
+}
+inline bool Type::isDesignatingType() const {
+  return isa<DesignatingType>(CanonicalType);
 }
 
 inline bool Type::isObjCQualifiedIdType() const {

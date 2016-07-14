@@ -70,6 +70,24 @@ TypeResult Parser::ParseTypeName(SourceRange *Range,
   return Actions.ActOnTypeName(getCurScope(), DeclaratorInfo);
 }
 
+/// ParseDeclName
+///       decl-name:
+///         '?'[opt] identifier
+///         '?'
+DeclarationName *Parser::ParseDeclName(Declarator::TheContext /*Context*/) {
+  SourceLocation QuestionLoc;
+  if (Tok.is(tok::question))
+    QuestionLoc = ConsumeToken();
+  if (Tok.is(tok::identifier)) {
+    IdentifierInfo *Name = Tok.getIdentifierInfo();
+    SourceLocation NameLoc = ConsumeToken();
+    return Actions.ActOnDeclName(getCurScope(), QuestionLoc, NameLoc, Name);
+  } else if (QuestionLoc.isInvalid()) {
+    Diag(Tok, diag::err_expected_declname_name);
+  }
+  return nullptr;
+}
+
 /// isAttributeLateParsed - Return true if the attribute has arguments that
 /// require late parsing.
 static bool isAttributeLateParsed(const IdentifierInfo &II) {

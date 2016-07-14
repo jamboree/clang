@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/TypeLoc.h"
@@ -63,6 +64,22 @@ class CXXLiteralOperatorIdName
   : public DeclarationNameExtra, public llvm::FoldingSetNode {
 public:
   IdentifierInfo *ID;
+
+  /// FETokenInfo - Extra information associated with this operator
+  /// name that can be used by the front end.
+  void *FETokenInfo;
+
+  void Profile(llvm::FoldingSetNodeID &FSID) {
+    FSID.AddPointer(ID);
+  }
+};
+
+/// CXXTemplateDeclNameParmName - Contains the actual identifier that refers to the
+/// declname paramter.
+class CXXTemplateDeclNameParmName
+  : public DeclarationNameExtra, public llvm::FoldingSetNode {
+public:
+    TemplateDeclNameParmDecl *ID;
 
   /// FETokenInfo - Extra information associated with this operator
   /// name that can be used by the front end.
@@ -128,6 +145,10 @@ int DeclarationName::compare(DeclarationName LHS, DeclarationName RHS) {
               
   case DeclarationName::CXXUsingDirective:
     return 0;
+
+  case DeclarationName::CXXTemplatedName:
+    return LHS.getCXXTemplatedName()->getName().compare(
+                                   RHS.getCXXTemplatedName()->getName());
   }
 
   llvm_unreachable("Invalid DeclarationName Kind!");
@@ -211,6 +232,10 @@ void DeclarationName::print(raw_ostream &OS, const PrintingPolicy &Policy) {
   case DeclarationName::CXXUsingDirective:
     OS << "<using-directive>";
     return;
+  case DeclarationName::CXXTemplatedName:
+    // FIXME: print proper name.
+    OS << "<declname>";
+    return;
   }
 
   llvm_unreachable("Unexpected declaration name kind");
@@ -246,6 +271,9 @@ DeclarationName::NameKind DeclarationName::getNameKind() const {
 
     case DeclarationNameExtra::CXXUsingDirective:
       return CXXUsingDirective;
+
+    case DeclarationNameExtra::CXXTemplatedName:
+      return CXXTemplatedName;
 
     default:
       // Check if we have one of the CXXOperator* enumeration values.
@@ -293,6 +321,13 @@ OverloadedOperatorKind DeclarationName::getCXXOverloadedOperator() const {
 IdentifierInfo *DeclarationName::getCXXLiteralIdentifier() const {
   if (CXXLiteralOperatorIdName *CXXLit = getAsCXXLiteralOperatorIdName())
     return CXXLit->ID;
+  else
+    return nullptr;
+}
+
+TemplateDeclNameParmDecl *DeclarationName::getCXXTemplatedName() const {
+  if (CXXTemplateDeclNameParmName *CXXName = getAsCXXTemplateDeclNameParmName())
+    return CXXName->ID;
   else
     return nullptr;
 }
@@ -491,6 +526,7 @@ DeclarationNameLoc::DeclarationNameLoc(DeclarationName Name) {
     // FIXME: ?
     break;
   case DeclarationName::CXXUsingDirective:
+  case DeclarationName::CXXTemplatedName:
     break;
   }
 }
@@ -504,6 +540,7 @@ bool DeclarationNameInfo::containsUnexpandedParameterPack() const {
   case DeclarationName::CXXOperatorName:
   case DeclarationName::CXXLiteralOperatorName:
   case DeclarationName::CXXUsingDirective:
+  case DeclarationName::CXXTemplatedName:
     return false;
 
   case DeclarationName::CXXConstructorName:
@@ -535,6 +572,8 @@ bool DeclarationNameInfo::isInstantiationDependent() const {
       return TInfo->getType()->isInstantiationDependentType();
     
     return Name.getCXXNameType()->isInstantiationDependentType();
+  case DeclarationName::CXXTemplatedName:
+    return true;
   }
   llvm_unreachable("All name kinds handled.");
 }
@@ -555,6 +594,7 @@ void DeclarationNameInfo::printName(raw_ostream &OS) const {
   case DeclarationName::CXXOperatorName:
   case DeclarationName::CXXLiteralOperatorName:
   case DeclarationName::CXXUsingDirective:
+  case DeclarationName::CXXTemplatedName:
     OS << Name;
     return;
 
@@ -605,6 +645,7 @@ SourceLocation DeclarationNameInfo::getEndLoc() const {
   case DeclarationName::ObjCOneArgSelector:
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::CXXUsingDirective:
+  case DeclarationName::CXXTemplatedName:
     return NameLoc;
   }
   llvm_unreachable("Unexpected declaration name kind");
