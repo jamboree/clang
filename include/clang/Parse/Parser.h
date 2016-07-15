@@ -2076,7 +2076,7 @@ public:
                            Decl **OwnedType = nullptr,
                            ParsedAttributes *Attrs = nullptr);
 
-  DeclarationName *ParseDeclName(Declarator::TheContext Context);
+  ParsedTemplateArgument ParseDeclName(Declarator::TheContext Context);
 
 private:
   void ParseBlockId(SourceLocation CaretLoc);

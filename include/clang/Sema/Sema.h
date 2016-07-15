@@ -5768,7 +5768,7 @@ public:
                                SourceLocation KeyLoc, IdentifierInfo *ParamName,
                                SourceLocation ParamNameLoc, unsigned Depth,
                                unsigned Position, SourceLocation EqualLoc,
-                               DeclarationName *DefaultArg);
+                               ParsedTemplateArgument DefaultArg);
 
   TemplateParameterList *
   ActOnTemplateParameterList(unsigned Depth,
@@ -6956,6 +6956,14 @@ public:
     InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
                           NamedDecl *Template,
                           TemplateTemplateParmDecl *Param,
+                          ArrayRef<TemplateArgument> TemplateArgs,
+                          SourceRange InstantiationRange);
+
+    /// \brief Note that we are substituting prior template arguments into a
+    /// template declname parameter.
+    InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
+                          NamedDecl *Template,
+                          TemplateDeclNameParmDecl *Param,
                           ArrayRef<TemplateArgument> TemplateArgs,
                           SourceRange InstantiationRange);
 

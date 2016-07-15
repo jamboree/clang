@@ -212,7 +212,7 @@ public:
   }
 
   /// \brief Construct a template declname argument.
-  explicit TemplateArgument(DeclarationName Name) {
+  TemplateArgument(DeclarationName Name) {
     TemplateArg.Kind = DeclName;
     TemplateArg.Name = Name.getAsOpaquePtr();
   }

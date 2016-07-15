@@ -749,7 +749,7 @@ Decl *Parser::ParseDeclNameParameter(unsigned Depth, unsigned Position) {
   // Per C++0x [basic.scope.pdecl]p9, we parse the default argument before
   // we introduce the type parameter into the local scope.
   SourceLocation EqualLoc;
-  DeclarationName *DefaultArg = nullptr;
+  ParsedTemplateArgument DefaultArg;
   if (TryConsumeToken(tok::equal, EqualLoc))
     DefaultArg = ParseDeclName(Declarator::TemplateParamContext);
 

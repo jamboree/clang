@@ -497,6 +497,17 @@ ParsedTemplateArgument ParsedTemplateArgument::getTemplatePackExpansion(
   return Result;
 }
 
+ParsedTemplateArgument ParsedTemplateArgument::getDeclNamePackExpansion(
+    SourceLocation EllipsisLoc) const {
+  assert(Kind == DeclName &&
+         "Only template declname arguments can be pack expansions here");
+  assert(getAsDeclName().get().containsUnexpandedParameterPack() &&
+         "Template declname argument pack expansion without packs");
+  ParsedTemplateArgument Result(*this);
+  Result.EllipsisLoc = EllipsisLoc;
+  return Result;
+}
+
 static TemplateArgumentLoc translateTemplateArgument(Sema &SemaRef,
                                             const ParsedTemplateArgument &Arg) {
 
@@ -526,6 +537,16 @@ static TemplateArgumentLoc translateTemplateArgument(Sema &SemaRef,
                                                               SemaRef.Context),
                                Arg.getLocation(),
                                Arg.getEllipsisLoc());
+  }
+
+  case ParsedTemplateArgument::DeclName: {
+    DeclarationName Name = Arg.getAsDeclName().get();
+    TemplateArgument TArg;
+    if (Arg.getEllipsisLoc().isValid())
+      TArg = TemplateArgument(Name, Optional<unsigned int>());
+    else
+      TArg = Name;
+    return TemplateArgumentLoc(TArg, Arg.getLocation(), Arg.getEllipsisLoc());
   }
   }
 
@@ -823,7 +844,7 @@ Decl *Sema::ActOnDeclNameParameter(Scope *S, SourceLocation EllipsisLoc,
                                    IdentifierInfo *ParamName,
                                    SourceLocation ParamNameLoc, unsigned Depth,
                                    unsigned Position, SourceLocation EqualLoc,
-                                   DeclarationName *DefaultArg) {
+                                   ParsedTemplateArgument DefaultArg) {
   return nullptr;
 }
 
@@ -3618,9 +3639,11 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
         Converted.push_back(Result);
         break;
       }
-
+      // Fallthrough
+    case TemplateArgument::DeclName:
+    case TemplateArgument::DeclNameExpansion:
       // We have a template argument that actually does refer to a class
-      // template, alias template, or template template parameter, and
+      // template, alias template, or template template/declname parameter, and
       // therefore cannot be a non-type template argument.
       Diag(Arg.getLocation(), diag::err_template_arg_must_be_expr)
         << Arg.getSourceRange();
@@ -3656,62 +3679,104 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
     return false;
   }
 
-
   // Check template template parameters.
-  TemplateTemplateParmDecl *TempParm = cast<TemplateTemplateParmDecl>(Param);
+  if (TemplateTemplateParmDecl *TempParm =
+          cast<TemplateTemplateParmDecl>(Param)) {
+    // Substitute into the template parameter list of the template
+    // template parameter, since previously-supplied template arguments
+    // may appear within the template template parameter.
+    {
+      // Set up a template instantiation context.
+      LocalInstantiationScope Scope(*this);
+      InstantiatingTemplate Inst(*this, TemplateLoc, Template, TempParm,
+                                 Converted,
+                                 SourceRange(TemplateLoc, RAngleLoc));
+      if (Inst.isInvalid())
+        return true;
 
-  // Substitute into the template parameter list of the template
-  // template parameter, since previously-supplied template arguments
-  // may appear within the template template parameter.
-  {
-    // Set up a template instantiation context.
-    LocalInstantiationScope Scope(*this);
-    InstantiatingTemplate Inst(*this, TemplateLoc, Template,
-                               TempParm, Converted,
-                               SourceRange(TemplateLoc, RAngleLoc));
-    if (Inst.isInvalid())
+      TemplateArgumentList TemplateArgs(TemplateArgumentList::OnStack,
+                                        Converted);
+      TempParm = cast_or_null<TemplateTemplateParmDecl>(SubstDecl(
+          TempParm, CurContext, MultiLevelTemplateArgumentList(TemplateArgs)));
+      if (!TempParm)
+        return true;
+    }
+
+    switch (Arg.getArgument().getKind()) {
+    case TemplateArgument::Null:
+      llvm_unreachable("Should never see a NULL template argument here");
+
+    case TemplateArgument::Template:
+    case TemplateArgument::TemplateExpansion:
+      if (CheckTemplateArgument(TempParm, Arg, ArgumentPackIndex))
+        return true;
+
+      Converted.push_back(Arg.getArgument());
+      break;
+
+    case TemplateArgument::Expression:
+    case TemplateArgument::Type:
+    case TemplateArgument::DeclName:
+    case TemplateArgument::DeclNameExpansion:
+      // We have a template template parameter but the template
+      // argument does not refer to a template.
+      Diag(Arg.getLocation(), diag::err_template_arg_must_be_template)
+          << getLangOpts().CPlusPlus11;
       return true;
 
-    TemplateArgumentList TemplateArgs(TemplateArgumentList::OnStack, Converted);
-    TempParm = cast_or_null<TemplateTemplateParmDecl>(
-                      SubstDecl(TempParm, CurContext,
-                                MultiLevelTemplateArgumentList(TemplateArgs)));
-    if (!TempParm)
-      return true;
+    case TemplateArgument::Declaration:
+      llvm_unreachable("Declaration argument with template template parameter");
+    case TemplateArgument::Integral:
+      llvm_unreachable("Integral argument with template template parameter");
+    case TemplateArgument::NullPtr:
+      llvm_unreachable(
+          "Null pointer argument with template template parameter");
+
+    case TemplateArgument::Pack:
+      llvm_unreachable("Caller must expand template argument packs");
+    }
+
+    return false;
   }
 
-  switch (Arg.getArgument().getKind()) {
-  case TemplateArgument::Null:
-    llvm_unreachable("Should never see a NULL template argument here");
+  // Check template declname parameters.
+  if (TemplateDeclNameParmDecl *NameParm =
+          dyn_cast<TemplateDeclNameParmDecl>(Param)) {
+    switch (Arg.getArgument().getKind()) {
+    case TemplateArgument::Null:
+      llvm_unreachable("Should never see a NULL template argument here");
 
-  case TemplateArgument::Template:
-  case TemplateArgument::TemplateExpansion:
-    if (CheckTemplateArgument(TempParm, Arg, ArgumentPackIndex))
+    case TemplateArgument::DeclName:
+    case TemplateArgument::DeclNameExpansion:
+      // Always ok.
+      Converted.push_back(Arg.getArgument());
+      break;
+
+    case TemplateArgument::Expression:
+    case TemplateArgument::Type:
+    case TemplateArgument::Template:
+    case TemplateArgument::TemplateExpansion:
+      // We have a template template parameter but the template
+      // argument does not refer to a template.
+      Diag(Arg.getLocation(), diag::err_template_arg_must_be_template)
+          << getLangOpts().CPlusPlus11;
       return true;
 
-    Converted.push_back(Arg.getArgument());
-    break;
+    case TemplateArgument::Declaration:
+      llvm_unreachable("Declaration argument with template declname parameter");
+    case TemplateArgument::Integral:
+      llvm_unreachable("Integral argument with template declname parameter");
+    case TemplateArgument::NullPtr:
+      llvm_unreachable(
+          "Null pointer argument with template declname parameter");
 
-  case TemplateArgument::Expression:
-  case TemplateArgument::Type:
-    // We have a template template parameter but the template
-    // argument does not refer to a template.
-    Diag(Arg.getLocation(), diag::err_template_arg_must_be_template)
-      << getLangOpts().CPlusPlus11;
-    return true;
+    case TemplateArgument::Pack:
+      llvm_unreachable("Caller must expand template argument packs");
+    }
 
-  case TemplateArgument::Declaration:
-    llvm_unreachable("Declaration argument with template template parameter");
-  case TemplateArgument::Integral:
-    llvm_unreachable("Integral argument with template template parameter");
-  case TemplateArgument::NullPtr:
-    llvm_unreachable("Null pointer argument with template template parameter");
-
-  case TemplateArgument::Pack:
-    llvm_unreachable("Caller must expand template argument packs");
+    return false;
   }
-
-  return false;
+  llvm_unreachable("Unknown template parameter kind");
 }
 
 /// \brief Diagnose an arity mismatch in the 

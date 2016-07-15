@@ -166,6 +166,13 @@ private:
     Ptr |= StoredDeclarationNameExtra;
   }
 
+  DeclarationName(CXXTemplateDeclNameParmName *Name)
+      : Ptr(reinterpret_cast<uintptr_t>(Name)) {
+    assert((Ptr & PtrMask) == 0 &&
+           "Improperly aligned CXXTemplateDeclNameParmName");
+    Ptr |= StoredDeclarationNameExtra;
+  }
+
   /// Construct a declaration name from a raw pointer.
   DeclarationName(uintptr_t Ptr) : Ptr(Ptr) { }
 
@@ -223,6 +230,10 @@ public:
   /// because an identifier can be a dependent name if it is used as the 
   /// callee in a call expression with dependent arguments.
   bool isDependentName() const;
+
+  /// \brief Determines whether this declaration name contains an
+  /// unexpanded parameter pack when it refers to a template declname parameter.
+  bool containsUnexpandedParameterPack() const;
   
   /// getNameAsString - Retrieve the human-readable string for this name.
   std::string getAsString() const;
@@ -359,6 +370,7 @@ class DeclarationNameTable {
   void *CXXSpecialNamesImpl; // Actually a FoldingSet<CXXSpecialName> *
   CXXOperatorIdName *CXXOperatorNames; // Operator names
   void *CXXLiteralOperatorNames; // Actually a CXXOperatorIdName*
+  void *CXXTemplatedNames; // FoldingSet<CXXTemplateDeclNameParmName> *
 
   DeclarationNameTable(const DeclarationNameTable&) = delete;
   void operator=(const DeclarationNameTable&) = delete;
@@ -398,6 +410,9 @@ public:
   /// getCXXLiteralOperatorName - Get the name of the literal operator function
   /// with II as the identifier.
   DeclarationName getCXXLiteralOperatorName(IdentifierInfo *II);
+
+  /// getCXXTemplatedName - Get the name of the template declname parameter.
+  DeclarationName getCXXTemplatedName(TemplateDeclNameParmDecl *Decl);
 };
 
 /// DeclarationNameLoc - Additional source/type location info
@@ -608,6 +623,21 @@ struct DenseMapInfo<clang::DeclarationName> {
 
 template <>
 struct isPodLike<clang::DeclarationName> { static const bool value = true; };
+
+/// \brief The clang::DeclarationName class is effectively a pointer.
+template <> class PointerLikeTypeTraits<clang::DeclarationName> {
+public:
+  static inline void *getAsVoidPointer(clang::DeclarationName DN) {
+    return DN.getAsOpaquePtr();
+  }
+
+  static inline clang::DeclarationName getFromVoidPointer(void *Ptr) {
+    return clang::DeclarationName::getFromOpaquePtr(Ptr);
+  }
+
+  // No bits are available!
+  enum { NumLowBitsAvailable = 0 };
+};
 
 }  // end namespace llvm
 

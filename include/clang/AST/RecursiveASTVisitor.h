@@ -863,6 +863,11 @@ bool RecursiveASTVisitor<Derived>::TraverseTemplateArgumentLoc(
   case TemplateArgument::Pack:
     return getDerived().TraverseTemplateArguments(Arg.pack_begin(),
                                                   Arg.pack_size());
+
+  case TemplateArgument::DeclName:
+  case TemplateArgument::DeclNameExpansion:
+    return getDerived().TraverseDeclarationNameInfo(DeclarationNameInfo(
+        Arg.getAsDeclNameOrDeclNamePattern(), ArgLoc.getDeclNameLoc()));
   }
 
   return true;

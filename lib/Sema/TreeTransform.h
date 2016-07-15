@@ -3036,11 +3036,18 @@ public:
                                  Pattern.getTemplateNameLoc(),
                                  EllipsisLoc);
 
+    case TemplateArgument::DeclName:
+      return TemplateArgumentLoc(
+          TemplateArgument(Pattern.getArgument().getAsDeclName(),
+                           NumExpansions),
+          Pattern.getDeclNameLoc(), EllipsisLoc);
+
     case TemplateArgument::Null:
     case TemplateArgument::Integral:
     case TemplateArgument::Declaration:
     case TemplateArgument::Pack:
     case TemplateArgument::TemplateExpansion:
+    case TemplateArgument::DeclNameExpansion:
     case TemplateArgument::NullPtr:
       llvm_unreachable("Pack expansion pattern has no parameter packs");
 
@@ -3532,6 +3539,7 @@ TreeTransform<Derived>
   case DeclarationName::CXXOperatorName:
   case DeclarationName::CXXLiteralOperatorName:
   case DeclarationName::CXXUsingDirective:
+  case DeclarationName::CXXTemplatedName:
     return NameInfo;
 
   case DeclarationName::CXXConstructorName:
@@ -3698,6 +3706,14 @@ void TreeTransform<Derived>::InventTemplateArgumentLoc(
   case TemplateArgument::NullPtr:
     Output = TemplateArgumentLoc(Arg, TemplateArgumentLocInfo());
     break;
+
+  case TemplateArgument::DeclName:
+    Output = TemplateArgumentLoc(Arg, Loc);
+    break;
+
+  case TemplateArgument::DeclNameExpansion:
+    Output = TemplateArgumentLoc(Arg, Loc, Loc);
+    break;
   }
 }
 
@@ -3747,7 +3763,16 @@ bool TreeTransform<Derived>::TransformTemplateArgument(
     return false;
   }
 
+  case TemplateArgument::DeclName: {
+    DeclarationNameInfo NameInfo = TransformDeclarationNameInfo(
+        DeclarationNameInfo(Arg.getAsDeclName(), Input.getDeclNameLoc()));
+    Output = TemplateArgumentLoc(TemplateArgument(NameInfo.getName()),
+                                 NameInfo.getLoc());
+    return false;
+  }
+
   case TemplateArgument::TemplateExpansion:
+  case TemplateArgument::DeclNameExpansion:
     llvm_unreachable("Caller should expand pack expansions");
 
   case TemplateArgument::Expression: {

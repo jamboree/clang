@@ -74,18 +74,18 @@ TypeResult Parser::ParseTypeName(SourceRange *Range,
 ///       decl-name:
 ///         '?'[opt] identifier
 ///         '?'
-DeclarationName *Parser::ParseDeclName(Declarator::TheContext /*Context*/) {
+ParsedTemplateArgument Parser::ParseDeclName(Declarator::TheContext /*Context*/) {
   SourceLocation QuestionLoc;
   if (Tok.is(tok::question))
     QuestionLoc = ConsumeToken();
   if (Tok.is(tok::identifier)) {
     IdentifierInfo *Name = Tok.getIdentifierInfo();
     SourceLocation NameLoc = ConsumeToken();
-    return Actions.ActOnDeclName(getCurScope(), QuestionLoc, NameLoc, Name);
+    //return Actions.ActOnDeclName(getCurScope(), QuestionLoc, NameLoc, Name);
   }
   if (QuestionLoc.isInvalid())
     Diag(Tok, diag::err_expected_declname_name);
-  return nullptr;
+  return ParsedTemplateArgument();
 }
 
 /// isAttributeLateParsed - Return true if the attribute has arguments that

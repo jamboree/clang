@@ -317,6 +317,16 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
           TemplateArgs) {}
 
 Sema::InstantiatingTemplate::InstantiatingTemplate(
+    Sema &SemaRef, SourceLocation PointOfInstantiation, NamedDecl *Template,
+    TemplateDeclNameParmDecl *Param, ArrayRef<TemplateArgument> TemplateArgs,
+    SourceRange InstantiationRange)
+    : InstantiatingTemplate(
+          SemaRef,
+          ActiveTemplateInstantiation::PriorTemplateArgumentSubstitution,
+          PointOfInstantiation, InstantiationRange, Param, Template,
+          TemplateArgs) {}
+
+Sema::InstantiatingTemplate::InstantiatingTemplate(
     Sema &SemaRef, SourceLocation PointOfInstantiation, TemplateDecl *Template,
     NamedDecl *Param, ArrayRef<TemplateArgument> TemplateArgs,
     SourceRange InstantiationRange)
@@ -706,6 +716,9 @@ namespace {
     /// this declaration.
     Decl *TransformDecl(SourceLocation Loc, Decl *D);
 
+    DeclarationNameInfo
+    TransformDeclarationNameInfo(const DeclarationNameInfo &NameInfo);
+
     void transformAttrs(Decl *Old, Decl *New) { 
       SemaRef.InstantiateAttrs(TemplateArgs, Old, New);
     }
@@ -894,6 +907,26 @@ Decl *TemplateInstantiator::TransformDecl(SourceLocation Loc, Decl *D) {
   }
 
   return SemaRef.FindInstantiatedDecl(Loc, cast<NamedDecl>(D), TemplateArgs);
+}
+
+DeclarationNameInfo TemplateInstantiator::TransformDeclarationNameInfo(
+    const DeclarationNameInfo &NameInfo) {
+  if (TemplateDeclNameParmDecl *TDP =
+          NameInfo.getName().getCXXTemplatedName()) {
+    if (TDP->getDepth() < TemplateArgs.getNumLevels()) {
+      // If the corresponding template argument is NULL or non-existent, it's
+      // because we are performing instantiation from explicitly-specified
+      // template arguments in a function template, but there were some
+      // arguments left unspecified.
+      if (!TemplateArgs.hasTemplateArgument(TDP->getDepth(),
+                                            TDP->getPosition()))
+        return NameInfo;
+
+      TemplateArgument Arg = TemplateArgs(TDP->getDepth(), TDP->getPosition());
+      return DeclarationNameInfo(Arg.getAsDeclName(), NameInfo.getLoc());
+    }
+  }
+  return inherited::TransformDeclarationNameInfo(NameInfo);
 }
 
 Decl *TemplateInstantiator::TransformDefinition(SourceLocation Loc, Decl *D) {

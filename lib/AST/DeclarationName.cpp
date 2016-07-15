@@ -74,20 +74,18 @@ public:
   }
 };
 
-/// CXXTemplateDeclNameParmName - Contains the actual identifier that refers to the
-/// declname paramter.
-class CXXTemplateDeclNameParmName
-  : public DeclarationNameExtra, public llvm::FoldingSetNode {
+/// CXXTemplateDeclNameParmName - Contains the actual identifier that refers to
+/// the declname paramter.
+class CXXTemplateDeclNameParmName : public DeclarationNameExtra,
+                                    public llvm::FoldingSetNode {
 public:
-    TemplateDeclNameParmDecl *ID;
+  TemplateDeclNameParmDecl *Decl;
 
   /// FETokenInfo - Extra information associated with this operator
   /// name that can be used by the front end.
   void *FETokenInfo;
 
-  void Profile(llvm::FoldingSetNodeID &FSID) {
-    FSID.AddPointer(ID);
-  }
+  void Profile(llvm::FoldingSetNodeID &FSID) { FSID.AddPointer(Decl); }
 };
 
 static int compareInt(unsigned A, unsigned B) {
@@ -294,6 +292,13 @@ bool DeclarationName::isDependentName() const {
   return !T.isNull() && T->isDependentType();
 }
 
+bool clang::DeclarationName::containsUnexpandedParameterPack() const {
+  if (TemplateDeclNameParmDecl *TDP = getCXXTemplatedName()) {
+    return TDP->isParameterPack();
+  }
+  return false;
+}
+
 std::string DeclarationName::getAsString() const {
   std::string Result;
   llvm::raw_string_ostream OS(Result);
@@ -327,7 +332,7 @@ IdentifierInfo *DeclarationName::getCXXLiteralIdentifier() const {
 
 TemplateDeclNameParmDecl *DeclarationName::getCXXTemplatedName() const {
   if (CXXTemplateDeclNameParmName *CXXName = getAsCXXTemplateDeclNameParmName())
-    return CXXName->ID;
+    return CXXName->Decl;
   else
     return nullptr;
 }
@@ -396,6 +401,7 @@ LLVM_DUMP_METHOD void DeclarationName::dump() const {
 DeclarationNameTable::DeclarationNameTable(const ASTContext &C) : Ctx(C) {
   CXXSpecialNamesImpl = new llvm::FoldingSet<CXXSpecialName>;
   CXXLiteralOperatorNames = new llvm::FoldingSet<CXXLiteralOperatorIdName>;
+  CXXTemplatedNames = new llvm::FoldingSet<CXXTemplateDeclNameParmName>;
 
   // Initialize the overloaded operator names.
   CXXOperatorNames = new (Ctx) CXXOperatorIdName[NUM_OVERLOADED_OPERATORS];
@@ -408,13 +414,17 @@ DeclarationNameTable::DeclarationNameTable(const ASTContext &C) : Ctx(C) {
 
 DeclarationNameTable::~DeclarationNameTable() {
   llvm::FoldingSet<CXXSpecialName> *SpecialNames =
-    static_cast<llvm::FoldingSet<CXXSpecialName>*>(CXXSpecialNamesImpl);
-  llvm::FoldingSet<CXXLiteralOperatorIdName> *LiteralNames
-    = static_cast<llvm::FoldingSet<CXXLiteralOperatorIdName>*>
-        (CXXLiteralOperatorNames);
+      static_cast<llvm::FoldingSet<CXXSpecialName> *>(CXXSpecialNamesImpl);
+  llvm::FoldingSet<CXXLiteralOperatorIdName> *LiteralNames =
+      static_cast<llvm::FoldingSet<CXXLiteralOperatorIdName> *>(
+          CXXLiteralOperatorNames);
+  llvm::FoldingSet<CXXTemplateDeclNameParmName> *TemplatedNames =
+      static_cast<llvm::FoldingSet<CXXTemplateDeclNameParmName> *>(
+          CXXTemplatedNames);
 
   delete SpecialNames;
   delete LiteralNames;
+  delete TemplatedNames;
 }
 
 DeclarationName DeclarationNameTable::getCXXConstructorName(CanQualType Ty) {
@@ -502,6 +512,30 @@ DeclarationNameTable::getCXXLiteralOperatorName(IdentifierInfo *II) {
 
   LiteralNames->InsertNode(LiteralName, InsertPos);
   return DeclarationName(LiteralName);
+}
+
+DeclarationName
+DeclarationNameTable::getCXXTemplatedName(TemplateDeclNameParmDecl *Decl) {
+  llvm::FoldingSet<CXXTemplateDeclNameParmName> *TemplatedNames =
+      static_cast<llvm::FoldingSet<CXXTemplateDeclNameParmName> *>(
+          CXXTemplatedNames);
+
+  llvm::FoldingSetNodeID ID;
+  ID.AddPointer(Decl);
+
+  void *InsertPos = nullptr;
+  if (CXXTemplateDeclNameParmName *Name =
+          TemplatedNames->FindNodeOrInsertPos(ID, InsertPos))
+    return DeclarationName(Name);
+
+  CXXTemplateDeclNameParmName *TemplatedName =
+      new (Ctx) CXXTemplateDeclNameParmName;
+  TemplatedName->ExtraKindOrNumArgs = DeclarationNameExtra::CXXTemplatedName;
+  TemplatedName->Decl = Decl;
+  TemplatedName->FETokenInfo = nullptr;
+
+  TemplatedNames->InsertNode(TemplatedName, InsertPos);
+  return DeclarationName(TemplatedName);
 }
 
 DeclarationNameLoc::DeclarationNameLoc(DeclarationName Name) {
