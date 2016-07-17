@@ -2076,8 +2076,6 @@ public:
                            Decl **OwnedType = nullptr,
                            ParsedAttributes *Attrs = nullptr);
 
-  ParsedTemplateArgument ParseDeclName(Declarator::TheContext Context);
-
 private:
   void ParseBlockId(SourceLocation CaretLoc);
 
@@ -2646,6 +2644,8 @@ private:
   bool IsTemplateArgumentList(unsigned Skip = 0);
   bool ParseTemplateArgumentList(TemplateArgList &TemplateArgs);
   ParsedTemplateArgument ParseTemplateTemplateArgument();
+  ParsedTemplateArgument
+  ParseTemplateDeclNameArgument(Declarator::TheContext Context);
   ParsedTemplateArgument ParseTemplateArgument();
   Decl *ParseExplicitInstantiation(unsigned Context,
                                    SourceLocation ExternLoc,

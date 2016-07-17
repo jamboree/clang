@@ -1820,7 +1820,7 @@ private:
 
 inline bool Decl::isTemplateParameter() const {
   return getKind() == TemplateTypeParm || getKind() == NonTypeTemplateParm ||
-         getKind() == TemplateTemplateParm;
+         getKind() == TemplateTemplateParm || getKind() == TemplateDeclNameParm;
 }
 
 // Specialization selected when ToTy is not a known subclass of DeclContext.

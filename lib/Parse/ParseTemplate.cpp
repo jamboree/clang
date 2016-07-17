@@ -751,7 +751,7 @@ Decl *Parser::ParseDeclNameParameter(unsigned Depth, unsigned Position) {
   SourceLocation EqualLoc;
   ParsedTemplateArgument DefaultArg;
   if (TryConsumeToken(tok::equal, EqualLoc))
-    DefaultArg = ParseDeclName(Declarator::TemplateParamContext);
+    DefaultArg = ParseTemplateDeclNameArgument(Declarator::TemplateParamContext);
 
   return Actions.ActOnDeclNameParameter(getCurScope(), EllipsisLoc, KeyLoc,
                                         ParamName, NameLoc, Depth, Position,
@@ -1219,6 +1219,25 @@ ParsedTemplateArgument Parser::ParseTemplateTemplateArgument() {
     Result = Actions.ActOnPackExpansion(Result, EllipsisLoc);
   
   return Result;
+}
+
+/// ParseTemplateDeclNameArgument
+///       decl-name:
+///         '?'[opt] identifier
+///         '?'
+ParsedTemplateArgument
+    Parser::ParseTemplateDeclNameArgument(Declarator::TheContext /*Context*/) {
+  SourceLocation QuestionLoc;
+  if (Tok.is(tok::question))
+    QuestionLoc = ConsumeToken();
+  if (Tok.is(tok::identifier)) {
+    IdentifierInfo *Name = Tok.getIdentifierInfo();
+    SourceLocation NameLoc = ConsumeToken();
+    //return Actions.ActOnDeclName(getCurScope(), QuestionLoc, NameLoc, Name);
+  }
+  if (QuestionLoc.isInvalid())
+    Diag(Tok, diag::err_expected_declname_name);
+  return ParsedTemplateArgument();
 }
 
 /// ParseTemplateArgument - Parse a C++ template argument (C++ [temp.names]).
