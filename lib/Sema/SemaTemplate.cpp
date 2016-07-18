@@ -840,12 +840,50 @@ Decl *Sema::ActOnTemplateTemplateParameter(Scope* S,
 }
 
 Decl *Sema::ActOnDeclNameParameter(Scope *S, SourceLocation EllipsisLoc,
-                                   SourceLocation KeyLoc,
-                                   IdentifierInfo *ParamName,
-                                   SourceLocation ParamNameLoc, unsigned Depth,
+                                   SourceLocation KeyLoc, IdentifierInfo *Name,
+                                   SourceLocation NameLoc, unsigned Depth,
                                    unsigned Position, SourceLocation EqualLoc,
-                                   ParsedTemplateArgument DefaultArg) {
-  return nullptr;
+                                   ParsedTemplateArgument Default) {
+  assert(S->isTemplateParamScope() &&
+         "Template declname parameter not in template parameter scope!");
+
+  // Construct the parameter object.
+  bool IsParameterPack = EllipsisLoc.isValid();
+  TemplateDeclNameParmDecl *Param = TemplateDeclNameParmDecl::Create(
+      Context, Context.getTranslationUnitDecl(), KeyLoc, NameLoc, Depth,
+      Position, IsParameterPack, Name);
+  Param->setAccess(AS_public);
+
+  // If the template template parameter has a name, then link the identifier
+  // into the scope and lookup mechanisms.
+  if (Name) {
+    maybeDiagnoseTemplateParameterShadow(*this, S, NameLoc, Name);
+
+    S->AddDecl(Param);
+    IdResolver.AddDecl(Param);
+  }
+
+  if (!Default.isInvalid()) {
+    // C++0x [temp.param]p9:
+    //   A default template-argument may be specified for any kind of
+    //   template-parameter that is not a template parameter pack.
+    if (IsParameterPack) {
+      Diag(EqualLoc, diag::err_template_param_pack_default_arg);
+      Default = ParsedTemplateArgument();
+    } else {
+      TemplateArgumentLoc DefaultArg =
+          translateTemplateArgument(*this, Default);
+      // Check for unexpanded parameter packs.
+      if (DiagnoseUnexpandedParameterPack(
+              DefaultArg.getLocation(),
+              DefaultArg.getArgument().getAsTemplate(), UPPC_DefaultArgument))
+        return Param;
+
+      Param->setDefaultArgument(Context, DefaultArg);
+    }
+  }
+
+  return Param;
 }
 
 /// ActOnTemplateParameterList - Builds a TemplateParameterList, optionally
@@ -1449,10 +1487,8 @@ bool Sema::CheckTemplateParameterList(TemplateParameterList *NewParams,
         PreviousDefaultArgLoc = NewNonTypeParm->getDefaultArgumentLoc();
       } else if (SawDefaultArgument)
         MissingDefaultArg = true;
-    } else {
-      TemplateTemplateParmDecl *NewTemplateParm
-        = cast<TemplateTemplateParmDecl>(*NewParam);
-
+    } else if (TemplateTemplateParmDecl *NewTemplateParm =
+                   dyn_cast<TemplateTemplateParmDecl>(*NewParam)) {
       // Check for unexpanded parameter packs, recursively.
       if (::DiagnoseUnexpandedParameterPacks(*this, NewTemplateParm)) {
         Invalid = true;
@@ -1492,6 +1528,44 @@ bool Sema::CheckTemplateParameterList(TemplateParameterList *NewParams,
         SawDefaultArgument = true;
         PreviousDefaultArgLoc
           = NewTemplateParm->getDefaultArgument().getLocation();
+      } else if (SawDefaultArgument)
+        MissingDefaultArg = true;
+    } else {
+      TemplateDeclNameParmDecl *NewDeclNameParm =
+          cast<TemplateDeclNameParmDecl>(*NewParam);
+
+      // Check the presence of a default argument here.
+      if (NewDeclNameParm->hasDefaultArgument() &&
+          DiagnoseDefaultTemplateArgument(
+              *this, TPC, NewDeclNameParm->getLocation(),
+              NewDeclNameParm->getDefaultArgument().getSourceRange()))
+        NewDeclNameParm->removeDefaultArgument();
+
+      // Merge default arguments for template template parameters
+      TemplateDeclNameParmDecl *OldDeclNameParm =
+          OldParams ? cast<TemplateDeclNameParmDecl>(*OldParam) : nullptr;
+      if (NewDeclNameParm->isParameterPack()) {
+        assert(!NewDeclNameParm->hasDefaultArgument() &&
+               "Parameter packs can't have a default argument!");
+        SawParameterPack = true;
+      } else if (OldDeclNameParm &&
+                 hasVisibleDefaultArgument(OldDeclNameParm) &&
+                 NewDeclNameParm->hasDefaultArgument()) {
+        OldDefaultLoc = OldDeclNameParm->getDefaultArgument().getLocation();
+        NewDefaultLoc = NewDeclNameParm->getDefaultArgument().getLocation();
+        SawDefaultArgument = true;
+        RedundantDefaultArg = true;
+        PreviousDefaultArgLoc = NewDefaultLoc;
+      } else if (OldDeclNameParm && OldDeclNameParm->hasDefaultArgument()) {
+        // Merge the default argument from the old declaration to the
+        // new declaration.
+        NewDeclNameParm->setInheritedDefaultArgument(Context, OldDeclNameParm);
+        PreviousDefaultArgLoc =
+            OldDeclNameParm->getDefaultArgument().getLocation();
+      } else if (NewDeclNameParm->hasDefaultArgument()) {
+        SawDefaultArgument = true;
+        PreviousDefaultArgLoc =
+            NewDeclNameParm->getDefaultArgument().getLocation();
       } else if (SawDefaultArgument)
         MissingDefaultArg = true;
     }

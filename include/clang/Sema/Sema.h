@@ -6267,6 +6267,19 @@ public:
                                        TemplateName Template,
                                        UnexpandedParameterPackContext UPPC);
 
+  /// \brief If the given decl name contains an unexpanded parameter pack,
+  /// diagnose the error.
+  ///
+  /// \param Loc The location of the template name.
+  ///
+  /// \param Name The decl name that is being checked for unexpanded
+  /// parameter packs.
+  ///
+  /// \returns true if an error occurred, false otherwise.
+  bool DiagnoseUnexpandedParameterPack(SourceLocation Loc,
+                                       DeclarationName Name,
+                                       UnexpandedParameterPackContext UPPC);
+
   /// \brief If the given template argument contains an unexpanded parameter
   /// pack, diagnose the error.
   ///

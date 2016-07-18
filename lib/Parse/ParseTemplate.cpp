@@ -485,7 +485,7 @@ Decl *Parser::ParseTemplateParameter(unsigned Depth, unsigned Position) {
     return ParseTemplateTemplateParameter(Depth, Position);
 
   if (Tok.is(tok::kw_declname))
-      return ParseDeclNameParameter(Depth, Position);
+      return ParseTemplateDeclNameParameter(Depth, Position);
 
   // If it's none of the above, then it must be a parameter declaration.
   // NOTE: This will pick up errors in the closure of the template parameter
@@ -729,12 +729,14 @@ Parser::ParseNonTypeTemplateParameter(unsigned Depth, unsigned Position) {
                                                DefaultArg.get());
 }
 
-/// ParseDeclNameParameter - Handle the parsing of template declname parameters.
+/// ParseTemplateDeclNameParameter - Handle the parsing of template declname
+/// parameters.
 ///
 ///       declname-parameter:
 ///         'declname' ...[opt] identifier[opt]
 ///         'declname' identifier[opt] '=' declname-id
-Decl *Parser::ParseDeclNameParameter(unsigned Depth, unsigned Position) {
+Decl *Parser::ParseTemplateDeclNameParameter(unsigned Depth,
+                                             unsigned Position) {
   assert(Tok.is(tok::kw_declname) &&
          "A declname-parameter starts with 'declname'");
 

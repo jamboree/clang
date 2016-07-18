@@ -660,6 +660,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
 
     case ClassTemplate:
     case TemplateTemplateParm:
+    case TemplateDeclNameParm: // FIXME: add another NS?
       return IDNS_Ordinary | IDNS_Tag | IDNS_Type;
 
     case OMPDeclareReduction:

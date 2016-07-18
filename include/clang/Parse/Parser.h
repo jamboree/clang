@@ -2614,7 +2614,7 @@ private:
   Decl *ParseTypeParameter(unsigned Depth, unsigned Position);
   Decl *ParseTemplateTemplateParameter(unsigned Depth, unsigned Position);
   Decl *ParseNonTypeTemplateParameter(unsigned Depth, unsigned Position);
-  Decl *ParseDeclNameParameter(unsigned Depth, unsigned Position);
+  Decl *ParseTemplateDeclNameParameter(unsigned Depth, unsigned Position);
   void DiagnoseMisplacedEllipsis(SourceLocation EllipsisLoc,
                                  SourceLocation CorrectLoc,
                                  bool AlreadyHasEllipsis,
