@@ -839,11 +839,13 @@ Decl *Sema::ActOnTemplateTemplateParameter(Scope* S,
   return Param;
 }
 
-Decl *Sema::ActOnDeclNameParameter(Scope *S, SourceLocation EllipsisLoc,
-                                   SourceLocation KeyLoc, IdentifierInfo *Name,
-                                   SourceLocation NameLoc, unsigned Depth,
-                                   unsigned Position, SourceLocation EqualLoc,
-                                   ParsedTemplateArgument Default) {
+Decl *Sema::ActOnTemplateDeclNameParameter(Scope *S, SourceLocation EllipsisLoc,
+                                           SourceLocation KeyLoc,
+                                           IdentifierInfo *Name,
+                                           SourceLocation NameLoc,
+                                           unsigned Depth, unsigned Position,
+                                           SourceLocation EqualLoc,
+                                           ParsedTemplateArgument Default) {
   assert(S->isTemplateParamScope() &&
          "Template declname parameter not in template parameter scope!");
 
@@ -876,7 +878,7 @@ Decl *Sema::ActOnDeclNameParameter(Scope *S, SourceLocation EllipsisLoc,
       // Check for unexpanded parameter packs.
       if (DiagnoseUnexpandedParameterPack(
               DefaultArg.getLocation(),
-              DefaultArg.getArgument().getAsTemplate(), UPPC_DefaultArgument))
+              DefaultArg.getArgument().getAsDeclName(), UPPC_DefaultArgument))
         return Param;
 
       Param->setDefaultArgument(Context, DefaultArg);

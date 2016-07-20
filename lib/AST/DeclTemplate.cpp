@@ -220,12 +220,18 @@ static void GenerateInjectedTemplateArgs(ASTContext &Context,
         E = new (Context) PackExpansionExpr(Context.DependentTy, E,
                                             NTTP->getLocation(), None);
       Arg = TemplateArgument(E);
-    } else {
-      auto *TTP = cast<TemplateTemplateParmDecl>(Param);
+    } else if (auto *TTP = dyn_cast<TemplateTemplateParmDecl>(Param)) {
       if (TTP->isParameterPack())
         Arg = TemplateArgument(TemplateName(TTP), Optional<unsigned>());
       else
         Arg = TemplateArgument(TemplateName(TTP));
+    } else {
+      auto *TDP = cast<TemplateDeclNameParmDecl>(Param);
+      DeclarationName Name = Context.DeclarationNames.getCXXTemplatedName(TDP);
+      if (TDP->isParameterPack())
+        Arg = TemplateArgument(Name, Optional<unsigned>());
+      else
+        Arg = TemplateArgument(Name);
     }
 
     if (Param->isTemplateParameterPack())

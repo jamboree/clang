@@ -1336,9 +1336,9 @@ public:
 
   TypeResult ActOnTypeName(Scope *S, Declarator &D);
 
-  DeclarationName *ActOnDeclName(Scope *S, SourceLocation NameLoc,
-                                 SourceLocation QuestionLoc,
-                                 IdentifierInfo *Name);
+  DeclNameResult ActOnDeclName(Scope *S, SourceLocation NameLoc,
+                               SourceLocation QuestionLoc,
+                               IdentifierInfo *Name);
 
   /// \brief The parser has parsed the context-sensitive type 'instancetype'
   /// in an Objective-C message declaration. Return the appropriate type.
@@ -5764,11 +5764,13 @@ public:
                                        SourceLocation EqualLoc,
                                        ParsedTemplateArgument DefaultArg);
 
-  Decl *ActOnDeclNameParameter(Scope *S, SourceLocation EllipsisLoc,
-                               SourceLocation KeyLoc, IdentifierInfo *ParamName,
-                               SourceLocation ParamNameLoc, unsigned Depth,
-                               unsigned Position, SourceLocation EqualLoc,
-                               ParsedTemplateArgument DefaultArg);
+  Decl *ActOnTemplateDeclNameParameter(Scope *S, SourceLocation EllipsisLoc,
+                                       SourceLocation KeyLoc,
+                                       IdentifierInfo *ParamName,
+                                       SourceLocation ParamNameLoc,
+                                       unsigned Depth, unsigned Position,
+                                       SourceLocation EqualLoc,
+                                       ParsedTemplateArgument DefaultArg);
 
   TemplateParameterList *
   ActOnTemplateParameterList(unsigned Depth,

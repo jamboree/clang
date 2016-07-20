@@ -34,6 +34,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/Debug.h"
 
 using namespace clang;
 
@@ -5232,10 +5233,26 @@ TypeResult Sema::ActOnTypeName(Scope *S, Declarator &D) {
   return CreateParsedType(T, TInfo);
 }
 
-DeclarationName *Sema::ActOnDeclName(Scope *S, SourceLocation NameLoc,
-                                     SourceLocation QuestionLoc,
-                                     IdentifierInfo *Name) {
-  return nullptr;
+DeclNameResult Sema::ActOnDeclName(Scope *S, SourceLocation NameLoc,
+                                   SourceLocation QuestionLoc,
+                                   IdentifierInfo *Name) {
+  assert((Name || QuestionLoc.isValid()) && "Invalid DeclName");
+  DeclarationName DName(Name);
+  if (QuestionLoc.isValid())
+    return ParsedDeclNameTy::make(DName);
+
+  LookupResult R(*this, DName, NameLoc, LookupOrdinaryName);
+  LookupName(R, S);
+  llvm::dbgs() << "N: " << (R.end() - R.begin()) << "\n";
+  if (R.empty()) {
+    // FIXME: diag
+    return true;
+  }
+  assert(R.end() - R.begin() == 1 && "At most one DeclName can be found");
+  TemplateDeclNameParmDecl *TDP =
+      cast<TemplateDeclNameParmDecl>((*R.begin())->getUnderlyingDecl());
+  return ParsedDeclNameTy::make(
+      Context.DeclarationNames.getCXXTemplatedName(TDP));
 }
 
 ParsedType Sema::ActOnObjCInstanceType(SourceLocation Loc) {

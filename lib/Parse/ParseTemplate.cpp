@@ -752,12 +752,18 @@ Decl *Parser::ParseTemplateDeclNameParameter(unsigned Depth,
   // we introduce the type parameter into the local scope.
   SourceLocation EqualLoc;
   ParsedTemplateArgument DefaultArg;
-  if (TryConsumeToken(tok::equal, EqualLoc))
-    DefaultArg = ParseTemplateDeclNameArgument(Declarator::TemplateParamContext);
+  if (TryConsumeToken(tok::equal, EqualLoc)) {
+    DefaultArg =
+        ParseTemplateDeclNameArgument(Declarator::TemplateParamContext);
+    if (DefaultArg.isInvalid()) {
+      SkipUntil(tok::comma, tok::greater, tok::greatergreater,
+                StopAtSemi | StopBeforeMatch);
+    }
+  }
 
-  return Actions.ActOnDeclNameParameter(getCurScope(), EllipsisLoc, KeyLoc,
-                                        ParamName, NameLoc, Depth, Position,
-                                        EqualLoc, DefaultArg);
+  return Actions.ActOnTemplateDeclNameParameter(
+      getCurScope(), EllipsisLoc, KeyLoc, ParamName, NameLoc, Depth, Position,
+      EqualLoc, DefaultArg);
 }
 
 void Parser::DiagnoseMisplacedEllipsis(SourceLocation EllipsisLoc,
@@ -1229,17 +1235,44 @@ ParsedTemplateArgument Parser::ParseTemplateTemplateArgument() {
 ///         '?'
 ParsedTemplateArgument
     Parser::ParseTemplateDeclNameArgument(Declarator::TheContext /*Context*/) {
+  ParsedTemplateArgument Result;
+  IdentifierInfo *Name = nullptr;
+  SourceLocation NameLoc;
   SourceLocation QuestionLoc;
   if (Tok.is(tok::question))
     QuestionLoc = ConsumeToken();
   if (Tok.is(tok::identifier)) {
-    IdentifierInfo *Name = Tok.getIdentifierInfo();
-    SourceLocation NameLoc = ConsumeToken();
-    //return Actions.ActOnDeclName(getCurScope(), QuestionLoc, NameLoc, Name);
+    Name = Tok.getIdentifierInfo();
+    NameLoc = ConsumeToken();
+  } else {
+    if (QuestionLoc.isInvalid()) {
+      Diag(Tok, diag::err_expected_declname_name);
+      return Result;
+    }
+    if (!isEndOfTemplateArgument(Tok)) {
+      Diag(Tok, diag::err_expected_unqualified_id) << 0;
+      return Result;
+    }
   }
-  if (QuestionLoc.isInvalid())
-    Diag(Tok, diag::err_expected_declname_name);
-  return ParsedTemplateArgument();
+
+  SourceLocation EllipsisLoc;
+  TryConsumeToken(tok::ellipsis, EllipsisLoc);
+
+  if (isEndOfTemplateArgument(Tok)) {
+    DeclNameResult DName =
+        Actions.ActOnDeclName(getCurScope(), QuestionLoc, NameLoc, Name);
+    if (DName.isInvalid())
+      Diag(Tok.getLocation(),
+           diag::err_default_template_declname_parameter_not_declname);
+    else {
+      Result = ParsedTemplateArgument(DName.get(), NameLoc);
+      // If this is a pack expansion, build it as such.
+      if (EllipsisLoc.isValid())
+        Result = Actions.ActOnPackExpansion(Result, EllipsisLoc);
+    }
+  }
+
+  return Result;
 }
 
 /// ParseTemplateArgument - Parse a C++ template argument (C++ [temp.names]).

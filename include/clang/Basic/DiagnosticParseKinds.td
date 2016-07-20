@@ -682,6 +682,10 @@ def err_explicit_spec_non_template : Error<
 def err_default_template_template_parameter_not_template : Error<
   "default template argument for a template template parameter must be a class "
   "template">;
+  
+def err_default_template_declname_parameter_not_declname : Error<
+  "default declname argument for a template declname parameter must be a "
+  "declaration name">;
 
 def ext_fold_expression : ExtWarn<
   "pack fold expression is a C++1z extension">,

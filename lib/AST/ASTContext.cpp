@@ -4458,6 +4458,11 @@ ASTContext::getCanonicalTemplateArgument(const TemplateArgument &Arg) const {
 
       return TemplateArgument(llvm::makeArrayRef(CanonArgs, Arg.pack_size()));
     }
+
+    case TemplateArgument::DeclName:
+    case TemplateArgument::DeclNameExpansion:
+      // These are always canonical. (no special names are allowed)
+      return Arg;
   }
 
   // Silence GCC warning
