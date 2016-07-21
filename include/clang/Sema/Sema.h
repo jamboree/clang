@@ -1336,9 +1336,8 @@ public:
 
   TypeResult ActOnTypeName(Scope *S, Declarator &D);
 
-  DeclNameResult ActOnDeclName(Scope *S, SourceLocation NameLoc,
-                               SourceLocation QuestionLoc,
-                               IdentifierInfo *Name);
+  DeclNameResult ActOnDeclName(Scope *S, SourceLocation QuestionLoc,
+                               SourceLocation NameLoc, IdentifierInfo *Name);
 
   /// \brief The parser has parsed the context-sensitive type 'instancetype'
   /// in an Objective-C message declaration. Return the appropriate type.

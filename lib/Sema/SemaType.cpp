@@ -34,7 +34,6 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/Debug.h"
 
 using namespace clang;
 
@@ -5233,8 +5232,8 @@ TypeResult Sema::ActOnTypeName(Scope *S, Declarator &D) {
   return CreateParsedType(T, TInfo);
 }
 
-DeclNameResult Sema::ActOnDeclName(Scope *S, SourceLocation NameLoc,
-                                   SourceLocation QuestionLoc,
+DeclNameResult Sema::ActOnDeclName(Scope *S, SourceLocation QuestionLoc,
+                                   SourceLocation NameLoc,
                                    IdentifierInfo *Name) {
   assert((Name || QuestionLoc.isValid()) && "Invalid DeclName");
   DeclarationName DName(Name);
@@ -5243,7 +5242,6 @@ DeclNameResult Sema::ActOnDeclName(Scope *S, SourceLocation NameLoc,
 
   LookupResult R(*this, DName, NameLoc, LookupOrdinaryName);
   LookupName(R, S);
-  llvm::dbgs() << "N: " << (R.end() - R.begin()) << "\n";
   if (R.empty()) {
     // FIXME: diag
     return true;
