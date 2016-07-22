@@ -2644,8 +2644,7 @@ private:
   bool IsTemplateArgumentList(unsigned Skip = 0);
   bool ParseTemplateArgumentList(TemplateArgList &TemplateArgs);
   ParsedTemplateArgument ParseTemplateTemplateArgument();
-  ParsedTemplateArgument
-  ParseTemplateDeclNameArgument(Declarator::TheContext Context);
+  ParsedTemplateArgument ParseTemplateDeclNameArgument();
   ParsedTemplateArgument ParseTemplateArgument();
   Decl *ParseExplicitInstantiation(unsigned Context,
                                    SourceLocation ExternLoc,

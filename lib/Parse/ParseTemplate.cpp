@@ -753,8 +753,7 @@ Decl *Parser::ParseTemplateDeclNameParameter(unsigned Depth,
   SourceLocation EqualLoc;
   ParsedTemplateArgument DefaultArg;
   if (TryConsumeToken(tok::equal, EqualLoc)) {
-    DefaultArg =
-        ParseTemplateDeclNameArgument(Declarator::TemplateParamContext);
+    DefaultArg = ParseTemplateDeclNameArgument();
     if (DefaultArg.isInvalid()) {
       SkipUntil(tok::comma, tok::greater, tok::greatergreater,
                 StopAtSemi | StopBeforeMatch);
@@ -1233,8 +1232,7 @@ ParsedTemplateArgument Parser::ParseTemplateTemplateArgument() {
 ///       decl-name:
 ///         '?'[opt] identifier
 ///         '?'
-ParsedTemplateArgument
-    Parser::ParseTemplateDeclNameArgument(Declarator::TheContext /*Context*/) {
+ParsedTemplateArgument Parser::ParseTemplateDeclNameArgument() {
   ParsedTemplateArgument Result;
   IdentifierInfo *Name = nullptr;
   SourceLocation NameLoc;

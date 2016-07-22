@@ -5232,27 +5232,6 @@ TypeResult Sema::ActOnTypeName(Scope *S, Declarator &D) {
   return CreateParsedType(T, TInfo);
 }
 
-DeclNameResult Sema::ActOnDeclName(Scope *S, SourceLocation QuestionLoc,
-                                   SourceLocation NameLoc,
-                                   IdentifierInfo *Name) {
-  assert((Name || QuestionLoc.isValid()) && "Invalid DeclName");
-  DeclarationName DName(Name);
-  if (QuestionLoc.isValid())
-    return ParsedDeclNameTy::make(DName);
-
-  LookupResult R(*this, DName, NameLoc, LookupOrdinaryName);
-  LookupName(R, S);
-  if (R.empty()) {
-    // FIXME: diag
-    return true;
-  }
-  assert(R.end() - R.begin() == 1 && "At most one DeclName can be found");
-  TemplateDeclNameParmDecl *TDP =
-      cast<TemplateDeclNameParmDecl>((*R.begin())->getUnderlyingDecl());
-  return ParsedDeclNameTy::make(
-      Context.DeclarationNames.getCXXTemplatedName(TDP));
-}
-
 ParsedType Sema::ActOnObjCInstanceType(SourceLocation Loc) {
   QualType T = Context.getObjCInstanceType();
   TypeSourceInfo *TInfo = Context.getTrivialTypeSourceInfo(T, Loc);

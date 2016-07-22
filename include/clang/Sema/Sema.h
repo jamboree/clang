@@ -1336,9 +1336,6 @@ public:
 
   TypeResult ActOnTypeName(Scope *S, Declarator &D);
 
-  DeclNameResult ActOnDeclName(Scope *S, SourceLocation QuestionLoc,
-                               SourceLocation NameLoc, IdentifierInfo *Name);
-
   /// \brief The parser has parsed the context-sensitive type 'instancetype'
   /// in an Objective-C message declaration. Return the appropriate type.
   ParsedType ActOnObjCInstanceType(SourceLocation Loc);
@@ -5779,6 +5776,9 @@ public:
                              ArrayRef<Decl *> Params,
                              SourceLocation RAngleLoc,
                              Expr *RequiresClause);
+
+  DeclNameResult ActOnDeclName(Scope *S, SourceLocation QuestionLoc,
+                               SourceLocation NameLoc, IdentifierInfo *Name);
 
   /// \brief The context in which we are checking a template parameter list.
   enum TemplateParamListContext {

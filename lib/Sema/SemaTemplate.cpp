@@ -909,6 +909,27 @@ Sema::ActOnTemplateParameterList(unsigned Depth,
       RAngleLoc);
 }
 
+DeclNameResult Sema::ActOnDeclName(Scope *S, SourceLocation QuestionLoc,
+                                   SourceLocation NameLoc,
+                                   IdentifierInfo *Name) {
+  assert((Name || QuestionLoc.isValid()) && "Invalid DeclName");
+  DeclarationName DName(Name);
+  if (QuestionLoc.isValid())
+    return ParsedDeclNameTy::make(DName);
+
+  LookupResult R(*this, DName, NameLoc, LookupOrdinaryName);
+  LookupName(R, S);
+  if (R.empty()) {
+    // FIXME: diag
+    return true;
+  }
+  assert(R.end() - R.begin() == 1 && "At most one DeclName can be found");
+  TemplateDeclNameParmDecl *TDP =
+      cast<TemplateDeclNameParmDecl>((*R.begin())->getUnderlyingDecl());
+  return ParsedDeclNameTy::make(
+      Context.DeclarationNames.getCXXTemplatedName(TDP));
+}
+
 static void SetNestedNameSpecifier(TagDecl *T, const CXXScopeSpec &SS) {
   if (SS.isSet())
     T->setQualifierInfo(SS.getWithLocInContext(T->getASTContext()));

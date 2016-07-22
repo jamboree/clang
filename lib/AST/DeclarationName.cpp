@@ -353,6 +353,9 @@ void *DeclarationName::getFETokenInfoAsVoidSlow() const {
   case CXXLiteralOperatorName:
     return getAsCXXLiteralOperatorIdName()->FETokenInfo;
 
+  case CXXTemplatedName:
+    return getAsCXXTemplateDeclNameParmName()->FETokenInfo;
+
   default:
     llvm_unreachable("Declaration name has no FETokenInfo");
   }
@@ -377,6 +380,9 @@ void DeclarationName::setFETokenInfo(void *T) {
   case CXXLiteralOperatorName:
     getAsCXXLiteralOperatorIdName()->FETokenInfo = T;
     break;
+
+  case CXXTemplatedName:
+    getAsCXXTemplateDeclNameParmName()->FETokenInfo = T;
 
   default:
     llvm_unreachable("Declaration name has no FETokenInfo");
