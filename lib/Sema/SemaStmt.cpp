@@ -3840,7 +3840,7 @@ Sema::CreateCapturedStmtRecordDecl(CapturedDecl *&CD, SourceLocation Loc,
     RD = CXXRecordDecl::Create(Context, TTK_Struct, DC, Loc, Loc,
                                /*Id=*/nullptr);
   else
-    RD = RecordDecl::Create(Context, TTK_Struct, DC, Loc, Loc, /*Id=*/nullptr);
+    RD = RecordDecl::Create(Context, TTK_Struct, DC, Loc, Loc, /*Id=*/{});
 
   RD->setCapturedRecord();
   DC->addDecl(RD);

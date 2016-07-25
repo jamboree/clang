@@ -2602,9 +2602,9 @@ class TypeDecl : public NamedDecl {
   friend class ASTContext;
 
 protected:
-  TypeDecl(Kind DK, DeclContext *DC, SourceLocation L, IdentifierInfo *Id,
+  TypeDecl(Kind DK, DeclContext *DC, SourceLocation L, DeclarationName N,
            SourceLocation StartL = SourceLocation())
-    : NamedDecl(DK, DC, L, Id), TypeForDecl(nullptr), LocStart(StartL) {}
+    : NamedDecl(DK, DC, L, N), TypeForDecl(nullptr), LocStart(StartL) {}
 
 public:
   // Low-level accessor. If you just want the type defined by this node,
@@ -2829,9 +2829,9 @@ private:
 
 protected:
   TagDecl(Kind DK, TagKind TK, const ASTContext &C, DeclContext *DC,
-          SourceLocation L, IdentifierInfo *Id, TagDecl *PrevDecl,
+          SourceLocation L, DeclarationName N, TagDecl *PrevDecl,
           SourceLocation StartL)
-      : TypeDecl(DK, DC, L, Id, StartL), DeclContext(DK), redeclarable_base(C),
+      : TypeDecl(DK, DC, L, N, StartL), DeclContext(DK), redeclarable_base(C),
         TagDeclKind(TK), IsCompleteDefinition(false), IsBeingDefined(false),
         IsEmbeddedInDeclarator(false), IsFreeStanding(false),
         IsCompleteDefinitionRequired(false),
@@ -3303,12 +3303,12 @@ class RecordDecl : public TagDecl {
 protected:
   RecordDecl(Kind DK, TagKind TK, const ASTContext &C, DeclContext *DC,
              SourceLocation StartLoc, SourceLocation IdLoc,
-             IdentifierInfo *Id, RecordDecl *PrevDecl);
+             DeclarationName N, RecordDecl *PrevDecl);
 
 public:
   static RecordDecl *Create(const ASTContext &C, TagKind TK, DeclContext *DC,
                             SourceLocation StartLoc, SourceLocation IdLoc,
-                            IdentifierInfo *Id, RecordDecl* PrevDecl = nullptr);
+                            DeclarationName N, RecordDecl* PrevDecl = nullptr);
   static RecordDecl *CreateDeserialized(const ASTContext &C, unsigned ID);
 
   RecordDecl *getPreviousDecl() {
