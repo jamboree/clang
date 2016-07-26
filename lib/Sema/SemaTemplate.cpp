@@ -3778,7 +3778,7 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
 
   // Check template template parameters.
   if (TemplateTemplateParmDecl *TempParm =
-          cast<TemplateTemplateParmDecl>(Param)) {
+          dyn_cast<TemplateTemplateParmDecl>(Param)) {
     // Substitute into the template parameter list of the template
     // template parameter, since previously-supplied template arguments
     // may appear within the template template parameter.
@@ -3838,7 +3838,7 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
 
   // Check template declname parameters.
   if (TemplateDeclNameParmDecl *NameParm =
-          dyn_cast<TemplateDeclNameParmDecl>(Param)) {
+          cast<TemplateDeclNameParmDecl>(Param)) {
     switch (Arg.getArgument().getKind()) {
     case TemplateArgument::Null:
       llvm_unreachable("Should never see a NULL template argument here");

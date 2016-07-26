@@ -753,7 +753,10 @@ Decl *Parser::ParseTemplateDeclNameParameter(unsigned Depth,
   SourceLocation EqualLoc;
   ParsedTemplateArgument DefaultArg;
   if (TryConsumeToken(tok::equal, EqualLoc)) {
-    DefaultArg = ParseTemplateDeclNameArgument();
+    unsigned SoftError = 0;
+    DefaultArg = ParseTemplateDeclNameArgument(SoftError);
+    if (SoftError)
+      Diag(Tok, SoftError);
     if (DefaultArg.isInvalid()) {
       SkipUntil(tok::comma, tok::greater, tok::greatergreater,
                 StopAtSemi | StopBeforeMatch);
@@ -1232,7 +1235,8 @@ ParsedTemplateArgument Parser::ParseTemplateTemplateArgument() {
 ///       decl-name:
 ///         '?'[opt] identifier
 ///         '?'
-ParsedTemplateArgument Parser::ParseTemplateDeclNameArgument() {
+ParsedTemplateArgument
+Parser::ParseTemplateDeclNameArgument(unsigned &SoftError) {
   ParsedTemplateArgument Result;
   IdentifierInfo *Name = nullptr;
   SourceLocation NameLoc;
@@ -1244,7 +1248,7 @@ ParsedTemplateArgument Parser::ParseTemplateDeclNameArgument() {
     NameLoc = ConsumeToken();
   } else {
     if (QuestionLoc.isInvalid()) {
-      Diag(Tok, diag::err_expected_declname_name);
+      SoftError = diag::err_expected_declname_name;
       return Result;
     }
     if (!isEndOfTemplateArgument(Tok)) {
@@ -1260,8 +1264,7 @@ ParsedTemplateArgument Parser::ParseTemplateDeclNameArgument() {
     DeclNameResult DName =
         Actions.ActOnDeclName(getCurScope(), QuestionLoc, NameLoc, Name);
     if (DName.isInvalid())
-      Diag(Tok.getLocation(),
-           diag::err_default_template_declname_parameter_not_declname);
+      SoftError = diag::err_default_template_declname_parameter_not_declname;
     else {
       Result = ParsedTemplateArgument(DName.get(), NameLoc);
       // If this is a pack expansion, build it as such.
@@ -1309,6 +1312,23 @@ ParsedTemplateArgument Parser::ParseTemplateArgument() {
       return TemplateTemplateArgument;
     }
     
+    // Revert this tentative parse to parse a non-type template argument.
+    TPA.Revert();
+  }
+  
+  // Try to parse a template declname argument.
+  {
+    TentativeParsingAction TPA(*this);
+
+    unsigned SoftError = 0;
+    ParsedTemplateArgument TemplateTemplateArgument
+      = ParseTemplateDeclNameArgument(SoftError);
+    // Commit if we get a valid result or a hard error.
+    if (!TemplateTemplateArgument.isInvalid() || !SoftError) {
+      TPA.Commit();
+      return TemplateTemplateArgument;
+    }
+
     // Revert this tentative parse to parse a non-type template argument.
     TPA.Revert();
   }

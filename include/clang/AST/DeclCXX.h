@@ -642,7 +642,7 @@ class CXXRecordDecl : public RecordDecl {
 protected:
   CXXRecordDecl(Kind K, TagKind TK, const ASTContext &C, DeclContext *DC,
                 SourceLocation StartLoc, SourceLocation IdLoc,
-                IdentifierInfo *Id, CXXRecordDecl *PrevDecl);
+                DeclarationName N, CXXRecordDecl *PrevDecl);
 
 public:
   /// \brief Iterator that traverses the base classes of a class.
@@ -686,7 +686,7 @@ public:
 
   static CXXRecordDecl *Create(const ASTContext &C, TagKind TK, DeclContext *DC,
                                SourceLocation StartLoc, SourceLocation IdLoc,
-                               IdentifierInfo *Id,
+                               DeclarationName N,
                                CXXRecordDecl *PrevDecl = nullptr,
                                bool DelayTypeCreation = false);
   static CXXRecordDecl *CreateLambda(const ASTContext &C, DeclContext *DC,

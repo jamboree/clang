@@ -230,10 +230,14 @@ void DeclarationName::print(raw_ostream &OS, const PrintingPolicy &Policy) {
   case DeclarationName::CXXUsingDirective:
     OS << "<using-directive>";
     return;
-  case DeclarationName::CXXTemplatedName:
-    // FIXME: print proper name.
-    OS << "<declname>";
+  case DeclarationName::CXXTemplatedName: {
+    TemplateDeclNameParmDecl *TDP = N.getCXXTemplatedName();
+    if (IdentifierInfo *Id = TDP->getIdentifier())
+      OS << Id->getName();
+    else
+      OS << "declname-parameter-" << TDP->getDepth() << '-' << TDP->getIndex();
     return;
+  }
   }
 
   llvm_unreachable("Unexpected declaration name kind");
@@ -383,6 +387,7 @@ void DeclarationName::setFETokenInfo(void *T) {
 
   case CXXTemplatedName:
     getAsCXXTemplateDeclNameParmName()->FETokenInfo = T;
+    break;
 
   default:
     llvm_unreachable("Declaration name has no FETokenInfo");

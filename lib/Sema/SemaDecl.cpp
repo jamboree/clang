@@ -1048,6 +1048,9 @@ Corrected:
     return NameClassification::TypeTemplate(
         TemplateName(cast<TemplateDecl>(FirstDecl)));
 
+  if (isa<TemplateDeclNameParmDecl>(FirstDecl))
+    return NameClassification::DeclName();
+
   // Check for a tag type hidden by a non-type decl in a few cases where it
   // seems likely a type is wanted instead of the non-type that was found.
   bool NextIsOp = NextToken.isOneOf(tok::amp, tok::star);
@@ -3739,7 +3742,8 @@ void Sema::handleTagNumbering(const TagDecl *Tag, Scope *TagScope) {
   if (isa<CXXRecordDecl>(Tag->getParent())) {
     // If this tag is the direct child of a class, number it if
     // it is anonymous.
-    if (!Tag->getName().empty() || Tag->getTypedefNameForAnonDecl())
+    if (Tag->getDeclName().getCXXTemplatedName() || !Tag->getName().empty() ||
+        Tag->getTypedefNameForAnonDecl())
       return;
     MangleNumberingContext &MCtx =
         Context.getManglingNumberContext(Tag->getParent());
@@ -12288,6 +12292,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
                      bool IsTypeSpecifier, SkipBodyInfo *SkipBody) {
   // If this is not a definition, it must have a name.
   IdentifierInfo *OrigName = Name;
+  DeclarationName DeclName(Name);
   assert((Name != nullptr || TUK == TUK_Definition) &&
          "Nameless record must be a definition!");
   assert(TemplateParameterLists.size() == 0 || TUK != TUK_Reference);
@@ -12455,6 +12460,19 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
     // shouldn't be. Doing so can result in ambiguities that we
     // shouldn't be diagnosing.
     LookupName(Previous, S);
+
+    if (Previous.isSingleResult()) {
+      if (TemplateDeclNameParmDecl *TDP =
+              dyn_cast<TemplateDeclNameParmDecl>(Previous.getFoundDecl())) {
+        DeclName = Context.DeclarationNames.getCXXTemplatedName(TDP);
+        TDP->setReferenced();
+
+        // Lookup with the templated name.
+        Previous.clear();
+        Previous.setLookupName(DeclName);
+        LookupName(Previous, S);
+      }
+    }
 
     // When declaring or defining a tag, ignore ambiguities introduced
     // by types using'ed into this scope.
@@ -12975,13 +12993,12 @@ CreateNewDecl:
     // struct X { int A; } D;    D should chain to X.
     if (getLangOpts().CPlusPlus) {
       // FIXME: Look for a way to use RecordDecl for simple structs.
-      New = CXXRecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, Name,
+      New = CXXRecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, DeclName,
                                   cast_or_null<CXXRecordDecl>(PrevDecl));
-
       if (isStdBadAlloc && (!StdBadAlloc || getStdBadAlloc()->isImplicit()))
         StdBadAlloc = cast<CXXRecordDecl>(New);
     } else
-      New = RecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, Name,
+      New = RecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, DeclName,
                                cast_or_null<RecordDecl>(PrevDecl));
   }
 

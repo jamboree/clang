@@ -82,7 +82,10 @@ unsigned TemplateParameterList::getMinRequiredArguments() const {
     } else if (const auto *NTTP = dyn_cast<NonTypeTemplateParmDecl>(P)) {
       if (NTTP->hasDefaultArgument())
         break;
-    } else if (cast<TemplateTemplateParmDecl>(P)->hasDefaultArgument())
+    } else if (const auto *TMP = dyn_cast<TemplateTemplateParmDecl>(P)) {
+      if (TMP->hasDefaultArgument())
+        break;
+    } else if (cast<TemplateDeclNameParmDecl>(P)->hasDefaultArgument())
       break;
 
     ++NumRequiredArgs;
@@ -102,8 +105,10 @@ unsigned TemplateParameterList::getDepth() const {
   else if (const NonTypeTemplateParmDecl *NTTP 
              = dyn_cast<NonTypeTemplateParmDecl>(FirstParm))
     return NTTP->getDepth();
+  else if (const auto *TMP = dyn_cast<TemplateTemplateParmDecl>(FirstParm))
+    return TMP->getDepth();
   else
-    return cast<TemplateTemplateParmDecl>(FirstParm)->getDepth();
+    return cast<TemplateDeclNameParmDecl>(FirstParm)->getDepth();
 }
 
 static void AdoptTemplateParameterList(TemplateParameterList *Params,
@@ -758,7 +763,7 @@ ClassTemplateSpecializationDecl(ASTContext &Context, Kind DK, TagKind TK,
 ClassTemplateSpecializationDecl::ClassTemplateSpecializationDecl(ASTContext &C,
                                                                  Kind DK)
     : CXXRecordDecl(DK, TTK_Struct, C, nullptr, SourceLocation(),
-                    SourceLocation(), nullptr, nullptr),
+                    SourceLocation(), {}, nullptr),
       ExplicitInfo(nullptr), SpecializationKind(TSK_Undeclared) {}
 
 ClassTemplateSpecializationDecl *

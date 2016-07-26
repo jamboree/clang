@@ -1557,7 +1557,8 @@ public:
     NC_NestedNameSpecifier,
     NC_TypeTemplate,
     NC_VarTemplate,
-    NC_FunctionTemplate
+    NC_FunctionTemplate,
+    NC_DeclName
   };
 
   class NameClassification {
@@ -1605,6 +1606,10 @@ public:
       NameClassification Result(NC_FunctionTemplate);
       Result.Template = Name;
       return Result;
+    }
+
+    static NameClassification DeclName() {
+      return NameClassification(NC_DeclName);
     }
 
     NameClassificationKind getKind() const { return Kind; }

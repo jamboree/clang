@@ -2644,7 +2644,7 @@ private:
   bool IsTemplateArgumentList(unsigned Skip = 0);
   bool ParseTemplateArgumentList(TemplateArgList &TemplateArgs);
   ParsedTemplateArgument ParseTemplateTemplateArgument();
-  ParsedTemplateArgument ParseTemplateDeclNameArgument();
+  ParsedTemplateArgument ParseTemplateDeclNameArgument(unsigned &SoftError);
   ParsedTemplateArgument ParseTemplateArgument();
   Decl *ParseExplicitInstantiation(unsigned Context,
                                    SourceLocation ExternLoc,
