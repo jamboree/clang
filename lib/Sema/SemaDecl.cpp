@@ -13182,7 +13182,7 @@ void Sema::ActOnStartCXXMemberDeclarations(Scope *S, Decl *TagD,
 
   FieldCollector->StartClass();
 
-  if (!Record->getIdentifier())
+  if (!Record->getDeclName())
     return;
 
   if (FinalLoc.isValid())
@@ -13197,7 +13197,7 @@ void Sema::ActOnStartCXXMemberDeclarations(Scope *S, Decl *TagD,
   CXXRecordDecl *InjectedClassName
     = CXXRecordDecl::Create(Context, Record->getTagKind(), CurContext,
                             Record->getLocStart(), Record->getLocation(),
-                            Record->getIdentifier(),
+                            Record->getDeclName(),
                             /*PrevDecl=*/nullptr,
                             /*DelayTypeCreation=*/true);
   Context.getTypeDeclType(InjectedClassName, Record);

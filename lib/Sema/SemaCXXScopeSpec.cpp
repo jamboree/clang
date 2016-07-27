@@ -322,6 +322,9 @@ bool Sema::isAcceptableNestedNameSpecifier(const NamedDecl *SD,
   if (isa<NamespaceDecl>(SD))
     return true;
 
+  if (isa<TemplateDeclNameParmDecl>(SD))
+    return true;
+
   if (!isa<TypeDecl>(SD))
     return false;
 
@@ -523,6 +526,10 @@ bool Sema::BuildCXXNestedNameSpecifier(Scope *S,
       return true;
 
     LookupQualifiedName(Found, LookupCtx);
+    if (Found.empty()) {
+      if (TemplateDeclNameParmDecl *TDP = LookupTemplatedDeclName(&Identifier))
+        Found.addDecl(TDP);
+    }
 
     if (!ObjectType.isNull() && Found.empty()) {
       // C++ [basic.lookup.classref]p4:

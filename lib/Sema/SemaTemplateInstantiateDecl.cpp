@@ -1384,11 +1384,12 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
     if (!Prev) return nullptr;
     PrevDecl = cast<CXXRecordDecl>(Prev);
   }
-
+  DeclarationNameInfo NameInfo(D->getDeclName(), D->getLocation());
+  NameInfo = SemaRef.SubstDeclarationNameInfo(NameInfo, TemplateArgs);
   CXXRecordDecl *Record
     = CXXRecordDecl::Create(SemaRef.Context, D->getTagKind(), Owner,
-                            D->getLocStart(), D->getLocation(),
-                            D->getIdentifier(), PrevDecl);
+                            D->getLocStart(), NameInfo.getLoc(),
+        NameInfo.getName(), PrevDecl);
 
   // Substitute the nested name specifier, if any.
   if (SubstQualifier(D, Record))

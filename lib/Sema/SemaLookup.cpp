@@ -1032,6 +1032,16 @@ struct FindLocalExternScope {
 };
 } // end anonymous namespace
 
+TemplateDeclNameParmDecl *Sema::LookupTemplatedDeclName(IdentifierInfo *Id) {
+  IdentifierResolver::iterator I = IdResolver.begin(Id),
+                               IEnd = IdResolver.end();
+
+  if (I != IEnd)
+    return dyn_cast<TemplateDeclNameParmDecl>(*I);
+
+  return nullptr;
+}
+
 bool Sema::CppLookupName(LookupResult &R, Scope *S) {
   assert(getLangOpts().CPlusPlus && "Can perform only C++ lookup");
 
