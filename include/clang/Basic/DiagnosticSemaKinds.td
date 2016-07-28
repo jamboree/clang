@@ -1368,6 +1368,8 @@ def err_nested_name_spec_is_not_class : Error<
 def ext_nested_name_spec_is_enum : ExtWarn<
   "use of enumeration in a nested name specifier is a C++11 extension">,
   InGroup<CXX11>;
+def err_nested_name_spec_is_empty : Error<
+  "cannot refer to an empty name in a nested name specifier">;
 
 // C++ class members
 def err_storageclass_invalid_for_member : Error<

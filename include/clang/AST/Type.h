@@ -4502,10 +4502,10 @@ class DependentNameType : public TypeWithKeyword, public llvm::FoldingSetNode {
   NestedNameSpecifier *NNS;
 
   /// \brief The type that this typename specifier refers to.
-  const IdentifierInfo *Name;
+  DeclarationName Name;
 
   DependentNameType(ElaboratedTypeKeyword Keyword, NestedNameSpecifier *NNS,
-                    const IdentifierInfo *Name, QualType CanonType)
+                    DeclarationName Name, QualType CanonType)
     : TypeWithKeyword(Keyword, DependentName, CanonType, /*Dependent=*/true,
                       /*InstantiationDependent=*/true,
                       /*VariablyModified=*/false,
@@ -4520,10 +4520,10 @@ public:
 
   /// Retrieve the type named by the typename specifier as an identifier.
   ///
-  /// This routine will return a non-NULL identifier pointer when the
-  /// form of the original typename was terminated by an identifier,
+  /// This routine will return a non-empty declname when the
+  /// form of the original typename was terminated by an declname,
   /// e.g., "typename T::type".
-  const IdentifierInfo *getIdentifier() const {
+  DeclarationName getDeclName() const {
     return Name;
   }
 
@@ -4535,10 +4535,10 @@ public:
   }
 
   static void Profile(llvm::FoldingSetNodeID &ID, ElaboratedTypeKeyword Keyword,
-                      NestedNameSpecifier *NNS, const IdentifierInfo *Name) {
+                      NestedNameSpecifier *NNS, DeclarationName Name) {
     ID.AddInteger(Keyword);
     ID.AddPointer(NNS);
-    ID.AddPointer(Name);
+    ID.AddPointer(Name.getAsOpaquePtr());
   }
 
   static bool classof(const Type *T) {
@@ -4717,9 +4717,13 @@ public:
   bool isSugared() const { return false; }
   QualType desugar() const { return QualType(this, 0); }
 
-  void Profile(llvm::FoldingSetNodeID &ID) { Profile(ID, getMasterType()); }
-  static void Profile(llvm::FoldingSetNodeID &ID, QualType Master) {
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(ID, getMasterType(), getDesigName());
+  }
+  static void Profile(llvm::FoldingSetNodeID &ID, QualType Master,
+                      DeclarationName DesigName) {
     ID.AddPointer(Master.getAsOpaquePtr());
+    ID.AddPointer(DesigName.getAsOpaquePtr());
   }
 
   static bool classof(const Type *T) { return T->getTypeClass() == Designating; }

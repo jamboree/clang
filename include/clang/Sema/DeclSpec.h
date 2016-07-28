@@ -97,13 +97,13 @@ public:
   /// \param Context The AST context in which this nested-name-specifier
   /// resides.
   ///
-  /// \param Identifier The identifier.
+  /// \param Name The declname.
   ///
-  /// \param IdentifierLoc The location of the identifier.
+  /// \param NameLoc The location of the declname.
   ///
   /// \param ColonColonLoc The location of the trailing '::'.
-  void Extend(ASTContext &Context, IdentifierInfo *Identifier,
-              SourceLocation IdentifierLoc, SourceLocation ColonColonLoc);
+  void Extend(ASTContext &Context, DeclarationName Name,
+              SourceLocation NameLoc, SourceLocation ColonColonLoc);
 
   /// \brief Extend the current nested-name-specifier by another 
   /// nested-name-specifier component of the form 'namespace::'.

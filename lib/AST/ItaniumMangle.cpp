@@ -489,6 +489,7 @@ private:
   void mangleSourceName(const IdentifierInfo *II);
   void mangleSourceNameWithAbiTags(
       const NamedDecl *ND, const AbiTagList *AdditionalAbiTags = nullptr);
+  void mangleDeclName(DeclarationName Name);
   void mangleLocalName(const Decl *D,
                        const AbiTagList *AdditionalAbiTags);
   void mangleBlockForPrefix(const BlockDecl *Block);
@@ -623,6 +624,19 @@ void CXXNameMangler::mangleSourceNameWithAbiTags(
     const NamedDecl *ND, const AbiTagList *AdditionalAbiTags) {
   mangleSourceName(ND->getIdentifier());
   writeAbiTags(ND, AdditionalAbiTags);
+}
+
+void CXXNameMangler::mangleDeclName(DeclarationName Name) {
+  switch (Name.getNameKind()) {
+  case DeclarationName::Identifier:
+    mangleSourceName(Name.getAsIdentifierInfo());
+    break;
+  case DeclarationName::CXXTemplatedName:
+    mangleTemplateParameter(Name.getCXXTemplatedName()->getIndex());
+    break;
+  default:
+    llvm_unreachable("Can't mangle this declname!");
+  }
 }
 
 void CXXNameMangler::mangle(const NamedDecl *D) {
@@ -1128,7 +1142,7 @@ void CXXNameMangler::mangleUnresolvedPrefix(NestedNameSpecifier *qualifier,
     break;
   }
 
-  case NestedNameSpecifier::Identifier:
+  case NestedNameSpecifier::DeclName:
     // Member expressions can have these without prefixes.
     if (qualifier->getPrefix())
       mangleUnresolvedPrefix(qualifier->getPrefix(),
@@ -1136,7 +1150,7 @@ void CXXNameMangler::mangleUnresolvedPrefix(NestedNameSpecifier *qualifier,
     else
       Out << "sr";
 
-    mangleSourceName(qualifier->getAsIdentifier());
+    mangleDeclName(qualifier->getAsDeclName());
     // An Identifier has no type information, so we can't emit abi tags for it.
     break;
   }
@@ -1169,6 +1183,9 @@ void CXXNameMangler::mangleUnresolvedName(NestedNameSpecifier *qualifier,
     case DeclarationName::CXXOperatorName:
       Out << "on";
       mangleOperatorName(name, knownArity);
+      break;
+    case DeclarationName::CXXTemplatedName:
+      mangleTemplateParameter(name.getCXXTemplatedName()->getIndex());
       break;
     case DeclarationName::CXXConstructorName:
       llvm_unreachable("Can't mangle a constructor name!");
@@ -1373,6 +1390,11 @@ void CXXNameMangler::mangleUnqualifiedName(const NamedDecl *ND,
 
   case DeclarationName::CXXUsingDirective:
     llvm_unreachable("Can't mangle a using directive name!");
+
+  case DeclarationName::CXXTemplatedName:
+    mangleTemplateParameter(Name.getCXXTemplatedName()->getIndex());
+    writeAbiTags(ND, AdditionalAbiTags);
+    break;
   }
 }
 
@@ -1628,13 +1650,13 @@ void CXXNameMangler::manglePrefix(NestedNameSpecifier *qualifier) {
     manglePrefix(QualType(qualifier->getAsType(), 0));
     return;
 
-  case NestedNameSpecifier::Identifier:
+  case NestedNameSpecifier::DeclName:
     // Member expressions can have these without prefixes, but that
     // should end up in mangleUnresolvedPrefix instead.
     assert(qualifier->getPrefix());
     manglePrefix(qualifier->getPrefix());
 
-    mangleSourceName(qualifier->getAsIdentifier());
+    mangleDeclName(qualifier->getAsDeclName());
     return;
   }
 
@@ -1817,6 +1839,7 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
   case Type::ObjCObjectPointer:
   case Type::Atomic:
   case Type::Pipe:
+  case Type::Designating:
     llvm_unreachable("type is illegal as a nested name specifier");
 
   case Type::SubstTemplateTypeParmPack:
@@ -1913,7 +1936,7 @@ bool CXXNameMangler::mangleUnresolvedTypeOrSimpleId(QualType Ty,
     break;
 
   case Type::DependentName:
-    mangleSourceName(cast<DependentNameType>(Ty)->getIdentifier());
+    mangleDeclName(cast<DependentNameType>(Ty)->getDeclName());
     break;
 
   case Type::DependentTemplateSpecialization: {
@@ -1937,6 +1960,7 @@ void CXXNameMangler::mangleOperatorName(DeclarationName Name, unsigned Arity) {
   case DeclarationName::CXXConstructorName:
   case DeclarationName::CXXDestructorName:
   case DeclarationName::CXXUsingDirective:
+  case DeclarationName::CXXTemplatedName:
   case DeclarationName::Identifier:
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::ObjCOneArgSelector:
@@ -2974,7 +2998,7 @@ void CXXNameMangler::mangleType(const DependentNameType *T) {
   // Typename types are always nested
   Out << 'N';
   manglePrefix(T->getQualifier());
-  mangleSourceName(T->getIdentifier());
+  mangleDeclName(T->getDeclName());
   Out << 'E';
 }
 
@@ -4174,6 +4198,13 @@ void CXXNameMangler::mangleTemplateArg(TemplateArgument A) {
       mangleTemplateArg(P);
     Out << 'E';
   }
+  case TemplateArgument::DeclName:
+    mangleDeclName(A.getAsDeclName());
+    break;
+  case TemplateArgument::DeclNameExpansion:
+    Out << "Dp";
+    mangleDeclName(A.getAsDeclNameOrDeclNamePattern());
+    break;
   }
 }
 

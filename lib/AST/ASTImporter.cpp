@@ -388,6 +388,14 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
   return true;
 }
 
+/// \brief Determine whether two declnames are equivalent.
+static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
+                                     DeclarationName N1,
+                                     DeclarationName N2) {
+  // FIXME: Is this correct?
+  return N1 == N2;
+}
+
 /// \brief Determine whether two template arguments are equivalent.
 static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                      const TemplateArgument &Arg1,
@@ -440,6 +448,15 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
         return false;
       
     return true;
+
+  case TemplateArgument::DeclName:
+    return IsStructurallyEquivalent(Context, Arg1.getAsDeclName(),
+                                    Arg2.getAsDeclName());
+
+  case TemplateArgument::DeclNameExpansion:
+    return IsStructurallyEquivalent(Context,
+                                    Arg1.getAsDeclNameOrDeclNamePattern(),
+                                    Arg2.getAsDeclNameOrDeclNamePattern());
   }
   
   llvm_unreachable("Invalid template argument kind");
@@ -852,8 +869,8 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                   Typename1->getQualifier(),
                                   Typename2->getQualifier()))
       return false;
-    if (!IsStructurallyEquivalent(Typename1->getIdentifier(),
-                                  Typename2->getIdentifier()))
+    if (!IsStructurallyEquivalent(Context, Typename1->getDeclName(),
+                                  Typename2->getDeclName()))
       return false;
     
     break;
@@ -937,6 +954,18 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
     if (!IsStructurallyEquivalent(Context,
                                   cast<PipeType>(T1)->getElementType(),
                                   cast<PipeType>(T2)->getElementType()))
+      return false;
+    break;
+  }
+
+  case Type::Designating: {
+    const DesignatingType *Ptr1 = cast<DesignatingType>(T1);
+    const DesignatingType *Ptr2 = cast<DesignatingType>(T2);
+    if (!IsStructurallyEquivalent(Context, Ptr1->getMasterType(),
+                                  Ptr2->getMasterType()))
+      return false;
+    if (!IsStructurallyEquivalent(Context, Ptr1->getDesigName(),
+                                  Ptr2->getDesigName()))
       return false;
     break;
   }
@@ -2047,6 +2076,7 @@ ASTNodeImporter::ImportDeclarationNameLoc(const DeclarationNameInfo &From,
   case DeclarationName::ObjCOneArgSelector:
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::CXXUsingDirective:
+  case DeclarationName::CXXTemplatedName:
     return;
 
   case DeclarationName::CXXOperatorName: {
@@ -2318,6 +2348,17 @@ ASTNodeImporter::ImportTemplateArgument(const TemplateArgument &From) {
 
     return TemplateArgument(
         llvm::makeArrayRef(ToPack).copy(Importer.getToContext()));
+  }
+
+  case TemplateArgument::DeclName: {
+    DeclarationName ToName = Importer.Import(From.getAsDeclName());
+    return TemplateArgument(ToName);
+  }
+
+  case TemplateArgument::DeclNameExpansion: {
+    DeclarationName ToName =
+        Importer.Import(From.getAsDeclNameOrDeclNamePattern());
+    return TemplateArgument(ToName, From.getNumDeclNameExpansions());
   }
   }
   
@@ -6207,9 +6248,9 @@ NestedNameSpecifier *ASTImporter::Import(NestedNameSpecifier *FromNNS) {
   NestedNameSpecifier *prefix = Import(FromNNS->getPrefix());
 
   switch (FromNNS->getKind()) {
-  case NestedNameSpecifier::Identifier:
-    if (IdentifierInfo *II = Import(FromNNS->getAsIdentifier())) {
-      return NestedNameSpecifier::Create(ToContext, prefix, II);
+  case NestedNameSpecifier::DeclName:
+    if (DeclarationName Name = Import(FromNNS->getAsDeclName())) {
+      return NestedNameSpecifier::Create(ToContext, prefix, Name);
     }
     return nullptr;
 
@@ -6575,6 +6616,13 @@ DeclarationName ASTImporter::Import(DeclarationName FromName) {
   case DeclarationName::CXXUsingDirective:
     // FIXME: STATICS!
     return DeclarationName::getUsingDirectiveName();
+
+  case DeclarationName::CXXTemplatedName:
+    if (TemplateDeclNameParmDecl *TDP = cast_or_null<TemplateDeclNameParmDecl>(
+            Import(FromName.getCXXTemplatedName())))
+      return ToContext.DeclarationNames.getCXXTemplatedName(TDP);
+
+    return DeclarationName();
   }
 
   llvm_unreachable("Invalid DeclarationName Kind!");

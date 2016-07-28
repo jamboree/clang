@@ -2588,8 +2588,8 @@ static bool isSameQualifier(const NestedNameSpecifier *X,
   // FIXME: For namespaces and types, we're permitted to check that the entity
   // is named via the same tokens. We should probably do so.
   switch (X->getKind()) {
-  case NestedNameSpecifier::Identifier:
-    if (X->getAsIdentifier() != Y->getAsIdentifier())
+  case NestedNameSpecifier::DeclName:
+    if (X->getAsDeclName() != Y->getAsDeclName())
       return false;
     break;
   case NestedNameSpecifier::Namespace:

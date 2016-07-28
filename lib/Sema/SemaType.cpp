@@ -4324,9 +4324,9 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
         NestedNameSpecifier *NNS = SS.getScopeRep();
         NestedNameSpecifier *NNSPrefix = NNS->getPrefix();
         switch (NNS->getKind()) {
-        case NestedNameSpecifier::Identifier:
+        case NestedNameSpecifier::DeclName:
           ClsType = Context.getDependentNameType(ETK_None, NNSPrefix,
-                                                 NNS->getAsIdentifier());
+                                                 NNS->getAsDeclName());
           break;
 
         case NestedNameSpecifier::Namespace:
@@ -5023,7 +5023,7 @@ namespace {
       // Now copy source location info into the type loc component.
       TypeLoc ClsTL = ClsTInfo->getTypeLoc();
       switch (NNSLoc.getNestedNameSpecifier()->getKind()) {
-      case NestedNameSpecifier::Identifier:
+      case NestedNameSpecifier::DeclName:
         assert(isa<DependentNameType>(ClsTy) && "Unexpected TypeLoc");
         {
           DependentNameTypeLoc DNTLoc = ClsTL.castAs<DependentNameTypeLoc>();

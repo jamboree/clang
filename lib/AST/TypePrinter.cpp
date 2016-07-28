@@ -1130,7 +1130,7 @@ void TypePrinter::printDependentNameBefore(const DependentNameType *T,
   
   T->getQualifier()->print(OS, Policy);
   
-  OS << T->getIdentifier()->getName();
+  OS << T->getDeclName();
   spaceBeforePlaceHolder(OS);
 }
 void TypePrinter::printDependentNameAfter(const DependentNameType *T,

@@ -1312,7 +1312,7 @@ bool CursorVisitor::VisitNestedNameSpecifier(NestedNameSpecifier *NNS,
       
   case NestedNameSpecifier::TypeSpecWithTemplate:
   case NestedNameSpecifier::Global:
-  case NestedNameSpecifier::Identifier:
+  case NestedNameSpecifier::DeclName:
   case NestedNameSpecifier::Super:
     break;      
   }
@@ -1354,7 +1354,7 @@ CursorVisitor::VisitNestedNameSpecifierLoc(NestedNameSpecifierLoc Qualifier) {
       break;
         
     case NestedNameSpecifier::Global:
-    case NestedNameSpecifier::Identifier:
+    case NestedNameSpecifier::DeclName:
     case NestedNameSpecifier::Super:
       break;              
     }

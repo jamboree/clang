@@ -58,12 +58,12 @@ ParsedType Sema::getInheritingConstructorName(CXXScopeSpec &SS,
     Type = QualType(NNS->getAsType(), 0);
     break;
 
-  case NestedNameSpecifier::Identifier:
+  case NestedNameSpecifier::DeclName:
     // Strip off the last layer of the nested-name-specifier and build a
     // typename type for it.
-    assert(NNS->getAsIdentifier() == &Name && "not a constructor name");
+    assert(NNS->getAsDeclName() == &Name && "not a constructor name");
     Type = Context.getDependentNameType(ETK_None, NNS->getPrefix(),
-                                        NNS->getAsIdentifier());
+                                        NNS->getAsDeclName());
     break;
 
   case NestedNameSpecifier::Global:
@@ -296,7 +296,7 @@ ParsedType Sema::getDestructorName(SourceLocation TildeLoc,
     // FIXME: What if we have no nested-name-specifier?
     QualType T = CheckTypenameType(ETK_None, SourceLocation(),
                                    SS.getWithLocInContext(Context),
-                                   II, NameLoc);
+                                   &II, NameLoc);
     return ParsedType::make(T);
   }
 
@@ -347,7 +347,7 @@ bool Sema::checkLiteralOperatorId(const CXXScopeSpec &SS,
     return false;
 
   switch (SS.getScopeRep()->getKind()) {
-  case NestedNameSpecifier::Identifier:
+  case NestedNameSpecifier::DeclName:
   case NestedNameSpecifier::TypeSpec:
   case NestedNameSpecifier::TypeSpecWithTemplate:
     // Per C++11 [over.literal]p2, literal operators can only be declared at

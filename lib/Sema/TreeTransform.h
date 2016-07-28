@@ -947,8 +947,8 @@ public:
   QualType RebuildDependentNameType(ElaboratedTypeKeyword Keyword,
                                     SourceLocation KeywordLoc,
                                     NestedNameSpecifierLoc QualifierLoc,
-                                    const IdentifierInfo *Id,
-                                    SourceLocation IdLoc) {
+                                    DeclarationName Name,
+                                    SourceLocation NameLoc) {
     CXXScopeSpec SS;
     SS.Adopt(QualifierLoc);
 
@@ -957,19 +957,19 @@ public:
       if (!SemaRef.computeDeclContext(SS))
         return SemaRef.Context.getDependentNameType(Keyword,
                                           QualifierLoc.getNestedNameSpecifier(),
-                                                    Id);
+                                                    Name);
     }
 
     if (Keyword == ETK_None || Keyword == ETK_Typename)
       return SemaRef.CheckTypenameType(Keyword, KeywordLoc, QualifierLoc,
-                                       *Id, IdLoc);
+                                       Name, NameLoc);
 
     TagTypeKind Kind = TypeWithKeyword::getTagTypeKindForKeyword(Keyword);
 
     // We had a dependent elaborated-type-specifier that has been transformed
     // into a non-dependent elaborated-type-specifier. Find the tag we're
     // referring to.
-    LookupResult Result(SemaRef, Id, IdLoc, Sema::LookupTagName);
+    LookupResult Result(SemaRef, Name, NameLoc, Sema::LookupTagName);
     DeclContext *DC = SemaRef.computeDeclContext(SS, false);
     if (!DC)
       return QualType();
@@ -1000,7 +1000,7 @@ public:
     if (!Tag) {
       // Check where the name exists but isn't a tag type and use that to emit
       // better diagnostics.
-      LookupResult Result(SemaRef, Id, IdLoc, Sema::LookupTagName);
+      LookupResult Result(SemaRef, Name, NameLoc, Sema::LookupTagName);
       SemaRef.LookupQualifiedName(Result, DC);
       switch (Result.getResultKind()) {
         case LookupResult::Found:
@@ -1011,21 +1011,22 @@ public:
           if (isa<TypedefDecl>(SomeDecl)) Kind = 1;
           else if (isa<TypeAliasDecl>(SomeDecl)) Kind = 2;
           else if (isa<ClassTemplateDecl>(SomeDecl)) Kind = 3;
-          SemaRef.Diag(IdLoc, diag::err_tag_reference_non_tag) << Kind;
+          SemaRef.Diag(NameLoc, diag::err_tag_reference_non_tag) << Kind;
           SemaRef.Diag(SomeDecl->getLocation(), diag::note_declared_at);
           break;
         }
         default:
-          SemaRef.Diag(IdLoc, diag::err_not_tag_in_scope)
-              << Kind << Id << DC << QualifierLoc.getSourceRange();
+          SemaRef.Diag(NameLoc, diag::err_not_tag_in_scope)
+              << Kind << Name << DC << QualifierLoc.getSourceRange();
           break;
       }
       return QualType();
     }
 
-    if (!SemaRef.isAcceptableTagRedeclaration(Tag, Kind, /*isDefinition*/false,
-                                              IdLoc, Id)) {
-      SemaRef.Diag(KeywordLoc, diag::err_use_with_wrong_tag) << Id;
+    if (!SemaRef.isAcceptableTagRedeclaration(Tag, Kind, /*isDefinition*/ false,
+                                              NameLoc,
+                                              Name.getAsIdentifierInfo())) {
+      SemaRef.Diag(KeywordLoc, diag::err_use_with_wrong_tag) << Name;
       SemaRef.Diag(Tag->getLocation(), diag::note_previous_use);
       return QualType();
     }
@@ -3427,16 +3428,17 @@ TreeTransform<Derived>::TransformNestedNameSpecifierLoc(
     NestedNameSpecifier *QNNS = Q.getNestedNameSpecifier();
 
     switch (QNNS->getKind()) {
-    case NestedNameSpecifier::Identifier:
-      if (SemaRef.BuildCXXNestedNameSpecifier(/*Scope=*/nullptr,
-                                              *QNNS->getAsIdentifier(),
-                                              Q.getLocalBeginLoc(),
-                                              Q.getLocalEndLoc(),
-                                              ObjectType, false, SS,
-                                              FirstQualifierInScope, false))
+    case NestedNameSpecifier::DeclName: {
+      DeclarationNameInfo Name(QNNS->getAsDeclName(), Q.getLocalBeginLoc());
+      Name = getDerived().TransformDeclarationNameInfo(Name);
+      if (SemaRef.BuildCXXNestedNameSpecifier(
+              /*Scope=*/nullptr, Name.getName().getAsIdentifierInfo(),
+              Name.getLoc(), Q.getLocalEndLoc(), ObjectType, false, SS,
+              FirstQualifierInScope, false))
         return NestedNameSpecifierLoc();
 
       break;
+    }
 
     case NestedNameSpecifier::Namespace: {
       NamespaceDecl *NS
@@ -5809,12 +5811,15 @@ QualType TreeTransform<Derived>::TransformDependentNameType(TypeLocBuilder &TLB,
   if (!QualifierLoc)
     return QualType();
 
+  DeclarationNameInfo Name(T->getDeclName(), TL.getNameLoc());
+  Name = getDerived().TransformDeclarationNameInfo(Name);
+
   QualType Result
     = getDerived().RebuildDependentNameType(T->getKeyword(),
                                             TL.getElaboratedKeywordLoc(),
                                             QualifierLoc,
-                                            T->getIdentifier(),
-                                            TL.getNameLoc());
+                                            Name.getName(),
+                                            Name.getLoc());
   if (Result.isNull())
     return QualType();
 

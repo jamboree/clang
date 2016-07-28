@@ -2459,6 +2459,8 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result,
     case TemplateArgument::Integral:
     case TemplateArgument::Expression:
     case TemplateArgument::NullPtr:
+    case TemplateArgument::DeclName:
+    case TemplateArgument::DeclNameExpansion:
       // [Note: non-type template arguments do not contribute to the set of
       //  associated namespaces. ]
       break;
@@ -2719,6 +2721,9 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result, QualType Ty) {
     case Type::Pipe:
       T = cast<PipeType>(T)->getElementType().getTypePtr();
       continue;
+
+    case Type::Designating:
+      llvm_unreachable("DesignatingType shouldn't be here");
     }
 
     if (Queue.empty())
@@ -3834,8 +3839,14 @@ static void getNestedNameSpecifierIdentifiers(
   const IdentifierInfo *II = nullptr;
 
   switch (NNS->getKind()) {
-  case NestedNameSpecifier::Identifier:
-    II = NNS->getAsIdentifier();
+  case NestedNameSpecifier::DeclName:
+    II = NNS->getAsDeclName().getAsIdentifierInfo();
+    if (!II) {
+      TemplateDeclNameParmDecl *TDP =
+          NNS->getAsDeclName().getCXXTemplatedName();
+      assert(TDP != nullptr && "must be a templated name");
+      II = TDP->getDeclName().getAsIdentifierInfo();
+    }
     break;
 
   case NestedNameSpecifier::Namespace:

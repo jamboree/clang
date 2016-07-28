@@ -401,7 +401,7 @@ void
 ASTTypeWriter::VisitDependentNameType(const DependentNameType *T) {
   Record.push_back(T->getKeyword());
   Record.AddNestedNameSpecifier(T->getQualifier());
-  Record.AddIdentifierRef(T->getIdentifier());
+  Record.AddDeclarationName(T->getDeclName());
   Record.AddTypeRef(
       T->isCanonicalUnqualified() ? QualType() : T->getCanonicalTypeInternal());
   Code = TYPE_DEPENDENT_NAME;
@@ -5201,8 +5201,8 @@ void ASTRecordWriter::AddNestedNameSpecifier(NestedNameSpecifier *NNS) {
     NestedNameSpecifier::SpecifierKind Kind = NNS->getKind();
     Record->push_back(Kind);
     switch (Kind) {
-    case NestedNameSpecifier::Identifier:
-      AddIdentifierRef(NNS->getAsIdentifier());
+    case NestedNameSpecifier::DeclName:
+      AddDeclarationName(NNS->getAsDeclName());
       break;
 
     case NestedNameSpecifier::Namespace:
@@ -5249,8 +5249,8 @@ void ASTRecordWriter::AddNestedNameSpecifierLoc(NestedNameSpecifierLoc NNS) {
       = NNS.getNestedNameSpecifier()->getKind();
     Record->push_back(Kind);
     switch (Kind) {
-    case NestedNameSpecifier::Identifier:
-      AddIdentifierRef(NNS.getNestedNameSpecifier()->getAsIdentifier());
+    case NestedNameSpecifier::DeclName:
+      AddDeclarationName(NNS.getNestedNameSpecifier()->getAsDeclName());
       AddSourceRange(NNS.getLocalSourceRange());
       break;
 

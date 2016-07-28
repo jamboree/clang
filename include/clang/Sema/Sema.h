@@ -5010,7 +5010,7 @@ public:
                                     ParsedType ObjectType);
 
   bool BuildCXXNestedNameSpecifier(Scope *S,
-                                   IdentifierInfo &Identifier,
+                                   IdentifierInfo *Identifier,
                                    SourceLocation IdentifierLoc,
                                    SourceLocation CCLoc,
                                    QualType ObjectType,
@@ -6110,7 +6110,7 @@ public:
   QualType CheckTypenameType(ElaboratedTypeKeyword Keyword,
                              SourceLocation KeywordLoc,
                              NestedNameSpecifierLoc QualifierLoc,
-                             const IdentifierInfo &II,
+                             DeclarationName Name,
                              SourceLocation IILoc);
 
   TypeSourceInfo *RebuildTypeInCurrentInstantiation(TypeSourceInfo *T,

@@ -55,13 +55,13 @@ void CXXScopeSpec::Extend(ASTContext &Context, SourceLocation TemplateKWLoc,
          "NestedNameSpecifierLoc range computation incorrect");
 }
 
-void CXXScopeSpec::Extend(ASTContext &Context, IdentifierInfo *Identifier,
-                          SourceLocation IdentifierLoc, 
+void CXXScopeSpec::Extend(ASTContext &Context, DeclarationName Name,
+                          SourceLocation NameLoc,
                           SourceLocation ColonColonLoc) {
-  Builder.Extend(Context, Identifier, IdentifierLoc, ColonColonLoc);
+  Builder.Extend(Context, Name, NameLoc, ColonColonLoc);
   
   if (Range.getBegin().isInvalid())
-    Range.setBegin(IdentifierLoc);
+    Range.setBegin(NameLoc);
   Range.setEnd(ColonColonLoc);
   
   assert(Range == Builder.getSourceRange() &&

@@ -3548,7 +3548,7 @@ ASTContext::getParenType(QualType InnerType) const {
 
 QualType ASTContext::getDependentNameType(ElaboratedTypeKeyword Keyword,
                                           NestedNameSpecifier *NNS,
-                                          const IdentifierInfo *Name,
+                                          DeclarationName Name,
                                           QualType Canon) const {
   if (Canon.isNull()) {
     NestedNameSpecifier *CanonNNS = getCanonicalNestedNameSpecifier(NNS);
@@ -3681,7 +3681,7 @@ QualType ASTContext::getDesignatingType(QualType T,
   // Unique pointers, to guarantee there is only one pointer of a particular
   // structure.
   llvm::FoldingSetNodeID ID;
-  DesignatingType::Profile(ID, T);
+  DesignatingType::Profile(ID, T, DesigName);
 
   void *InsertPos = nullptr;
   if (DesignatingType *PT = DesignatingTypes.FindNodeOrInsertPos(ID, InsertPos))
@@ -4475,11 +4475,11 @@ ASTContext::getCanonicalNestedNameSpecifier(NestedNameSpecifier *NNS) const {
     return nullptr;
 
   switch (NNS->getKind()) {
-  case NestedNameSpecifier::Identifier:
+  case NestedNameSpecifier::DeclName:
     // Canonicalize the prefix but keep the identifier the same.
     return NestedNameSpecifier::Create(*this,
                          getCanonicalNestedNameSpecifier(NNS->getPrefix()),
-                                       NNS->getAsIdentifier());
+                                       NNS->getAsDeclName());
 
   case NestedNameSpecifier::Namespace:
     // A namespace is canonical; build a nested-name-specifier with
@@ -4506,8 +4506,8 @@ ASTContext::getCanonicalNestedNameSpecifier(NestedNameSpecifier *NNS) const {
     //   typedef typename T::type T1;
     //   typedef typename T1::type T2;
     if (const DependentNameType *DNT = T->getAs<DependentNameType>())
-      return NestedNameSpecifier::Create(*this, DNT->getQualifier(), 
-                           const_cast<IdentifierInfo *>(DNT->getIdentifier()));
+      return NestedNameSpecifier::Create(*this, DNT->getQualifier(),
+                                         DNT->getDeclName());
 
     // Otherwise, just canonicalize the type, and force it to be a TypeSpec.
     // FIXME: Why are TypeSpec and TypeSpecWithTemplate distinct in the

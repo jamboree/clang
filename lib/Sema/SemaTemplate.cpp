@@ -4437,7 +4437,7 @@ bool UnnamedLocalNoLinkageFinder::VisitNestedNameSpecifier(
     return true;
 
   switch (NNS->getKind()) {
-  case NestedNameSpecifier::Identifier:
+  case NestedNameSpecifier::DeclName:
   case NestedNameSpecifier::Namespace:
   case NestedNameSpecifier::NamespaceAlias:
   case NestedNameSpecifier::Global:
@@ -8337,7 +8337,7 @@ Sema::ActOnTypenameType(Scope *S, SourceLocation TypenameLoc,
 
   NestedNameSpecifierLoc QualifierLoc = SS.getWithLocInContext(Context);
   QualType T = CheckTypenameType(TypenameLoc.isValid()? ETK_Typename : ETK_None,
-                                 TypenameLoc, QualifierLoc, II, IdLoc);
+                                 TypenameLoc, QualifierLoc, &II, IdLoc);
   if (T.isNull())
     return true;
 
@@ -8430,10 +8430,10 @@ Sema::ActOnTypenameType(Scope *S,
 
 /// Determine whether this failed name lookup should be treated as being
 /// disabled by a usage of std::enable_if.
-static bool isEnableIf(NestedNameSpecifierLoc NNS, const IdentifierInfo &II,
+static bool isEnableIf(NestedNameSpecifierLoc NNS, const IdentifierInfo *II,
                        SourceRange &CondRange) {
   // We must be looking for a ::type...
-  if (!II.isStr("type"))
+  if (!II || !II->isStr("type"))
     return false;
 
   // ... within an explicitly-written template specialization...
@@ -8470,8 +8470,8 @@ QualType
 Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword, 
                         SourceLocation KeywordLoc,
                         NestedNameSpecifierLoc QualifierLoc, 
-                        const IdentifierInfo &II,
-                        SourceLocation IILoc) {
+                        DeclarationName Name,
+                        SourceLocation NameLoc) {
   CXXScopeSpec SS;
   SS.Adopt(QualifierLoc);
 
@@ -8482,7 +8482,7 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
     assert(QualifierLoc.getNestedNameSpecifier()->isDependent());
     return Context.getDependentNameType(Keyword, 
                                         QualifierLoc.getNestedNameSpecifier(), 
-                                        &II);
+                                        Name);
   }
 
   // If the nested-name-specifier refers to the current instantiation,
@@ -8494,8 +8494,7 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
   if (RequireCompleteDeclContext(SS, Ctx))
     return QualType();
 
-  DeclarationName Name(&II);
-  LookupResult Result(*this, Name, IILoc, LookupOrdinaryName);
+  LookupResult Result(*this, Name, NameLoc, LookupOrdinaryName);
   LookupQualifiedName(Result, Ctx, SS);
   unsigned DiagID = 0;
   Decl *Referenced = nullptr;
@@ -8504,7 +8503,7 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
     // If we're looking up 'type' within a template named 'enable_if', produce
     // a more specific diagnostic.
     SourceRange CondRange;
-    if (isEnableIf(QualifierLoc, II, CondRange)) {
+    if (isEnableIf(QualifierLoc, Name.getAsIdentifierInfo(), CondRange)) {
       Diag(CondRange.getBegin(), diag::err_typename_nested_not_found_enable_if)
         << Ctx << CondRange;
       return QualType();
@@ -8518,8 +8517,8 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
     // We found a using declaration that is a value. Most likely, the using
     // declaration itself is meant to have the 'typename' keyword.
     SourceRange FullRange(KeywordLoc.isValid() ? KeywordLoc : SS.getBeginLoc(),
-                          IILoc);
-    Diag(IILoc, diag::err_typename_refers_to_using_value_decl)
+                          NameLoc);
+    Diag(NameLoc, diag::err_typename_refers_to_using_value_decl)
       << Name << Ctx << FullRange;
     if (UnresolvedUsingValueDecl *Using
           = dyn_cast<UnresolvedUsingValueDecl>(Result.getRepresentativeDecl())){
@@ -8535,7 +8534,7 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
     // Okay, it's a member of an unknown instantiation.
     return Context.getDependentNameType(Keyword, 
                                         QualifierLoc.getNestedNameSpecifier(), 
-                                        &II);
+                                        Name);
 
   case LookupResult::Found:
     if (TypeDecl *Type = dyn_cast<TypeDecl>(Result.getFoundDecl())) {
@@ -8563,8 +8562,8 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
   // If we get here, it's because name lookup did not find a
   // type. Emit an appropriate diagnostic and return an error.
   SourceRange FullRange(KeywordLoc.isValid() ? KeywordLoc : SS.getBeginLoc(),
-                        IILoc);
-  Diag(IILoc, DiagID) << FullRange << Name << Ctx;
+                        NameLoc);
+  Diag(NameLoc, DiagID) << FullRange << Name << Ctx;
   if (Referenced)
     Diag(Referenced->getLocation(), diag::note_typename_refers_here)
       << Name;

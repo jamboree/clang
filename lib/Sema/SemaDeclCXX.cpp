@@ -2954,7 +2954,7 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
           // specialization, we take it as a type name.
           BaseType = CheckTypenameType(ETK_None, SourceLocation(),
                                        SS.getWithLocInContext(Context),
-                                       *MemberOrBase, IdLoc);
+                                       MemberOrBase, IdLoc);
           if (BaseType.isNull())
             return true;
 
@@ -12579,7 +12579,7 @@ Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
     ElaboratedTypeKeyword Keyword
       = TypeWithKeyword::getKeywordForTagTypeKind(Kind);
     QualType T = CheckTypenameType(Keyword, TagLoc, QualifierLoc,
-                                   *Name, NameLoc);
+                                   Name, NameLoc);
     if (T.isNull())
       return nullptr;
 

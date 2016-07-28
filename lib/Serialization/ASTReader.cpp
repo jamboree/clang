@@ -8039,7 +8039,7 @@ ASTReader::ReadNestedNameSpecifier(ModuleFile &F,
     NestedNameSpecifier::SpecifierKind Kind
       = (NestedNameSpecifier::SpecifierKind)Record[Idx++];
     switch (Kind) {
-    case NestedNameSpecifier::Identifier: {
+    case NestedNameSpecifier::DeclName: {
       IdentifierInfo *II = GetIdentifierInfo(F, Record, Idx);
       NNS = NestedNameSpecifier::Create(Context, Prev, II);
       break;
@@ -8094,7 +8094,7 @@ ASTReader::ReadNestedNameSpecifierLoc(ModuleFile &F, const RecordData &Record,
     NestedNameSpecifier::SpecifierKind Kind
       = (NestedNameSpecifier::SpecifierKind)Record[Idx++];
     switch (Kind) {
-    case NestedNameSpecifier::Identifier: {
+    case NestedNameSpecifier::DeclName: {
       IdentifierInfo *II = GetIdentifierInfo(F, Record, Idx);      
       SourceRange Range = ReadSourceRange(F, Record, Idx);
       Builder.Extend(Context, II, Range.getBegin(), Range.getEnd());

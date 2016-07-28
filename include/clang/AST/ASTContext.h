@@ -1261,7 +1261,7 @@ public:
                              QualType NamedType) const;
   QualType getDependentNameType(ElaboratedTypeKeyword Keyword,
                                 NestedNameSpecifier *NNS,
-                                const IdentifierInfo *Name,
+                                DeclarationName Name,
                                 QualType Canon = QualType()) const;
 
   QualType getDependentTemplateSpecializationType(ElaboratedTypeKeyword Keyword,
