@@ -3625,10 +3625,10 @@ void EnumDecl::anchor() { }
 
 EnumDecl *EnumDecl::Create(ASTContext &C, DeclContext *DC,
                            SourceLocation StartLoc, SourceLocation IdLoc,
-                           IdentifierInfo *Id,
+                           DeclarationName N,
                            EnumDecl *PrevDecl, bool IsScoped,
                            bool IsScopedUsingClassTag, bool IsFixed) {
-  auto *Enum = new (C, DC) EnumDecl(C, DC, StartLoc, IdLoc, Id, PrevDecl,
+  auto *Enum = new (C, DC) EnumDecl(C, DC, StartLoc, IdLoc, N, PrevDecl,
                                     IsScoped, IsScopedUsingClassTag, IsFixed);
   Enum->MayHaveOutOfDateDef = C.getLangOpts().Modules;
   C.getTypeDeclType(Enum, PrevDecl);

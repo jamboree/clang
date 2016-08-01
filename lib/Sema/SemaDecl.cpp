@@ -12464,19 +12464,6 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
     // The lookup name may be changed to a templated one after lookup.
     DeclName = Previous.getLookupName();
 
-    //if (Previous.isSingleResult()) {
-    //  if (TemplateDeclNameParmDecl *TDP =
-    //          dyn_cast<TemplateDeclNameParmDecl>(Previous.getFoundDecl())) {
-    //    DeclName = Context.DeclarationNames.getCXXTemplatedName(TDP);
-    //    TDP->setReferenced();
-
-    //    // Lookup with the templated name.
-    //    Previous.clear();
-    //    Previous.setLookupName(DeclName);
-    //    LookupName(Previous, S);
-    //  }
-    //}
-
     // When declaring or defining a tag, ignore ambiguities introduced
     // by types using'ed into this scope.
     if (Previous.isAmbiguous() &&
@@ -12950,7 +12937,7 @@ CreateNewDecl:
   if (Kind == TTK_Enum) {
     // FIXME: Tag decls should be chained to any simultaneous vardecls, e.g.:
     // enum X { A, B, C } D;    D should chain to X.
-    New = EnumDecl::Create(Context, SearchDC, KWLoc, Loc, Name,
+    New = EnumDecl::Create(Context, SearchDC, KWLoc, Loc, DeclName,
                            cast_or_null<EnumDecl>(PrevDecl), ScopedEnum,
                            ScopedEnumUsesClassTag, !EnumUnderlying.isNull());
     // If this is an undefined enum, warn.
@@ -13004,6 +12991,9 @@ CreateNewDecl:
       New = RecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, DeclName,
                                cast_or_null<RecordDecl>(PrevDecl));
   }
+
+  if (TemplateDeclNameParmDecl *TDP = DeclName.getCXXTemplatedName())
+    TDP->setReferenced();
 
   // C++11 [dcl.type]p3:
   //   A type-specifier-seq shall not define a class or enumeration [...].

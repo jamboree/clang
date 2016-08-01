@@ -8475,9 +8475,14 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
     // If the nested-name-specifier is dependent and couldn't be
     // resolved to a type, build a typename type.
     assert(QualifierLoc.getNestedNameSpecifier()->isDependent());
-    return Context.getDependentNameType(Keyword, 
-                                        QualifierLoc.getNestedNameSpecifier(), 
-                                        Name);
+
+    // The name itself can also be templated.
+    if (TemplateDeclNameParmDecl *TDP =
+            LookupTemplateDeclNameParm(Name.getAsIdentifierInfo()))
+      Name = Context.DeclarationNames.getCXXTemplatedName(TDP);
+
+    return Context.getDependentNameType(
+        Keyword, QualifierLoc.getNestedNameSpecifier(), Name);
   }
 
   // If the nested-name-specifier refers to the current instantiation,
@@ -8498,11 +8503,11 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
   case LookupResult::NotFound: {
     // If the name is templated and couldn't be resolved to a type,
     // build a typename type.
-    if (TemplateDeclNameParmDecl *TDP =
-            Result.getLookupName().getCXXTemplatedName())
-      return Context.getDependentNameType(
-          Keyword, QualifierLoc.getNestedNameSpecifier(),
-          Context.DeclarationNames.getCXXTemplatedName(TDP));
+    if (Result.getLookupName().getNameKind() ==
+        DeclarationName::CXXTemplatedName)
+      return Context.getDependentNameType(Keyword,
+                                          QualifierLoc.getNestedNameSpecifier(),
+                                          Result.getLookupName());
 
     // If we're looking up 'type' within a template named 'enable_if', produce
     // a more specific diagnostic.
@@ -8538,7 +8543,7 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
     // Okay, it's a member of an unknown instantiation.
     return Context.getDependentNameType(Keyword, 
                                         QualifierLoc.getNestedNameSpecifier(), 
-                                        Name);
+                                        Result.getLookupName());
 
   case LookupResult::Found:
     if (TypeDecl *Type = dyn_cast<TypeDecl>(Result.getFoundDecl())) {

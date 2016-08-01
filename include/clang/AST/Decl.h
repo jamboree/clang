@@ -3065,9 +3065,9 @@ class EnumDecl : public TagDecl {
   MemberSpecializationInfo *SpecializationInfo;
 
   EnumDecl(ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
-           SourceLocation IdLoc, IdentifierInfo *Id, EnumDecl *PrevDecl,
+           SourceLocation IdLoc, DeclarationName N, EnumDecl *PrevDecl,
            bool Scoped, bool ScopedUsingClassTag, bool Fixed)
-      : TagDecl(Enum, TTK_Enum, C, DC, IdLoc, Id, PrevDecl, StartLoc),
+      : TagDecl(Enum, TTK_Enum, C, DC, IdLoc, N, PrevDecl, StartLoc),
         SpecializationInfo(nullptr) {
     assert(Scoped || !ScopedUsingClassTag);
     IntegerType = (const Type *)nullptr;
@@ -3109,7 +3109,7 @@ public:
 
   static EnumDecl *Create(ASTContext &C, DeclContext *DC,
                           SourceLocation StartLoc, SourceLocation IdLoc,
-                          IdentifierInfo *Id, EnumDecl *PrevDecl,
+                          DeclarationName N, EnumDecl *PrevDecl,
                           bool IsScoped, bool IsScopedUsingClassTag,
                           bool IsFixed);
   static EnumDecl *CreateDeserialized(ASTContext &C, unsigned ID);

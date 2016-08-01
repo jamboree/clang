@@ -573,10 +573,10 @@ bool Sema::BuildCXXNestedNameSpecifier(Scope *S,
   // that's fine: just build a dependent nested-name-specifier.
   if (Found.empty()) {
     DeclarationName Name;
-    if (TemplateDeclNameParmDecl *TDP =
-            Found.getLookupName().getCXXTemplatedName()) {
+    if (Found.getLookupName().getNameKind() ==
+        DeclarationName::CXXTemplatedName) {
       if (SS.getScopeRep() && SS.getScopeRep()->isValidTemplatedNamePrefix())
-        Name = Context.DeclarationNames.getCXXTemplatedName(TDP);
+        Name = Found.getLookupName();
     } else if (isDependent &&
                !(LookupCtx && LookupCtx->isRecord() &&
                  (!cast<CXXRecordDecl>(LookupCtx)->hasDefinition() ||
