@@ -917,17 +917,12 @@ DeclNameResult Sema::ActOnDeclName(Scope *S, SourceLocation QuestionLoc,
   if (QuestionLoc.isValid())
     return ParsedDeclNameTy::make(DName);
 
-  LookupResult R(*this, DName, NameLoc, LookupOrdinaryName);
-  LookupName(R, S);
-  if (R.empty()) {
-    // FIXME: diag
-    return true;
-  }
-  assert(R.end() - R.begin() == 1 && "At most one DeclName can be found");
-  TemplateDeclNameParmDecl *TDP =
-      cast<TemplateDeclNameParmDecl>((*R.begin())->getUnderlyingDecl());
-  return ParsedDeclNameTy::make(
-      Context.DeclarationNames.getCXXTemplatedName(TDP));
+  if (TemplateDeclNameParmDecl *TDP = LookupTemplateDeclNameParm(Name))
+    return ParsedDeclNameTy::make(
+        Context.DeclarationNames.getCXXTemplatedName(TDP));
+
+  // FIXME: diag
+  return true;
 }
 
 static void SetNestedNameSpecifier(TagDecl *T, const CXXScopeSpec &SS) {
@@ -8496,10 +8491,19 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
 
   LookupResult Result(*this, Name, NameLoc, LookupOrdinaryName);
   LookupQualifiedName(Result, Ctx, SS);
+
   unsigned DiagID = 0;
   Decl *Referenced = nullptr;
   switch (Result.getResultKind()) {
   case LookupResult::NotFound: {
+    // If the name is templated and couldn't be resolved to a type,
+    // build a typename type.
+    if (TemplateDeclNameParmDecl *TDP =
+            Result.getLookupName().getCXXTemplatedName())
+      return Context.getDependentNameType(
+          Keyword, QualifierLoc.getNestedNameSpecifier(),
+          Context.DeclarationNames.getCXXTemplatedName(TDP));
+
     // If we're looking up 'type' within a template named 'enable_if', produce
     // a more specific diagnostic.
     SourceRange CondRange;

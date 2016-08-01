@@ -207,6 +207,10 @@ public:
   /// parameter pack (for C++11 variadic templates).
   bool containsUnexpandedParameterPack() const;
 
+  /// \brief Whether this nested-name-specifier can be a prefix of a templated
+  /// name.
+  bool isValidTemplatedNamePrefix() const;
+
   /// \brief Print this nested name specifier to the given output
   /// stream.
   void print(raw_ostream &OS, const PrintingPolicy &Policy) const;

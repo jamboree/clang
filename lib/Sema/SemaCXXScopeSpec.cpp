@@ -532,10 +532,6 @@ bool Sema::BuildCXXNestedNameSpecifier(Scope *S,
       return true;
 
     LookupQualifiedName(Found, LookupCtx);
-    if (Found.empty()) {
-      if (TemplateDeclNameParmDecl *TDP = LookupTemplatedDeclName(Identifier))
-        Found.addDecl(TDP);
-    }
 
     if (!ObjectType.isNull() && Found.empty()) {
       // C++ [basic.lookup.classref]p4:
@@ -575,20 +571,30 @@ bool Sema::BuildCXXNestedNameSpecifier(Scope *S,
 
   // If we performed lookup into a dependent context and did not find anything,
   // that's fine: just build a dependent nested-name-specifier.
-  if (Found.empty() && isDependent &&
-      !(LookupCtx && LookupCtx->isRecord() &&
-        (!cast<CXXRecordDecl>(LookupCtx)->hasDefinition() ||
-         !cast<CXXRecordDecl>(LookupCtx)->hasAnyDependentBases()))) {
-    // Don't speculate if we're just trying to improve error recovery.
-    if (ErrorRecoveryLookup)
-      return true;
+  if (Found.empty()) {
+    DeclarationName Name;
+    if (TemplateDeclNameParmDecl *TDP =
+            Found.getLookupName().getCXXTemplatedName()) {
+      if (SS.getScopeRep() && SS.getScopeRep()->isValidTemplatedNamePrefix())
+        Name = Context.DeclarationNames.getCXXTemplatedName(TDP);
+    } else if (isDependent &&
+               !(LookupCtx && LookupCtx->isRecord() &&
+                 (!cast<CXXRecordDecl>(LookupCtx)->hasDefinition() ||
+                  !cast<CXXRecordDecl>(LookupCtx)->hasAnyDependentBases())))
+      Name = Identifier;
 
-    // We were not able to compute the declaration context for a dependent
-    // base object type or prior nested-name-specifier, so this
-    // nested-name-specifier refers to an unknown specialization. Just build
-    // a dependent nested-name-specifier.
-    SS.Extend(Context, Identifier, IdentifierLoc, CCLoc);
-    return false;
+    if (Name) {
+      // Don't speculate if we're just trying to improve error recovery.
+      if (ErrorRecoveryLookup)
+        return true;
+
+      // We were not able to compute the declaration context for a dependent
+      // base object type or prior nested-name-specifier, so this
+      // nested-name-specifier refers to an unknown specialization. Just build
+      // a dependent nested-name-specifier.
+      SS.Extend(Context, Name, IdentifierLoc, CCLoc);
+      return false;
+    }
   }
 
   if (Found.empty() && !ErrorRecoveryLookup) {

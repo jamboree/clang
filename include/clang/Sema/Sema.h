@@ -2892,7 +2892,7 @@ public:
   /// \brief Clears the state of the given TypoExpr.
   void clearDelayedTypo(TypoExpr *TE);
 
-  TemplateDeclNameParmDecl *LookupTemplatedDeclName(IdentifierInfo *Id);
+  TemplateDeclNameParmDecl *LookupTemplateDeclNameParm(IdentifierInfo *Id);
 
   /// \brief Look up a name, looking for a single declaration.  Return
   /// null if the results were absent, ambiguous, or overloaded.

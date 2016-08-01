@@ -1032,18 +1032,25 @@ struct FindLocalExternScope {
 };
 } // end anonymous namespace
 
-TemplateDeclNameParmDecl *Sema::LookupTemplatedDeclName(IdentifierInfo *Id) {
-  IdentifierResolver::iterator I = IdResolver.begin(Id),
-                               IEnd = IdResolver.end();
+TemplateDeclNameParmDecl *Sema::LookupTemplateDeclNameParm(IdentifierInfo *Id) {
+  if (Id) {
+    IdentifierResolver::iterator I = IdResolver.begin(Id),
+                                 IEnd = IdResolver.end();
 
-  if (I != IEnd)
-    return dyn_cast<TemplateDeclNameParmDecl>(*I);
+    if (I != IEnd)
+      return dyn_cast<TemplateDeclNameParmDecl>(*I);
+  }
 
   return nullptr;
 }
 
 bool Sema::CppLookupName(LookupResult &R, Scope *S) {
   assert(getLangOpts().CPlusPlus && "Can perform only C++ lookup");
+
+  // If this name is templated, lookup with the templated name instead.
+  if (TemplateDeclNameParmDecl *TDP =
+          LookupTemplateDeclNameParm(R.getLookupName().getAsIdentifierInfo()))
+    R.setLookupName(Context.DeclarationNames.getCXXTemplatedName(TDP));
 
   DeclarationName Name = R.getLookupName();
   Sema::LookupNameKind NameKind = R.getLookupKind();
@@ -1998,6 +2005,11 @@ bool Sema::LookupQualifiedName(LookupResult &R, DeclContext *LookupCtx,
           cast<TagDecl>(LookupCtx)->isCompleteDefinition() ||
           cast<TagDecl>(LookupCtx)->isBeingDefined()) &&
          "Declaration context must already be complete!");
+
+  // If this name is templated, lookup with the templated name instead.
+  if (TemplateDeclNameParmDecl *TDP =
+          LookupTemplateDeclNameParm(R.getLookupName().getAsIdentifierInfo()))
+    R.setLookupName(Context.DeclarationNames.getCXXTemplatedName(TDP));
 
   struct QualifiedLookupInScope {
     bool oldVal;

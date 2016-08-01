@@ -12461,18 +12461,21 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
     // shouldn't be diagnosing.
     LookupName(Previous, S);
 
-    if (Previous.isSingleResult()) {
-      if (TemplateDeclNameParmDecl *TDP =
-              dyn_cast<TemplateDeclNameParmDecl>(Previous.getFoundDecl())) {
-        DeclName = Context.DeclarationNames.getCXXTemplatedName(TDP);
-        TDP->setReferenced();
+    // The lookup name may be changed to a templated one after lookup.
+    DeclName = Previous.getLookupName();
 
-        // Lookup with the templated name.
-        Previous.clear();
-        Previous.setLookupName(DeclName);
-        LookupName(Previous, S);
-      }
-    }
+    //if (Previous.isSingleResult()) {
+    //  if (TemplateDeclNameParmDecl *TDP =
+    //          dyn_cast<TemplateDeclNameParmDecl>(Previous.getFoundDecl())) {
+    //    DeclName = Context.DeclarationNames.getCXXTemplatedName(TDP);
+    //    TDP->setReferenced();
+
+    //    // Lookup with the templated name.
+    //    Previous.clear();
+    //    Previous.setLookupName(DeclName);
+    //    LookupName(Previous, S);
+    //  }
+    //}
 
     // When declaring or defining a tag, ignore ambiguities introduced
     // by types using'ed into this scope.

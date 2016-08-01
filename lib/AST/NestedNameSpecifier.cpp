@@ -46,7 +46,6 @@ NestedNameSpecifier *
 NestedNameSpecifier::Create(const ASTContext &Context,
                             NestedNameSpecifier *Prefix, DeclarationName Name) {
   assert(!Name.isEmpty() && "Name cannot be empty");
-  assert((!Prefix || Prefix->isDependent()) && "Prefix must be dependent");
 
   NestedNameSpecifier Mockup;
   Mockup.Prefix.setPointer(Prefix);
@@ -252,6 +251,23 @@ bool NestedNameSpecifier::containsUnexpandedParameterPack() const {
   case TypeSpec:
   case TypeSpecWithTemplate:
     return getAsType()->containsUnexpandedParameterPack();
+  }
+
+  llvm_unreachable("Invalid NNS Kind!");
+}
+
+bool clang::NestedNameSpecifier::isValidTemplatedNamePrefix() const {
+  switch (getKind()) {
+  case DeclName:
+  case TypeSpec:
+  case TypeSpecWithTemplate:
+    return true;
+
+  case Namespace:
+  case NamespaceAlias:
+  case Global:
+  case Super:
+    return false;
   }
 
   llvm_unreachable("Invalid NNS Kind!");
