@@ -293,7 +293,8 @@ DeclarationName::NameKind DeclarationName::getNameKind() const {
 
 bool DeclarationName::isDependentName() const {
   QualType T = getCXXNameType();
-  return !T.isNull() && T->isDependentType();
+  return !T.isNull() && T->isDependentType() ||
+         getNameKind() == CXXTemplatedName;
 }
 
 bool clang::DeclarationName::containsUnexpandedParameterPack() const {

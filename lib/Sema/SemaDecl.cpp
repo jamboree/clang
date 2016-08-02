@@ -670,23 +670,27 @@ void Sema::DiagnoseUnknownTypeName(IdentifierInfo *&II,
 
   if (!SS || (!SS->isSet() && !SS->isInvalid()))
     Diag(IILoc, diag::err_unknown_typename) << II;
-  else if (DeclContext *DC = computeDeclContext(*SS, false))
-    Diag(IILoc, diag::err_typename_nested_not_found)
-      << II << DC << SS->getRange();
-  else if (isDependentScopeSpecifier(*SS)) {
-    unsigned DiagID = diag::err_typename_missing;
-    if (getLangOpts().MSVCCompat && isMicrosoftMissingTypename(SS, S))
-      DiagID = diag::ext_typename_missing;
+  else {
+    TemplateDeclNameParmDecl *TDP = LookupTemplateDeclNameParm(II);
+    DeclContext *DC = computeDeclContext(*SS, false);
+    if (DC && !TDP)
+      Diag(IILoc, diag::err_typename_nested_not_found) << II << DC
+                                                       << SS->getRange();
+    else if (TDP || isDependentScopeSpecifier(*SS)) {
+      unsigned DiagID = diag::err_typename_missing;
+      if (getLangOpts().MSVCCompat && isMicrosoftMissingTypename(SS, S))
+        DiagID = diag::ext_typename_missing;
 
-    Diag(SS->getRange().getBegin(), DiagID)
-      << SS->getScopeRep() << II->getName()
-      << SourceRange(SS->getRange().getBegin(), IILoc)
-      << FixItHint::CreateInsertion(SS->getRange().getBegin(), "typename ");
-    SuggestedType = ActOnTypenameType(S, SourceLocation(),
-                                      *SS, *II, IILoc).get();
-  } else {
-    assert(SS && SS->isInvalid() &&
-           "Invalid scope specifier has already been diagnosed");
+      Diag(SS->getRange().getBegin(), DiagID)
+          << SS->getScopeRep() << II->getName()
+          << SourceRange(SS->getRange().getBegin(), IILoc)
+          << FixItHint::CreateInsertion(SS->getRange().getBegin(), "typename ");
+      SuggestedType =
+          ActOnTypenameType(S, SourceLocation(), *SS, *II, IILoc).get();
+    } else {
+      assert(SS && SS->isInvalid() &&
+             "Invalid scope specifier has already been diagnosed");
+    }
   }
 }
 

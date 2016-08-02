@@ -1302,8 +1302,15 @@ bool Sema::isCurrentClassName(const IdentifierInfo &II, Scope *,
   } else
     CurDecl = dyn_cast_or_null<CXXRecordDecl>(CurContext);
 
-  if (CurDecl && CurDecl->getIdentifier())
-    return &II == CurDecl->getIdentifier();
+  if (CurDecl) {
+    if (DeclarationName Name = CurDecl->getDeclName()) {
+      if (IdentifierInfo *Id = Name.getAsIdentifierInfo())
+        return &II == Id;
+      if (TemplateDeclNameParmDecl *TDP = Name.getCXXTemplatedName())
+        return TDP->getIdentifier() == &II;
+    }
+  }
+
   return false;
 }
 

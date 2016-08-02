@@ -565,9 +565,18 @@ void Sema::translateTemplateArguments(const ASTTemplateArgsPtr &TemplateArgsIn,
 static void maybeDiagnoseTemplateParameterShadow(Sema &SemaRef, Scope *S,
                                                  SourceLocation Loc,
                                                  IdentifierInfo *Name) {
-  NamedDecl *PrevDecl = SemaRef.LookupSingleName(
-      S, Name, Loc, Sema::LookupOrdinaryName, Sema::ForRedeclaration);
-  if (PrevDecl && PrevDecl->isTemplateParameter())
+  LookupResult R(SemaRef, Name, Loc, Sema::LookupOrdinaryName,
+                 Sema::ForRedeclaration);
+  SemaRef.LookupName(R, S);
+  NamedDecl *PrevDecl = R.getAsSingle<NamedDecl>();
+  if (!PrevDecl) {
+    // We have to handle template declname param specially because LookupName
+    // won't find it as the result, while the lookup name is replaced with it.
+    if (TemplateDeclNameParmDecl *TDP = R.getLookupName().getCXXTemplatedName())
+      PrevDecl = TDP;
+  } else if (!PrevDecl->isTemplateParameter())
+    PrevDecl = nullptr;
+  if (PrevDecl)
     SemaRef.DiagnoseTemplateParameterShadow(Loc, PrevDecl);
 }
 
@@ -1015,6 +1024,15 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
   NamedDecl *PrevDecl = nullptr;
   if (Previous.begin() != Previous.end())
     PrevDecl = (*Previous.begin())->getUnderlyingDecl();
+  else if (TemplateDeclNameParmDecl *TDP =
+               Previous.getLookupName().getCXXTemplatedName()) {
+    // Diagnose cases like:
+    //   template<declname C> class C;
+    if (S->getTemplateParamParent()->isDeclScope(TDP)) {
+      Diag(NameLoc, diag::err_template_name_depends_on_own_param) << Name;
+      Diag(TDP->getLocation(), diag::note_template_param_here);
+    }
+  }
 
   if (PrevDecl && PrevDecl->isTemplateParameter()) {
     // Maybe we will complain about the shadowed template parameter.

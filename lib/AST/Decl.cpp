@@ -322,6 +322,8 @@ static LinkageInfo getLVForTemplateArgumentList(ArrayRef<TemplateArgument> Args,
     case TemplateArgument::Null:
     case TemplateArgument::Integral:
     case TemplateArgument::Expression:
+    case TemplateArgument::DeclName:
+    case TemplateArgument::DeclNameExpansion:
       continue;
 
     case TemplateArgument::Type:
@@ -3638,7 +3640,7 @@ EnumDecl *EnumDecl::Create(ASTContext &C, DeclContext *DC,
 EnumDecl *EnumDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   EnumDecl *Enum =
       new (C, ID) EnumDecl(C, nullptr, SourceLocation(), SourceLocation(),
-                           nullptr, nullptr, false, false, false);
+                           {}, nullptr, false, false, false);
   Enum->MayHaveOutOfDateDef = C.getLangOpts().Modules;
   return Enum;
 }

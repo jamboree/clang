@@ -3656,6 +3656,9 @@ def err_template_tag_noparams : Error<
 def err_template_decl_ref : Error<
   "cannot refer to %select{class|variable}0 template %1 without a template argument list">;
 
+def err_template_name_depends_on_own_param : Error<
+  "template name cannot depend on its own declname parameter">;
+
 // C++ Template Argument Lists
 def err_template_missing_args : Error<
   "use of class template %0 requires template arguments">;

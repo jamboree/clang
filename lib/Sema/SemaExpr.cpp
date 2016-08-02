@@ -2205,6 +2205,13 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
     if (D) R.addDecl(D);
   }
 
+  if (R.empty() &&
+      R.getLookupName().getNameKind() == DeclarationName::CXXTemplatedName &&
+      SS.getScopeRep() && SS.getScopeRep()->isValidTemplatedNamePrefix())
+    return ActOnDependentIdExpression(
+        SS, TemplateKWLoc, DeclarationNameInfo(R.getLookupName(), NameLoc),
+        IsAddressOfOperand, TemplateArgs);
+
   // Determine whether this name might be a candidate for
   // argument-dependent lookup.
   bool ADL = UseArgumentDependentLookup(SS, R, HasTrailingLParen);
