@@ -961,8 +961,8 @@ void TypePrinter::printTag(TagDecl *D, raw_ostream &OS) {
   if (!Policy.SuppressScope)
     AppendScope(D->getDeclContext(), OS);
 
-  if (const IdentifierInfo *II = D->getIdentifier())
-    OS << II->getName();
+  if (DeclarationName Name = D->getDeclName())
+    OS << Name;
   else if (TypedefNameDecl *Typedef = D->getTypedefNameForAnonDecl()) {
     assert(Typedef->getIdentifier() && "Typedef without identifier?");
     OS << Typedef->getIdentifier()->getName();

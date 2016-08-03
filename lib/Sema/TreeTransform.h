@@ -9943,7 +9943,6 @@ TreeTransform<Derived>::TransformDependentScopeDeclRefExpr(
                                                DependentScopeDeclRefExpr *E,
                                                bool IsAddressOfOperand,
                                                TypeSourceInfo **RecoveryTSI) {
-  assert(E->getQualifierLoc());
   NestedNameSpecifierLoc QualifierLoc
   = getDerived().TransformNestedNameSpecifierLoc(E->getQualifierLoc());
   if (!QualifierLoc)

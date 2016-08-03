@@ -75,7 +75,7 @@ namespace clang {
           Loc(NameLoc), EllipsisLoc() {}
 
     /// \brief Determine whether the given template argument is invalid.
-    bool isInvalid() const { return Arg == nullptr; }
+    bool isInvalid() const { return Arg == nullptr && Kind != DeclName; }
     
     /// \brief Determine what kind of template argument we have.
     KindType getKind() const { return Kind; }

@@ -249,6 +249,10 @@ getLVForTemplateParameterList(const TemplateParameterList *Params,
     if (isa<TemplateTypeParmDecl>(P))
       continue;
 
+    // Template declname parameters never contribute to visibility, pack or not.
+    if (isa<TemplateDeclNameParmDecl>(P))
+        continue;
+
     // Non-type template parameters can be restricted by the value type, e.g.
     //   template <enum X> class A { ... };
     // We have to be careful here, though, because we can be dealing with

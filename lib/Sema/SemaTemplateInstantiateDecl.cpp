@@ -4823,8 +4823,10 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
     }
 
     NamedDecl *Result = nullptr;
-    if (D->getDeclName()) {
-      DeclContext::lookup_result Found = ParentDC->lookup(D->getDeclName());
+    DeclarationNameInfo NameInfo(D->getDeclName(), D->getLocation());
+    NameInfo = SubstDeclarationNameInfo(NameInfo, TemplateArgs);
+    if (NameInfo.getName()) {
+      DeclContext::lookup_result Found = ParentDC->lookup(NameInfo.getName());
       Result = findInstantiationOf(Context, D, Found.begin(), Found.end());
     } else {
       // Since we don't have a name for the entity we're looking for,
