@@ -701,16 +701,24 @@ Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
       BitWidth = InstantiatedBitWidth.getAs<Expr>();
   }
 
-  FieldDecl *Field = SemaRef.CheckFieldDecl(D->getDeclName(),
+  DeclarationNameInfo NameInfo =
+      SemaRef.SubstDeclarationNameInfo(D->getNameInfo(), TemplateArgs);
+
+  LookupResult Previous(SemaRef, NameInfo, Sema::LookupOrdinaryName,
+                        Sema::ForRedeclaration);
+  SemaRef.LookupQualifiedName(Previous, Owner);
+  NamedDecl *PrevDecl = Previous.getAsSingle<NamedDecl>();
+
+  FieldDecl *Field = SemaRef.CheckFieldDecl(NameInfo.getName(),
                                             DI->getType(), DI,
                                             cast<RecordDecl>(Owner),
-                                            D->getLocation(),
+                                            NameInfo.getLoc(),
                                             D->isMutable(),
                                             BitWidth,
                                             D->getInClassInitStyle(),
                                             D->getInnerLocStart(),
                                             D->getAccess(),
-                                            nullptr);
+                                            PrevDecl);
   if (!Field) {
     cast<Decl>(Owner)->setInvalidDecl();
     return nullptr;
@@ -1384,8 +1392,10 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
     if (!Prev) return nullptr;
     PrevDecl = cast<CXXRecordDecl>(Prev);
   }
-  DeclarationNameInfo NameInfo(D->getDeclName(), D->getLocation());
-  NameInfo = SemaRef.SubstDeclarationNameInfo(NameInfo, TemplateArgs);
+
+  DeclarationNameInfo NameInfo =
+      SemaRef.SubstDeclarationNameInfo(D->getNameInfo(), TemplateArgs);
+
   CXXRecordDecl *Record
     = CXXRecordDecl::Create(SemaRef.Context, D->getTagKind(), Owner,
                             D->getLocStart(), NameInfo.getLoc(),

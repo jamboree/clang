@@ -1047,7 +1047,7 @@ static Expr *captureThis(Sema &S, ASTContext &Context, RecordDecl *RD,
   }
   
   FieldDecl *Field = FieldDecl::Create(
-      Context, RD, Loc, Loc, nullptr, CaptureThisFieldTy,
+      Context, RD, Loc, Loc, {}, CaptureThisFieldTy,
       Context.getTrivialTypeSourceInfo(CaptureThisFieldTy, Loc), nullptr, false,
       ICIS_NoInit);
 

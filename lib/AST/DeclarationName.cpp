@@ -232,9 +232,9 @@ void DeclarationName::print(raw_ostream &OS, const PrintingPolicy &Policy) {
     return;
   case DeclarationName::CXXTemplatedName: {
     TemplateDeclNameParmDecl *TDP = N.getCXXTemplatedName();
-    if (IdentifierInfo *Id = TDP->getIdentifier())
-      OS << Id->getName();
-    else
+    //if (IdentifierInfo *Id = TDP->getIdentifier())
+    //  OS << Id->getName();
+    //else
       OS << "declname-parameter-" << TDP->getDepth() << '-' << TDP->getIndex();
     return;
   }

@@ -1349,6 +1349,10 @@ public:
 
   void setDescribedVarTemplate(VarTemplateDecl *Template);
 
+  DeclarationNameInfo getNameInfo() const {
+    return DeclarationNameInfo(getDeclName(), getLocation());
+  }
+
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K >= firstVar && K <= lastVar; }
@@ -2356,10 +2360,10 @@ class FieldDecl : public DeclaratorDecl, public Mergeable<FieldDecl> {
   llvm::PointerIntPair<void *, 2, InitStorageKind> InitStorage;
 protected:
   FieldDecl(Kind DK, DeclContext *DC, SourceLocation StartLoc,
-            SourceLocation IdLoc, IdentifierInfo *Id,
+            SourceLocation IdLoc, DeclarationName N,
             QualType T, TypeSourceInfo *TInfo, Expr *BW, bool Mutable,
             InClassInitStyle InitStyle)
-    : DeclaratorDecl(DK, DC, IdLoc, Id, T, TInfo, StartLoc),
+    : DeclaratorDecl(DK, DC, IdLoc, N, T, TInfo, StartLoc),
       Mutable(Mutable), CachedFieldIndex(0),
       InitStorage(BW, (InitStorageKind) InitStyle) {
     assert((!BW || InitStyle == ICIS_NoInit) && "got initializer for bitfield");
@@ -2368,7 +2372,7 @@ protected:
 public:
   static FieldDecl *Create(const ASTContext &C, DeclContext *DC,
                            SourceLocation StartLoc, SourceLocation IdLoc,
-                           IdentifierInfo *Id, QualType T,
+                           DeclarationName N, QualType T,
                            TypeSourceInfo *TInfo, Expr *BW, bool Mutable,
                            InClassInitStyle InitStyle);
 
@@ -2490,6 +2494,10 @@ public:
   FieldDecl *getCanonicalDecl() override { return getFirstDecl(); }
   const FieldDecl *getCanonicalDecl() const { return getFirstDecl(); }
 
+  DeclarationNameInfo getNameInfo() const {
+    return DeclarationNameInfo(getDeclName(), getLocation());
+  }
+
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K >= firstField && K <= lastField; }
@@ -2531,6 +2539,10 @@ public:
   /// Retrieves the canonical declaration of this enumerator.
   EnumConstantDecl *getCanonicalDecl() override { return getFirstDecl(); }
   const EnumConstantDecl *getCanonicalDecl() const { return getFirstDecl(); }
+
+  DeclarationNameInfo getNameInfo() const {
+    return DeclarationNameInfo(getDeclName(), getLocation());
+  }
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
@@ -2582,6 +2594,10 @@ public:
   IndirectFieldDecl *getCanonicalDecl() override { return getFirstDecl(); }
   const IndirectFieldDecl *getCanonicalDecl() const { return getFirstDecl(); }
 
+  DeclarationNameInfo getNameInfo() const {
+    return DeclarationNameInfo(getDeclName(), getLocation());
+  }
+
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == IndirectField; }
@@ -2621,6 +2637,10 @@ public:
       return SourceRange(LocStart, getLocation());
     else
       return SourceRange(getLocation());
+  }
+
+  DeclarationNameInfo getNameInfo() const {
+    return DeclarationNameInfo(getDeclName(), getLocation());
   }
 
   // Implement isa/cast/dyncast/etc.
@@ -2922,7 +2942,9 @@ public:
   /// \brief Whether this declaration declares a type that is
   /// dependent, i.e., a type that somehow depends on template
   /// parameters.
-  bool isDependentType() const { return isDependentContext(); }
+  bool isDependentType() const {
+    return isDependentContext() || getDeclName().isDependentName();
+  }
 
   /// @brief Starts the definition of this tag declaration.
   ///

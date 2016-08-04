@@ -3907,7 +3907,7 @@ static void captureVariablyModifiedType(ASTContext &Context, QualType T,
             // Build the non-static data member.
             auto Field =
                 FieldDecl::Create(Context, CapRecord, ExprLoc, ExprLoc,
-                                  /*Id*/ nullptr, SizeType, /*TInfo*/ nullptr,
+                                  /*Id*/ {}, SizeType, /*TInfo*/ nullptr,
                                   /*BW*/ nullptr, /*Mutable*/ false,
                                   /*InitStyle*/ ICIS_NoInit);
             Field->setImplicit(true);
@@ -13493,7 +13493,7 @@ static bool captureInCapturedRegion(CapturedRegionScopeInfo *RSI,
     RecordDecl *RD = RSI->TheRecordDecl;
 
     FieldDecl *Field
-      = FieldDecl::Create(S.Context, RD, Loc, Loc, nullptr, CaptureType,
+      = FieldDecl::Create(S.Context, RD, Loc, Loc, {}, CaptureType,
                           S.Context.getTrivialTypeSourceInfo(CaptureType, Loc),
                           nullptr, false, ICIS_NoInit);
     Field->setImplicit(true);
@@ -13525,7 +13525,7 @@ static void addAsFieldToClosureType(Sema &S, LambdaScopeInfo *LSI,
 
   // Build the non-static data member.
   FieldDecl *Field
-    = FieldDecl::Create(S.Context, Lambda, Loc, Loc, nullptr, FieldType,
+    = FieldDecl::Create(S.Context, Lambda, Loc, Loc, {}, FieldType,
                         S.Context.getTrivialTypeSourceInfo(FieldType, Loc),
                         nullptr, false, ICIS_NoInit);
   Field->setImplicit(true);

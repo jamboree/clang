@@ -3448,16 +3448,16 @@ unsigned FunctionDecl::getMemoryFunctionKind() const {
 
 FieldDecl *FieldDecl::Create(const ASTContext &C, DeclContext *DC,
                              SourceLocation StartLoc, SourceLocation IdLoc,
-                             IdentifierInfo *Id, QualType T,
+                             DeclarationName N, QualType T,
                              TypeSourceInfo *TInfo, Expr *BW, bool Mutable,
                              InClassInitStyle InitStyle) {
-  return new (C, DC) FieldDecl(Decl::Field, DC, StartLoc, IdLoc, Id, T, TInfo,
+  return new (C, DC) FieldDecl(Decl::Field, DC, StartLoc, IdLoc, N, T, TInfo,
                                BW, Mutable, InitStyle);
 }
 
 FieldDecl *FieldDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) FieldDecl(Field, nullptr, SourceLocation(),
-                               SourceLocation(), nullptr, QualType(), nullptr,
+                               SourceLocation(), {}, QualType(), nullptr,
                                nullptr, false, ICIS_NoInit);
 }
 

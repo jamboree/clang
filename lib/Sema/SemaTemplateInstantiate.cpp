@@ -2753,6 +2753,9 @@ Sema::SubstNestedNameSpecifierLoc(NestedNameSpecifierLoc NNS,
 DeclarationNameInfo
 Sema::SubstDeclarationNameInfo(const DeclarationNameInfo &NameInfo,
                          const MultiLevelTemplateArgumentList &TemplateArgs) {
+  if (!NameInfo.getName().isDependentName())
+    return NameInfo;
+
   TemplateInstantiator Instantiator(*this, TemplateArgs, NameInfo.getLoc(),
                                     NameInfo.getName());
   return Instantiator.TransformDeclarationNameInfo(NameInfo);

@@ -3065,7 +3065,7 @@ void CGOpenMPRuntime::emitKmpRoutineEntryT(QualType KmpInt32Ty) {
 static FieldDecl *addFieldToRecordDecl(ASTContext &C, DeclContext *DC,
                                        QualType FieldTy) {
   auto *Field = FieldDecl::Create(
-      C, DC, SourceLocation(), SourceLocation(), /*Id=*/nullptr, FieldTy,
+      C, DC, SourceLocation(), SourceLocation(), /*Id=*/{}, FieldTy,
       C.getTrivialTypeSourceInfo(FieldTy, SourceLocation()),
       /*BW=*/nullptr, /*Mutable=*/false, /*InitStyle=*/ICIS_NoInit);
   Field->setAccess(AS_public);

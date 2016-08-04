@@ -789,7 +789,7 @@ VarDecl *Sema::createLambdaInitCaptureVarDecl(SourceLocation Loc,
 FieldDecl *Sema::buildInitCaptureField(LambdaScopeInfo *LSI, VarDecl *Var) {
   FieldDecl *Field = FieldDecl::Create(
       Context, LSI->Lambda, Var->getLocation(), Var->getLocation(),
-      nullptr, Var->getType(), Var->getTypeSourceInfo(), nullptr, false,
+      {}, Var->getType(), Var->getTypeSourceInfo(), nullptr, false,
       ICIS_NoInit);
   Field->setImplicit(true);
   Field->setAccess(AS_private);

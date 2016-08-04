@@ -1251,8 +1251,8 @@ FieldDecl *ASTContext::getInstantiatedFromUnnamedFieldDecl(FieldDecl *Field) {
 
 void ASTContext::setInstantiatedFromUnnamedFieldDecl(FieldDecl *Inst,
                                                      FieldDecl *Tmpl) {
-  assert(!Inst->getDeclName() && "Instantiated field decl is not unnamed");
-  assert(!Tmpl->getDeclName() && "Template field decl is not unnamed");
+  assert(!Inst->getIdentifier() && "Instantiated field decl is not unnamed");
+  assert(!Tmpl->getIdentifier() && "Template field decl is not unnamed");
   assert(!InstantiatedFromUnnamedFieldDecl[Inst] &&
          "Already noted what unnamed field was instantiated from");
 
