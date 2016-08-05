@@ -74,21 +74,11 @@ public:
   }
 };
 
-/// CXXTemplateDeclNameParmName - Contains the actual identifier that refers to
-/// the declname paramter.
-class CXXTemplateDeclNameParmName : public DeclarationNameExtra,
-                                    public llvm::FoldingSetNode {
-public:
-  TemplateDeclNameParmDecl *Decl;
-
-  /// FETokenInfo - Extra information associated with this operator
-  /// name that can be used by the front end.
-  void *FETokenInfo;
-
-  void Profile(llvm::FoldingSetNodeID &FSID) { FSID.AddPointer(Decl); }
-};
-
 static int compareInt(unsigned A, unsigned B) {
+  return (A < B ? -1 : (A > B ? 1 : 0));
+}
+
+static int comparePtr(void const *A, void const *B) {
   return (A < B ? -1 : (A > B ? 1 : 0));
 }
 
@@ -145,8 +135,9 @@ int DeclarationName::compare(DeclarationName LHS, DeclarationName RHS) {
     return 0;
 
   case DeclarationName::CXXTemplatedName:
-    return LHS.getCXXTemplatedName()->getName().compare(
-                                   RHS.getCXXTemplatedName()->getName());
+    return comparePtr(
+        LHS.getAsCXXTemplateDeclNameParmName()->getCanonicalName(),
+        RHS.getAsCXXTemplateDeclNameParmName()->getCanonicalName());
   }
 
   llvm_unreachable("Invalid DeclarationName Kind!");
@@ -231,10 +222,10 @@ void DeclarationName::print(raw_ostream &OS, const PrintingPolicy &Policy) {
     OS << "<using-directive>";
     return;
   case DeclarationName::CXXTemplatedName: {
-    TemplateDeclNameParmDecl *TDP = N.getCXXTemplatedName();
-    //if (IdentifierInfo *Id = TDP->getIdentifier())
-    //  OS << Id->getName();
-    //else
+    CXXTemplateDeclNameParmName *TDP = N.getAsCXXTemplateDeclNameParmName();
+    if (IdentifierInfo *Id = TDP->getIdentifier())
+      OS << Id->getName();
+    else
       OS << "declname-parameter-" << TDP->getDepth() << '-' << TDP->getIndex();
     return;
   }
@@ -298,7 +289,7 @@ bool DeclarationName::isDependentName() const {
 }
 
 bool clang::DeclarationName::containsUnexpandedParameterPack() const {
-  if (TemplateDeclNameParmDecl *TDP = getCXXTemplatedName()) {
+  if (CXXTemplateDeclNameParmName *TDP = getAsCXXTemplateDeclNameParmName()) {
     return TDP->isParameterPack();
   }
   return false;
@@ -331,13 +322,6 @@ OverloadedOperatorKind DeclarationName::getCXXOverloadedOperator() const {
 IdentifierInfo *DeclarationName::getCXXLiteralIdentifier() const {
   if (CXXLiteralOperatorIdName *CXXLit = getAsCXXLiteralOperatorIdName())
     return CXXLit->ID;
-  else
-    return nullptr;
-}
-
-TemplateDeclNameParmDecl *DeclarationName::getCXXTemplatedName() const {
-  if (CXXTemplateDeclNameParmName *CXXName = getAsCXXTemplateDeclNameParmName())
-    return CXXName->Decl;
   else
     return nullptr;
 }
@@ -527,27 +511,39 @@ DeclarationNameTable::getCXXLiteralOperatorName(IdentifierInfo *II) {
 }
 
 DeclarationName
-DeclarationNameTable::getCXXTemplatedName(TemplateDeclNameParmDecl *Decl) {
+DeclarationNameTable::getCXXTemplatedName(unsigned Depth, unsigned Index,
+                                          bool ParameterPack,
+                                          TemplateDeclNameParmDecl *TDPDecl) {
   llvm::FoldingSet<CXXTemplateDeclNameParmName> *TemplatedNames =
       static_cast<llvm::FoldingSet<CXXTemplateDeclNameParmName> *>(
           CXXTemplatedNames);
 
   llvm::FoldingSetNodeID ID;
-  ID.AddPointer(Decl);
-
+  CXXTemplateDeclNameParmName::Profile(ID, Depth, Index, ParameterPack,
+                                       TDPDecl);
   void *InsertPos = nullptr;
-  if (CXXTemplateDeclNameParmName *Name =
-          TemplatedNames->FindNodeOrInsertPos(ID, InsertPos))
-    return DeclarationName(Name);
+  CXXTemplateDeclNameParmName *NameParm =
+      TemplatedNames->FindNodeOrInsertPos(ID, InsertPos);
 
-  CXXTemplateDeclNameParmName *TemplatedName =
-      new (Ctx) CXXTemplateDeclNameParmName;
-  TemplatedName->ExtraKindOrNumArgs = DeclarationNameExtra::CXXTemplatedName;
-  TemplatedName->Decl = Decl;
-  TemplatedName->FETokenInfo = nullptr;
+  if (NameParm)
+    return DeclarationName(NameParm);
 
-  TemplatedNames->InsertNode(TemplatedName, InsertPos);
-  return DeclarationName(TemplatedName);
+  if (TDPDecl) {
+    DeclarationName Canon = getCXXTemplatedName(Depth, Index, ParameterPack);
+    NameParm = new (Ctx) CXXTemplateDeclNameParmName(
+        TDPDecl, Canon.getCXXTemplatedName());
+
+    CXXTemplateDeclNameParmName *NameCheck =
+        TemplatedNames->FindNodeOrInsertPos(ID, InsertPos);
+    assert(!NameCheck && "Template declname parameter canonical name broken");
+    (void)NameCheck;
+  } else
+    NameParm =
+        new (Ctx) CXXTemplateDeclNameParmName(Depth, Index, ParameterPack);
+
+  TemplatedNames->InsertNode(NameParm, InsertPos);
+
+  return DeclarationName(NameParm);
 }
 
 DeclarationNameLoc::DeclarationNameLoc(DeclarationName Name) {
@@ -695,4 +691,8 @@ SourceLocation DeclarationNameInfo::getEndLoc() const {
     return NameLoc;
   }
   llvm_unreachable("Unexpected declaration name kind");
+}
+
+inline IdentifierInfo *CXXTemplateDeclNameParmName::getIdentifier() const {
+  return isCanonical() ? nullptr : TDPDecl->getIdentifier();
 }

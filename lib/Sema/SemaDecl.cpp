@@ -3746,8 +3746,8 @@ void Sema::handleTagNumbering(const TagDecl *Tag, Scope *TagScope) {
   if (isa<CXXRecordDecl>(Tag->getParent())) {
     // If this tag is the direct child of a class, number it if
     // it is anonymous.
-    if (Tag->getDeclName().getCXXTemplatedName() || !Tag->getName().empty() ||
-        Tag->getTypedefNameForAnonDecl())
+    if (Tag->getDeclName().getNameKind() == DeclarationName::CXXTemplatedName ||
+        !Tag->getName().empty() || Tag->getTypedefNameForAnonDecl())
       return;
     MangleNumberingContext &MCtx =
         Context.getManglingNumberContext(Tag->getParent());

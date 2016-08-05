@@ -5113,7 +5113,7 @@ void ASTRecordWriter::AddDeclarationName(DeclarationName Name) {
     break;
 
   case DeclarationName::CXXTemplatedName:
-    AddDeclRef(Name.getCXXTemplatedName());
+    AddDeclRef(Name.getCXXTemplatedName()->getDecl());
     break;
   }
 }

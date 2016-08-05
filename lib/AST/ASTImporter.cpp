@@ -6617,12 +6617,13 @@ DeclarationName ASTImporter::Import(DeclarationName FromName) {
     // FIXME: STATICS!
     return DeclarationName::getUsingDirectiveName();
 
-  case DeclarationName::CXXTemplatedName:
-    if (TemplateDeclNameParmDecl *TDP = cast_or_null<TemplateDeclNameParmDecl>(
-            Import(FromName.getCXXTemplatedName())))
-      return ToContext.DeclarationNames.getCXXTemplatedName(TDP);
-
-    return DeclarationName();
+  case DeclarationName::CXXTemplatedName: {
+    CXXTemplateDeclNameParmName *TN = FromName.getCXXTemplatedName();
+    TemplateDeclNameParmDecl *TDP =
+        cast_or_null<TemplateDeclNameParmDecl>(Import(TN->getDecl()));
+    return ToContext.DeclarationNames.getCXXTemplatedName(
+        TN->getDepth(), TN->getIndex(), TN->isParameterPack(), TDP);
+  }
   }
 
   llvm_unreachable("Invalid DeclarationName Kind!");

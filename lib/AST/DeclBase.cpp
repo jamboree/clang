@@ -175,6 +175,9 @@ bool Decl::isTemplateParameterPack() const {
   if (const TemplateTemplateParmDecl *TTP
                                     = dyn_cast<TemplateTemplateParmDecl>(this))
     return TTP->isParameterPack();
+  if (const TemplateDeclNameParmDecl *TTP =
+          dyn_cast<TemplateDeclNameParmDecl>(this))
+    return TTP->isParameterPack();
   return false;
 }
 

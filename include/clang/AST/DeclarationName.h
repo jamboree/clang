@@ -15,6 +15,7 @@
 
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/PartialDiagnostic.h"
+#include "llvm/ADT/FoldingSet.h"
 #include "llvm/Support/Compiler.h"
 
 namespace llvm {
@@ -281,9 +282,9 @@ public:
   /// operator, retrieve the identifier associated with it.
   IdentifierInfo *getCXXLiteralIdentifier() const;
 
-  /// getAsCXXTemplatedName - If this name is the name of a template
-  /// declname parameter, retrieve the decl associated with it.
-  TemplateDeclNameParmDecl *getCXXTemplatedName() const;
+  CXXTemplateDeclNameParmName *getCXXTemplatedName() const {
+    return getAsCXXTemplateDeclNameParmName();
+  }
 
   /// getObjCSelector - Get the Objective-C selector stored in this
   /// declaration name.
@@ -359,6 +360,78 @@ inline bool operator>=(DeclarationName LHS, DeclarationName RHS) {
   return DeclarationName::compare(LHS, RHS) >= 0;
 }
 
+/// CXXTemplateDeclNameParmName - Contains the actual identifier that refers to
+/// the declname paramter.
+class CXXTemplateDeclNameParmName : public DeclarationNameExtra,
+                                    public llvm::FoldingSetNode {
+  // Helper data collector for canonical types.
+  struct CanonicalTDPTInfo {
+    unsigned Depth : 15;
+    unsigned ParameterPack : 1;
+    unsigned Index : 16;
+  };
+
+  CXXTemplateDeclNameParmName *CanonicalName;
+
+  union {
+    // Info for the canonical type.
+    CanonicalTDPTInfo CanTDPTInfo;
+    // Info for the non-canonical type.
+    TemplateDeclNameParmDecl *TDPDecl;
+  };
+
+  const CanonicalTDPTInfo &getCanTDPTInfo() const {
+    return CanonicalName->CanTDPTInfo;
+  }
+
+public:
+  /// FETokenInfo - Extra information associated with this operator
+  /// name that can be used by the front end.
+  void *FETokenInfo;
+
+  /// Build a non-canonical type.
+  CXXTemplateDeclNameParmName(TemplateDeclNameParmDecl *TDPDecl,
+                              CXXTemplateDeclNameParmName *Canon)
+      : CanonicalName(Canon), TDPDecl(TDPDecl) {}
+
+  /// Build the canonical type.
+  CXXTemplateDeclNameParmName(unsigned D, unsigned I, bool PP)
+      : CanonicalName(this) {
+    CanTDPTInfo.Depth = D;
+    CanTDPTInfo.Index = I;
+    CanTDPTInfo.ParameterPack = PP;
+  }
+
+  unsigned getDepth() const { return getCanTDPTInfo().Depth; }
+  unsigned getIndex() const { return getCanTDPTInfo().Index; }
+  bool isParameterPack() const { return getCanTDPTInfo().ParameterPack; }
+
+  bool isCanonical() const { return CanonicalName == this; }
+
+  CXXTemplateDeclNameParmName *getCanonicalName() const {
+    return CanonicalName;
+  }
+
+  TemplateDeclNameParmDecl *getDecl() const {
+    return isCanonical() ? nullptr : TDPDecl;
+  }
+
+  IdentifierInfo *getIdentifier() const;
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(ID, getDepth(), getIndex(), isParameterPack(), getDecl());
+  }
+
+  static void Profile(llvm::FoldingSetNodeID &ID, unsigned Depth,
+                      unsigned Index, bool ParameterPack,
+                      TemplateDeclNameParmDecl *TDPDecl) {
+    ID.AddInteger(Depth);
+    ID.AddInteger(Index);
+    ID.AddBoolean(ParameterPack);
+    ID.AddPointer(TDPDecl);
+  }
+};
+
 /// DeclarationNameTable - Used to store and retrieve DeclarationName
 /// instances for the various kinds of declaration names, e.g., normal
 /// identifiers, C++ constructor names, etc. This class contains
@@ -412,7 +485,9 @@ public:
   DeclarationName getCXXLiteralOperatorName(IdentifierInfo *II);
 
   /// getCXXTemplatedName - Get the name of the template declname parameter.
-  DeclarationName getCXXTemplatedName(TemplateDeclNameParmDecl *Decl);
+  DeclarationName
+  getCXXTemplatedName(unsigned Depth, unsigned Index, bool ParameterPack,
+                      TemplateDeclNameParmDecl *TDPDecl = nullptr);
 };
 
 /// DeclarationNameLoc - Additional source/type location info
