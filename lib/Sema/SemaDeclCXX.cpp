@@ -1306,7 +1306,8 @@ bool Sema::isCurrentClassName(const IdentifierInfo &II, Scope *,
     if (DeclarationName Name = CurDecl->getDeclName()) {
       if (IdentifierInfo *Id = Name.getAsIdentifierInfo())
         return &II == Id;
-      if (TemplateDeclNameParmDecl *TDP = Name.getCXXTemplatedName())
+
+      if (TemplateDeclNameParmDecl *TDP = Name.getCXXTemplatedNameParmDecl())
         return TDP->getIdentifier() == &II;
     }
   }

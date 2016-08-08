@@ -833,7 +833,8 @@ static bool LookupDirect(Sema &S, LookupResult &R, const DeclContext *DC) {
     DeclareImplicitMemberFunctionsWithName(S, R.getLookupName(), DC);
 
   // Perform lookup into this declaration context.
-  DeclContext::lookup_result DR = DC->lookup(R.getLookupName());
+  DeclContext::lookup_result DR =
+      DC->lookup(R.getLookupName().getCanonicalName());
   for (DeclContext::lookup_iterator I = DR.begin(), E = DR.end(); I != E;
        ++I) {
     NamedDecl *D = *I;
@@ -1050,7 +1051,8 @@ bool Sema::CppLookupName(LookupResult &R, Scope *S) {
   // If this name is templated, lookup with the templated name instead.
   if (TemplateDeclNameParmDecl *TDP =
           LookupTemplateDeclNameParm(R.getLookupName().getAsIdentifierInfo()))
-    R.setLookupName(Context.DeclarationNames.getCXXTemplatedName(TDP));
+    R.setLookupName(Context.DeclarationNames.getCXXTemplatedName(
+        TDP->getDepth(), TDP->getIndex(), TDP->isParameterPack(), TDP));
 
   DeclarationName Name = R.getLookupName();
   Sema::LookupNameKind NameKind = R.getLookupKind();
@@ -2009,7 +2011,8 @@ bool Sema::LookupQualifiedName(LookupResult &R, DeclContext *LookupCtx,
   // If this name is templated, lookup with the templated name instead.
   if (TemplateDeclNameParmDecl *TDP =
           LookupTemplateDeclNameParm(R.getLookupName().getAsIdentifierInfo()))
-    R.setLookupName(Context.DeclarationNames.getCXXTemplatedName(TDP));
+    R.setLookupName(Context.DeclarationNames.getCXXTemplatedName(
+        TDP->getDepth(), TDP->getIndex(), TDP->isParameterPack(), TDP));
 
   struct QualifiedLookupInScope {
     bool oldVal;
@@ -3855,7 +3858,7 @@ static void getNestedNameSpecifierIdentifiers(
     II = NNS->getAsDeclName().getAsIdentifierInfo();
     if (!II) {
       TemplateDeclNameParmDecl *TDP =
-          NNS->getAsDeclName().getCXXTemplatedName();
+          NNS->getAsDeclName().getCXXTemplatedNameParmDecl();
       assert(TDP != nullptr && "must be a templated name");
       II = TDP->getDeclName().getAsIdentifierInfo();
     }

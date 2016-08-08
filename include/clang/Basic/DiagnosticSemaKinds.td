@@ -3659,6 +3659,9 @@ def err_template_decl_ref : Error<
 def err_template_name_depends_on_own_param : Error<
   "template name cannot depend on its own declname parameter">;
 
+def err_templated_name_on_local_decl : Error<
+  "local declaration name cannot be templated">;
+
 // C++ Template Argument Lists
 def err_template_missing_args : Error<
   "use of class template %0 requires template arguments">;

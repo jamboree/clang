@@ -232,7 +232,8 @@ static void GenerateInjectedTemplateArgs(ASTContext &Context,
         Arg = TemplateArgument(TemplateName(TTP));
     } else {
       auto *TDP = cast<TemplateDeclNameParmDecl>(Param);
-      DeclarationName Name = Context.DeclarationNames.getCXXTemplatedName(TDP);
+      DeclarationName Name = Context.DeclarationNames.getCXXTemplatedName(
+          TDP->getDepth(), TDP->getIndex(), TDP->isParameterPack(), TDP);
       if (TDP->isParameterPack())
         Arg = TemplateArgument(Name, Optional<unsigned>());
       else

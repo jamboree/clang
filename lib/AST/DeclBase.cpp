@@ -1656,7 +1656,8 @@ void DeclContext::makeDeclVisibleInContextImpl(NamedDecl *D, bool Internal) {
         Source->FindExternalVisibleDeclsByName(this, D->getDeclName());
 
   // Insert this declaration into the map.
-  StoredDeclsList &DeclNameEntries = (*Map)[D->getDeclName()];
+  StoredDeclsList &DeclNameEntries =
+      (*Map)[D->getDeclName().getCanonicalName()];
 
   if (Internal) {
     // If this is being added as part of loading an external declaration,

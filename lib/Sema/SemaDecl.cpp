@@ -12399,6 +12399,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
     // Check for invalid 'foo::'.
     if (SS.isInvalid()) {
       Name = nullptr;
+      DeclName = {};
       goto CreateNewDecl;
     }
 
@@ -12426,6 +12427,9 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
     // Look-up name inside 'foo::'.
     LookupQualifiedName(Previous, DC);
 
+    // The lookup name may be changed to a templated one after lookup.
+    DeclName = Previous.getLookupName();
+
     if (Previous.isAmbiguous())
       return nullptr;
 
@@ -12446,6 +12450,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
       Diag(NameLoc, diag::err_not_tag_in_scope)
         << Kind << Name << DC << SS.getRange();
       Name = nullptr;
+      DeclName = {};
       Invalid = true;
       goto CreateNewDecl;
     }
@@ -12704,6 +12709,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
           else {
             // Recover by making this an anonymous redefinition.
             Name = nullptr;
+            DeclName = {};
             Previous.clear();
             Invalid = true;
           }
@@ -12820,6 +12826,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
                 // struct be anonymous, which will make any later
                 // references get the previous definition.
                 Name = nullptr;
+                DeclName = {};
                 Previous.clear();
                 Invalid = true;
               }
@@ -12832,6 +12839,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
                 Diag(PrevTagDecl->getLocation(),
                      diag::note_previous_definition);
                 Name = nullptr;
+                DeclName = {};
                 Previous.clear();
                 Invalid = true;
               }
@@ -12912,12 +12920,27 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
         Diag(NameLoc, diag::err_redefinition_different_kind) << Name;
         Diag(PrevDecl->getLocation(), diag::note_previous_definition);
         Name = nullptr;
+        DeclName = {};
         Invalid = true;
       }
 
       // The existing declaration isn't relevant to us; we're in a
       // new scope, so clear out the previous declaration.
       Previous.clear();
+    }
+  }
+
+  // Templated name is not allowed on local declarations.
+  if (CurContext->isFunctionOrMethod()) {
+    if (TemplateDeclNameParmDecl *TDP =
+            DeclName.getCXXTemplatedNameParmDecl()) {
+      Diag(NameLoc, diag::err_templated_name_on_local_decl);
+      Diag(TDP->getLocation(), diag::note_template_param_here);
+      // Recover by making this an anonymous redefinition.
+      Name = nullptr;
+      DeclName = {};
+      Previous.clear();
+      Invalid = true;
     }
   }
 
@@ -12996,7 +13019,7 @@ CreateNewDecl:
                                cast_or_null<RecordDecl>(PrevDecl));
   }
 
-  if (TemplateDeclNameParmDecl *TDP = DeclName.getCXXTemplatedName())
+  if (TemplateDeclNameParmDecl *TDP = DeclName.getCXXTemplatedNameParmDecl())
     TDP->setReferenced();
 
   // C++11 [dcl.type]p3:

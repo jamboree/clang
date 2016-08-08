@@ -572,7 +572,8 @@ static void maybeDiagnoseTemplateParameterShadow(Sema &SemaRef, Scope *S,
   if (!PrevDecl) {
     // We have to handle template declname param specially because LookupName
     // won't find it as the result, while the lookup name is replaced with it.
-    if (TemplateDeclNameParmDecl *TDP = R.getLookupName().getCXXTemplatedName())
+    if (TemplateDeclNameParmDecl *TDP =
+            R.getLookupName().getCXXTemplatedNameParmDecl())
       PrevDecl = TDP;
   } else if (!PrevDecl->isTemplateParameter())
     PrevDecl = nullptr;
@@ -927,8 +928,8 @@ DeclNameResult Sema::ActOnDeclName(Scope *S, SourceLocation QuestionLoc,
     return ParsedDeclNameTy::make(DName);
 
   if (TemplateDeclNameParmDecl *TDP = LookupTemplateDeclNameParm(Name))
-    return ParsedDeclNameTy::make(
-        Context.DeclarationNames.getCXXTemplatedName(TDP));
+    return ParsedDeclNameTy::make(Context.DeclarationNames.getCXXTemplatedName(
+        TDP->getDepth(), TDP->getIndex(), TDP->isParameterPack(), TDP));
 
   // FIXME: diag
   return true;
@@ -1025,11 +1026,11 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
   if (Previous.begin() != Previous.end())
     PrevDecl = (*Previous.begin())->getUnderlyingDecl();
   else if (TemplateDeclNameParmDecl *TDP =
-               Previous.getLookupName().getCXXTemplatedName()) {
+               Previous.getLookupName().getCXXTemplatedNameParmDecl()) {
     // Diagnose cases like:
     //   template<declname C> class C;
     if (S->getTemplateParamParent()->isDeclScope(TDP)) {
-      Diag(NameLoc, diag::err_template_name_depends_on_own_param) << Name;
+      Diag(NameLoc, diag::err_template_name_depends_on_own_param);
       Diag(TDP->getLocation(), diag::note_template_param_here);
     }
   }
@@ -2621,7 +2622,7 @@ static bool isTemplateArgumentTemplateParameter(
   }
 
   case TemplateArgument::DeclName: {
-    const TemplateDeclNameParmDecl *TDP =
+    const CXXTemplateDeclNameParmName *TDP =
         Arg.getAsDeclName().getCXXTemplatedName();
     return TDP && TDP->getDepth() == Depth && TDP->getIndex() == Index;
   }
@@ -8497,7 +8498,8 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
     // The name itself can also be templated.
     if (TemplateDeclNameParmDecl *TDP =
             LookupTemplateDeclNameParm(Name.getAsIdentifierInfo()))
-      Name = Context.DeclarationNames.getCXXTemplatedName(TDP);
+      Name = Context.DeclarationNames.getCXXTemplatedName(
+          TDP->getDepth(), TDP->getIndex(), TDP->isParameterPack(), TDP);
 
     return Context.getDependentNameType(
         Keyword, QualifierLoc.getNestedNameSpecifier(), Name);

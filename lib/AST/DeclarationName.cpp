@@ -223,9 +223,9 @@ void DeclarationName::print(raw_ostream &OS, const PrintingPolicy &Policy) {
     return;
   case DeclarationName::CXXTemplatedName: {
     CXXTemplateDeclNameParmName *TDP = N.getAsCXXTemplateDeclNameParmName();
-    if (IdentifierInfo *Id = TDP->getIdentifier())
-      OS << Id->getName();
-    else
+    //if (IdentifierInfo *Id = TDP->getIdentifier())
+    //  OS << Id->getName();
+    //else
       OS << "declname-parameter-" << TDP->getDepth() << '-' << TDP->getIndex();
     return;
   }
@@ -541,8 +541,10 @@ DeclarationNameTable::getCXXTemplatedName(unsigned Depth, unsigned Index,
     NameParm =
         new (Ctx) CXXTemplateDeclNameParmName(Depth, Index, ParameterPack);
 
-  TemplatedNames->InsertNode(NameParm, InsertPos);
+  NameParm->ExtraKindOrNumArgs = DeclarationNameExtra::CXXTemplatedName;
+  NameParm->FETokenInfo = nullptr;
 
+  TemplatedNames->InsertNode(NameParm, InsertPos);
   return DeclarationName(NameParm);
 }
 

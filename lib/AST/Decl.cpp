@@ -1518,7 +1518,9 @@ static bool isRedeclarable(Decl::Kind K) {
 }
 
 bool NamedDecl::declarationReplaces(NamedDecl *OldD, bool IsKnownNewer) const {
-  assert(getDeclName() == OldD->getDeclName() && "Declaration name mismatch");
+  assert(getDeclName().getCanonicalName() ==
+             OldD->getDeclName().getCanonicalName() &&
+         "Declaration name mismatch");
 
   // Never replace one imported declaration with another; we need both results
   // when re-exporting.

@@ -3766,7 +3766,7 @@ bool TreeTransform<Derived>::TransformTemplateArgument(
   }
 
   case TemplateArgument::DeclName: {
-    DeclarationNameInfo NameInfo = TransformDeclarationNameInfo(
+    DeclarationNameInfo NameInfo = getDerived().TransformDeclarationNameInfo(
         DeclarationNameInfo(Arg.getAsDeclName(), Input.getDeclNameLoc()));
     Output = TemplateArgumentLoc(TemplateArgument(NameInfo.getName()),
                                  NameInfo.getLoc());

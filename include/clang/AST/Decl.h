@@ -2358,6 +2358,12 @@ class FieldDecl : public DeclaratorDecl, public Mergeable<FieldDecl> {
   /// field has an in-class initializer which has not yet been parsed
   /// and attached.
   llvm::PointerIntPair<void *, 2, InitStorageKind> InitStorage;
+
+  /// \brief If this field is an instantiation of a data member
+  /// of a class template specialization, this is the member specialization
+  /// information.
+  MemberSpecializationInfo *SpecializationInfo;
+
 protected:
   FieldDecl(Kind DK, DeclContext *DC, SourceLocation StartLoc,
             SourceLocation IdLoc, DeclarationName N,

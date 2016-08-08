@@ -911,7 +911,7 @@ Decl *TemplateInstantiator::TransformDecl(SourceLocation Loc, Decl *D) {
 
 DeclarationNameInfo TemplateInstantiator::TransformDeclarationNameInfo(
     const DeclarationNameInfo &NameInfo) {
-  if (TemplateDeclNameParmDecl *TDP =
+  if (CXXTemplateDeclNameParmName *TDP =
           NameInfo.getName().getCXXTemplatedName()) {
     if (TDP->getDepth() < TemplateArgs.getNumLevels()) {
       // If the corresponding template argument is NULL or non-existent, it's
@@ -919,10 +919,10 @@ DeclarationNameInfo TemplateInstantiator::TransformDeclarationNameInfo(
       // template arguments in a function template, but there were some
       // arguments left unspecified.
       if (!TemplateArgs.hasTemplateArgument(TDP->getDepth(),
-                                            TDP->getPosition()))
+                                            TDP->getIndex()))
         return NameInfo;
 
-      TemplateArgument Arg = TemplateArgs(TDP->getDepth(), TDP->getPosition());
+      TemplateArgument Arg = TemplateArgs(TDP->getDepth(), TDP->getIndex());
       return DeclarationNameInfo(Arg.getAsDeclName(), NameInfo.getLoc());
     }
   }

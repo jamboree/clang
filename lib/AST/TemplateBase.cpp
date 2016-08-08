@@ -325,10 +325,10 @@ void TemplateArgument::Profile(llvm::FoldingSetNodeID &ID,
   case DeclName:
   case DeclNameExpansion: {
     DeclarationName Name = getAsDeclNameOrDeclNamePattern();
-    if (TemplateDeclNameParmDecl *TDP = Name.getCXXTemplatedName()) {
+    if (CXXTemplateDeclNameParmName *TDP = Name.getCXXTemplatedName()) {
       ID.AddBoolean(true);
       ID.AddInteger(TDP->getDepth());
-      ID.AddInteger(TDP->getPosition());
+      ID.AddInteger(TDP->getIndex());
       ID.AddBoolean(TDP->isParameterPack());
       // FIXME: should we differentiate it from TemplateTemplateParmDecl above?
     } else {

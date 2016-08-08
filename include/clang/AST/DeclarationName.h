@@ -286,6 +286,8 @@ public:
     return getAsCXXTemplateDeclNameParmName();
   }
 
+  TemplateDeclNameParmDecl *getCXXTemplatedNameParmDecl() const;
+
   /// getObjCSelector - Get the Objective-C selector stored in this
   /// declaration name.
   Selector getObjCSelector() const {
@@ -308,6 +310,10 @@ public:
   }
 
   void setFETokenInfo(void *T);
+
+  bool isCanonical() const;
+
+  DeclarationName getCanonicalName() const;
 
   /// operator== - Determine whether the specified names are identical..
   friend bool operator==(DeclarationName LHS, DeclarationName RHS) {
@@ -431,6 +437,25 @@ public:
     ID.AddPointer(TDPDecl);
   }
 };
+
+inline TemplateDeclNameParmDecl *
+DeclarationName::getCXXTemplatedNameParmDecl() const {
+  if (CXXTemplateDeclNameParmName *TN = getAsCXXTemplateDeclNameParmName())
+    return TN->getDecl();
+  return nullptr;
+}
+
+inline bool DeclarationName::isCanonical() const {
+  if (CXXTemplateDeclNameParmName *TN = getAsCXXTemplateDeclNameParmName())
+    return TN->isCanonical();
+  return true;
+}
+
+inline DeclarationName DeclarationName::getCanonicalName() const {
+  if (CXXTemplateDeclNameParmName *TN = getAsCXXTemplateDeclNameParmName())
+    return DeclarationName(TN->getCanonicalName());
+  return *this;
+}
 
 /// DeclarationNameTable - Used to store and retrieve DeclarationName
 /// instances for the various kinds of declaration names, e.g., normal
