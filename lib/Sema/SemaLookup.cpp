@@ -1033,7 +1033,8 @@ struct FindLocalExternScope {
 };
 } // end anonymous namespace
 
-TemplateDeclNameParmDecl *Sema::LookupTemplateDeclNameParm(IdentifierInfo *Id) {
+TemplateDeclNameParmDecl *
+Sema::LookupTemplateDeclNameParm(const IdentifierInfo *Id) {
   if (Id) {
     IdentifierResolver::iterator I = IdResolver.begin(Id),
                                  IEnd = IdResolver.end();
@@ -1045,14 +1046,15 @@ TemplateDeclNameParmDecl *Sema::LookupTemplateDeclNameParm(IdentifierInfo *Id) {
   return nullptr;
 }
 
+DeclarationName Sema::getPossiblyTemplatedName(const IdentifierInfo *Id) {
+  if (TemplateDeclNameParmDecl *TDP = LookupTemplateDeclNameParm(Id))
+    return Context.DeclarationNames.getCXXTemplatedName(
+        TDP->getDepth(), TDP->getIndex(), TDP->isParameterPack(), TDP);
+  return DeclarationName(Id);
+}
+
 bool Sema::CppLookupName(LookupResult &R, Scope *S) {
   assert(getLangOpts().CPlusPlus && "Can perform only C++ lookup");
-
-  // If this name is templated, lookup with the templated name instead.
-  if (TemplateDeclNameParmDecl *TDP =
-          LookupTemplateDeclNameParm(R.getLookupName().getAsIdentifierInfo()))
-    R.setLookupName(Context.DeclarationNames.getCXXTemplatedName(
-        TDP->getDepth(), TDP->getIndex(), TDP->isParameterPack(), TDP));
 
   DeclarationName Name = R.getLookupName();
   Sema::LookupNameKind NameKind = R.getLookupKind();
@@ -2007,12 +2009,6 @@ bool Sema::LookupQualifiedName(LookupResult &R, DeclContext *LookupCtx,
           cast<TagDecl>(LookupCtx)->isCompleteDefinition() ||
           cast<TagDecl>(LookupCtx)->isBeingDefined()) &&
          "Declaration context must already be complete!");
-
-  // If this name is templated, lookup with the templated name instead.
-  if (TemplateDeclNameParmDecl *TDP =
-          LookupTemplateDeclNameParm(R.getLookupName().getAsIdentifierInfo()))
-    R.setLookupName(Context.DeclarationNames.getCXXTemplatedName(
-        TDP->getDepth(), TDP->getIndex(), TDP->isParameterPack(), TDP));
 
   struct QualifiedLookupInScope {
     bool oldVal;

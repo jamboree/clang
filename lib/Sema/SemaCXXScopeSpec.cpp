@@ -497,7 +497,8 @@ bool Sema::BuildCXXNestedNameSpecifier(Scope *S,
     return true;
   }
 
-  LookupResult Found(*this, Identifier, IdentifierLoc, 
+  DeclarationName Name = getPossiblyTemplatedName(Identifier);
+  LookupResult Found(*this, Name, IdentifierLoc,
                      LookupNestedNameSpecifierName);
 
   // Determine where to perform name lookup
@@ -572,18 +573,12 @@ bool Sema::BuildCXXNestedNameSpecifier(Scope *S,
   // If we performed lookup into a dependent context and did not find anything,
   // that's fine: just build a dependent nested-name-specifier.
   if (Found.empty()) {
-    DeclarationName Name;
-    if (Found.getLookupName().getNameKind() ==
-        DeclarationName::CXXTemplatedName) {
-      if (SS.getScopeRep() && SS.getScopeRep()->isValidTemplatedNamePrefix())
-        Name = Found.getLookupName();
-    } else if (isDependent &&
-               !(LookupCtx && LookupCtx->isRecord() &&
-                 (!cast<CXXRecordDecl>(LookupCtx)->hasDefinition() ||
-                  !cast<CXXRecordDecl>(LookupCtx)->hasAnyDependentBases())))
-      Name = Identifier;
-
-    if (Name) {
+    if (isDependent &&
+            !(LookupCtx && LookupCtx->isRecord() &&
+              (!cast<CXXRecordDecl>(LookupCtx)->hasDefinition() ||
+               !cast<CXXRecordDecl>(LookupCtx)->hasAnyDependentBases())) ||
+        (Name.isTemplatedName() && SS.getScopeRep() &&
+         SS.getScopeRep()->isValidTemplatedNamePrefix())) {
       // Don't speculate if we're just trying to improve error recovery.
       if (ErrorRecoveryLookup)
         return true;

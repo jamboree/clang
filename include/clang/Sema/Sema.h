@@ -1947,7 +1947,7 @@ public:
   bool isAcceptableTagRedeclaration(const TagDecl *Previous,
                                     TagTypeKind NewTag, bool isDefinition,
                                     SourceLocation NewTagLoc,
-                                    const IdentifierInfo *Name);
+                                    DeclarationName Name);
 
   enum TagUseKind {
     TUK_Reference,   // Reference to a tag:  'struct foo *X;'
@@ -2892,7 +2892,9 @@ public:
   /// \brief Clears the state of the given TypoExpr.
   void clearDelayedTypo(TypoExpr *TE);
 
-  TemplateDeclNameParmDecl *LookupTemplateDeclNameParm(IdentifierInfo *Id);
+  TemplateDeclNameParmDecl *LookupTemplateDeclNameParm(const IdentifierInfo *Id);
+
+  DeclarationName getPossiblyTemplatedName(const IdentifierInfo *Id);
 
   /// \brief Look up a name, looking for a single declaration.  Return
   /// null if the results were absent, ambiguous, or overloaded.
@@ -5384,7 +5386,7 @@ public:
   MemInitResult BuildMemInitializer(Decl *ConstructorD,
                                     Scope *S,
                                     CXXScopeSpec &SS,
-                                    IdentifierInfo *MemberOrBase,
+                                    DeclarationName MemberOrBase,
                                     ParsedType TemplateTypeTy,
                                     const DeclSpec &DS,
                                     SourceLocation IdLoc,
@@ -5810,7 +5812,7 @@ public:
 
   DeclResult CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
                                 SourceLocation KWLoc, CXXScopeSpec &SS,
-                                IdentifierInfo *Name, SourceLocation NameLoc,
+                                DeclarationName Name, SourceLocation NameLoc,
                                 AttributeList *Attr,
                                 TemplateParameterList *TemplateParams,
                                 AccessSpecifier AS,

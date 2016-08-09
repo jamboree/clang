@@ -232,6 +232,11 @@ public:
   /// callee in a call expression with dependent arguments.
   bool isDependentName() const;
 
+  /// \brief Determines whether the name itself refers to a template declname
+  /// parameter, in which case it's also a dependent name (i.e.
+  /// isDependentName() == true).
+  bool isTemplatedName() const;
+
   /// \brief Determines whether this declaration name contains an
   /// unexpanded parameter pack when it refers to a template declname parameter.
   bool containsUnexpandedParameterPack() const;

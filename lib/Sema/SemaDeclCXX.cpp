@@ -2825,9 +2825,9 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
                           SourceLocation IdLoc,
                           Expr *InitList,
                           SourceLocation EllipsisLoc) {
-  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, TemplateTypeTy,
-                             DS, IdLoc, InitList,
-                             EllipsisLoc);
+  return BuildMemInitializer(ConstructorD, S, SS,
+                             getPossiblyTemplatedName(MemberOrBase),
+                             TemplateTypeTy, DS, IdLoc, InitList, EllipsisLoc);
 }
 
 /// \brief Handle a C++ member initializer using parentheses syntax.
@@ -2845,8 +2845,9 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
                           SourceLocation EllipsisLoc) {
   Expr *List = new (Context) ParenListExpr(Context, LParenLoc,
                                            Args, RParenLoc);
-  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, TemplateTypeTy,
-                             DS, IdLoc, List, EllipsisLoc);
+  return BuildMemInitializer(ConstructorD, S, SS,
+                             getPossiblyTemplatedName(MemberOrBase),
+                             TemplateTypeTy, DS, IdLoc, List, EllipsisLoc);
 }
 
 namespace {
@@ -2878,7 +2879,7 @@ MemInitResult
 Sema::BuildMemInitializer(Decl *ConstructorD,
                           Scope *S,
                           CXXScopeSpec &SS,
-                          IdentifierInfo *MemberOrBase,
+                          DeclarationName MemberOrBase,
                           ParsedType TemplateTypeTy,
                           const DeclSpec &DS,
                           SourceLocation IdLoc,
@@ -2918,7 +2919,8 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
   //   using a qualified name. ]
   if (!SS.getScopeRep() && !TemplateTypeTy) {
     // Look for a member, first.
-    DeclContext::lookup_result Result = ClassDecl->lookup(MemberOrBase);
+    DeclContext::lookup_result Result =
+        ClassDecl->lookup(MemberOrBase.getCanonicalName());
     if (!Result.empty()) {
       ValueDecl *Member;
       if ((Member = dyn_cast<FieldDecl>(Result.front())) ||
@@ -12523,12 +12525,12 @@ FriendDecl *Sema::CheckFriendTypeDecl(SourceLocation LocStart,
 Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
                                     unsigned TagSpec, SourceLocation TagLoc,
                                     CXXScopeSpec &SS,
-                                    IdentifierInfo *Name,
+                                    IdentifierInfo *II,
                                     SourceLocation NameLoc,
                                     AttributeList *Attr,
                                     MultiTemplateParamsArg TempParamLists) {
   TagTypeKind Kind = TypeWithKeyword::getTagTypeKindForTypeSpec(TagSpec);
-
+  DeclarationName Name = getPossiblyTemplatedName(II);
   bool isExplicitSpecialization = false;
   bool Invalid = false;
 
@@ -12573,7 +12575,7 @@ Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
     if (SS.isEmpty()) {
       bool Owned = false;
       bool IsDependent = false;
-      return ActOnTag(S, TagSpec, TUK_Friend, TagLoc, SS, Name, NameLoc,
+      return ActOnTag(S, TagSpec, TUK_Friend, TagLoc, SS, II, NameLoc,
                       Attr, AS_public,
                       /*ModulePrivateLoc=*/SourceLocation(),
                       MultiTemplateParamsArg(), Owned, IsDependent,

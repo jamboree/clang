@@ -288,6 +288,12 @@ bool DeclarationName::isDependentName() const {
          getNameKind() == CXXTemplatedName;
 }
 
+bool DeclarationName::isTemplatedName() const {
+  return getStoredNameKind() == StoredDeclarationNameExtra &&
+         getExtra()->ExtraKindOrNumArgs ==
+             DeclarationNameExtra::CXXTemplatedName;
+}
+
 bool clang::DeclarationName::containsUnexpandedParameterPack() const {
   if (CXXTemplateDeclNameParmName *TDP = getAsCXXTemplateDeclNameParmName()) {
     return TDP->isParameterPack();

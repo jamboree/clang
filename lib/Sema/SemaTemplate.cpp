@@ -565,19 +565,9 @@ void Sema::translateTemplateArguments(const ASTTemplateArgsPtr &TemplateArgsIn,
 static void maybeDiagnoseTemplateParameterShadow(Sema &SemaRef, Scope *S,
                                                  SourceLocation Loc,
                                                  IdentifierInfo *Name) {
-  LookupResult R(SemaRef, Name, Loc, Sema::LookupOrdinaryName,
-                 Sema::ForRedeclaration);
-  SemaRef.LookupName(R, S);
-  NamedDecl *PrevDecl = R.getAsSingle<NamedDecl>();
-  if (!PrevDecl) {
-    // We have to handle template declname param specially because LookupName
-    // won't find it as the result, while the lookup name is replaced with it.
-    if (TemplateDeclNameParmDecl *TDP =
-            R.getLookupName().getCXXTemplatedNameParmDecl())
-      PrevDecl = TDP;
-  } else if (!PrevDecl->isTemplateParameter())
-    PrevDecl = nullptr;
-  if (PrevDecl)
+  NamedDecl *PrevDecl = SemaRef.LookupSingleName(
+      S, Name, Loc, Sema::LookupOrdinaryName, Sema::ForRedeclaration);
+  if (PrevDecl && PrevDecl->isTemplateParameter())
     SemaRef.DiagnoseTemplateParameterShadow(Loc, PrevDecl);
 }
 
@@ -943,7 +933,7 @@ static void SetNestedNameSpecifier(TagDecl *T, const CXXScopeSpec &SS) {
 DeclResult
 Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
                          SourceLocation KWLoc, CXXScopeSpec &SS,
-                         IdentifierInfo *Name, SourceLocation NameLoc,
+                         DeclarationName Name, SourceLocation NameLoc,
                          AttributeList *Attr,
                          TemplateParameterList *TemplateParams,
                          AccessSpecifier AS, SourceLocation ModulePrivateLoc,
@@ -1025,8 +1015,7 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
   NamedDecl *PrevDecl = nullptr;
   if (Previous.begin() != Previous.end())
     PrevDecl = (*Previous.begin())->getUnderlyingDecl();
-  else if (TemplateDeclNameParmDecl *TDP =
-               Previous.getLookupName().getCXXTemplatedNameParmDecl()) {
+  else if (TemplateDeclNameParmDecl *TDP = Name.getCXXTemplatedNameParmDecl()) {
     // Diagnose cases like:
     //   template<declname C> class C;
     if (S->getTemplateParamParent()->isDeclScope(TDP)) {
@@ -8350,8 +8339,9 @@ Sema::ActOnTypenameType(Scope *S, SourceLocation TypenameLoc,
       << FixItHint::CreateRemoval(TypenameLoc);
 
   NestedNameSpecifierLoc QualifierLoc = SS.getWithLocInContext(Context);
+  DeclarationName Name = getPossiblyTemplatedName(&II);
   QualType T = CheckTypenameType(TypenameLoc.isValid()? ETK_Typename : ETK_None,
-                                 TypenameLoc, QualifierLoc, &II, IdLoc);
+                                 TypenameLoc, QualifierLoc, Name, IdLoc);
   if (T.isNull())
     return true;
 
@@ -8495,12 +8485,6 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
     // resolved to a type, build a typename type.
     assert(QualifierLoc.getNestedNameSpecifier()->isDependent());
 
-    // The name itself can also be templated.
-    if (TemplateDeclNameParmDecl *TDP =
-            LookupTemplateDeclNameParm(Name.getAsIdentifierInfo()))
-      Name = Context.DeclarationNames.getCXXTemplatedName(
-          TDP->getDepth(), TDP->getIndex(), TDP->isParameterPack(), TDP);
-
     return Context.getDependentNameType(
         Keyword, QualifierLoc.getNestedNameSpecifier(), Name);
   }
@@ -8523,11 +8507,10 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
   case LookupResult::NotFound: {
     // If the name is templated and couldn't be resolved to a type,
     // build a typename type.
-    if (Result.getLookupName().getNameKind() ==
-        DeclarationName::CXXTemplatedName)
+    if (Name.isTemplatedName())
       return Context.getDependentNameType(Keyword,
                                           QualifierLoc.getNestedNameSpecifier(),
-                                          Result.getLookupName());
+                                          Name);
 
     // If we're looking up 'type' within a template named 'enable_if', produce
     // a more specific diagnostic.

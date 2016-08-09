@@ -2123,8 +2123,10 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
   const TemplateArgumentListInfo *TemplateArgs;
   DecomposeUnqualifiedId(Id, TemplateArgsBuffer, NameInfo, TemplateArgs);
 
+  IdentifierInfo *II = NameInfo.getName().getAsIdentifierInfo();
+  NameInfo.setName(getPossiblyTemplatedName(II));
+
   DeclarationName Name = NameInfo.getName();
-  IdentifierInfo *II = Name.getAsIdentifierInfo();
   SourceLocation NameLoc = NameInfo.getLoc();
 
   // C++ [temp.dep.expr]p3:
@@ -2205,12 +2207,10 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
     if (D) R.addDecl(D);
   }
 
-  if (R.empty() &&
-      R.getLookupName().getNameKind() == DeclarationName::CXXTemplatedName &&
-      SS.getScopeRep() && SS.getScopeRep()->isValidTemplatedNamePrefix())
-    return ActOnDependentIdExpression(
-        SS, TemplateKWLoc, DeclarationNameInfo(R.getLookupName(), NameLoc),
-        IsAddressOfOperand, TemplateArgs);
+  if (R.empty() && Name.isTemplatedName() && SS.getScopeRep() &&
+      SS.getScopeRep()->isValidTemplatedNamePrefix())
+    return ActOnDependentIdExpression(SS, TemplateKWLoc, NameInfo,
+                                      IsAddressOfOperand, TemplateArgs);
 
   // Determine whether this name might be a candidate for
   // argument-dependent lookup.

@@ -255,6 +255,7 @@ ParsedType Sema::getTypeName(const IdentifierInfo &II, SourceLocation NameLoc,
                              IdentifierInfo **CorrectedII) {
   // Determine where we will perform name lookup.
   DeclContext *LookupCtx = nullptr;
+  DeclarationName Name = getPossiblyTemplatedName(&II);
   if (ObjectTypePtr) {
     QualType ObjectType = ObjectTypePtr.get();
     if (ObjectType->isRecordType())
@@ -283,7 +284,7 @@ ParsedType Sema::getTypeName(const IdentifierInfo &II, SourceLocation NameLoc,
 
         NestedNameSpecifierLoc QualifierLoc = SS->getWithLocInContext(Context);
         QualType T = CheckTypenameType(ETK_None, SourceLocation(), QualifierLoc,
-                                       &II, NameLoc);
+                                       Name, NameLoc);
         return ParsedType::make(T);
       }
 
@@ -299,7 +300,7 @@ ParsedType Sema::getTypeName(const IdentifierInfo &II, SourceLocation NameLoc,
   // lookup for class-names.
   LookupNameKind Kind = isClassName ? LookupNestedNameSpecifierName :
                                       LookupOrdinaryName;
-  LookupResult Result(*this, &II, NameLoc, Kind);
+  LookupResult Result(*this, Name, NameLoc, Kind);
   if (LookupCtx) {
     // Perform "qualified" name lookup into the declaration context we
     // computed, which is either the type of the base of a member access
@@ -12101,7 +12102,7 @@ static bool isClassCompatTagKind(TagTypeKind Tag)
 bool Sema::isAcceptableTagRedeclaration(const TagDecl *Previous,
                                         TagTypeKind NewTag, bool isDefinition,
                                         SourceLocation NewTagLoc,
-                                        const IdentifierInfo *Name) {
+                                        DeclarationName Name) {
   // C++ [dcl.type.elab]p3:
   //   The class-key or enum keyword present in the
   //   elaborated-type-specifier shall agree in kind with the
@@ -12285,7 +12286,7 @@ static Scope *getTagInjectionScope(Scope *S, const LangOptions &LangOpts) {
 /// skip the definition of this tag and treat it as if it were a declaration.
 Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
                      SourceLocation KWLoc, CXXScopeSpec &SS,
-                     IdentifierInfo *Name, SourceLocation NameLoc,
+                     IdentifierInfo *II, SourceLocation NameLoc,
                      AttributeList *Attr, AccessSpecifier AS,
                      SourceLocation ModulePrivateLoc,
                      MultiTemplateParamsArg TemplateParameterLists,
@@ -12295,12 +12296,12 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
                      TypeResult UnderlyingType,
                      bool IsTypeSpecifier, SkipBodyInfo *SkipBody) {
   // If this is not a definition, it must have a name.
-  IdentifierInfo *OrigName = Name;
-  DeclarationName DeclName(Name);
-  assert((Name != nullptr || TUK == TUK_Definition) &&
+  IdentifierInfo *OrigName = II;
+  assert((II != nullptr || TUK == TUK_Definition) &&
          "Nameless record must be a definition!");
   assert(TemplateParameterLists.size() == 0 || TUK != TUK_Reference);
 
+  DeclarationName Name = getPossiblyTemplatedName(II);
   OwnedDecl = false;
   TagTypeKind Kind = TypeWithKeyword::getTagTypeKindForTypeSpec(TagSpec);
   bool ScopedEnum = ScopedEnumKWLoc.isValid();
@@ -12398,8 +12399,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
 
     // Check for invalid 'foo::'.
     if (SS.isInvalid()) {
-      Name = nullptr;
-      DeclName = {};
+      Name = {};
       goto CreateNewDecl;
     }
 
@@ -12427,9 +12427,6 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
     // Look-up name inside 'foo::'.
     LookupQualifiedName(Previous, DC);
 
-    // The lookup name may be changed to a templated one after lookup.
-    DeclName = Previous.getLookupName();
-
     if (Previous.isAmbiguous())
       return nullptr;
 
@@ -12449,8 +12446,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
       // A tag 'foo::bar' must already exist.
       Diag(NameLoc, diag::err_not_tag_in_scope)
         << Kind << Name << DC << SS.getRange();
-      Name = nullptr;
-      DeclName = {};
+      Name = {};
       Invalid = true;
       goto CreateNewDecl;
     }
@@ -12469,9 +12465,6 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
     // shouldn't be. Doing so can result in ambiguities that we
     // shouldn't be diagnosing.
     LookupName(Previous, S);
-
-    // The lookup name may be changed to a templated one after lookup.
-    DeclName = Previous.getLookupName();
 
     // When declaring or defining a tag, ignore ambiguities introduced
     // by types using'ed into this scope.
@@ -12548,8 +12541,8 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
     Previous.clear();
   }
 
-  if (getLangOpts().CPlusPlus && Name && DC && StdNamespace &&
-      DC->Equals(getStdNamespace()) && Name->isStr("bad_alloc")) {
+  if (getLangOpts().CPlusPlus && II && DC && StdNamespace &&
+      DC->Equals(getStdNamespace()) && II->isStr("bad_alloc")) {
     // This is a declaration of or a reference to "std::bad_alloc".
     isStdBadAlloc = true;
 
@@ -12708,8 +12701,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
             Kind = PrevTagDecl->getTagKind();
           else {
             // Recover by making this an anonymous redefinition.
-            Name = nullptr;
-            DeclName = {};
+            Name = {};
             Previous.clear();
             Invalid = true;
           }
@@ -12825,8 +12817,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
                 // If this is a redefinition, recover by making this
                 // struct be anonymous, which will make any later
                 // references get the previous definition.
-                Name = nullptr;
-                DeclName = {};
+                Name = {};
                 Previous.clear();
                 Invalid = true;
               }
@@ -12838,8 +12829,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
                 Diag(NameLoc, diag::err_nested_redefinition) << Name;
                 Diag(PrevTagDecl->getLocation(),
                      diag::note_previous_definition);
-                Name = nullptr;
-                DeclName = {};
+                Name = {};
                 Previous.clear();
                 Invalid = true;
               }
@@ -12919,8 +12909,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
         // issue an error and recover by making this tag be anonymous.
         Diag(NameLoc, diag::err_redefinition_different_kind) << Name;
         Diag(PrevDecl->getLocation(), diag::note_previous_definition);
-        Name = nullptr;
-        DeclName = {};
+        Name = {};
         Invalid = true;
       }
 
@@ -12933,12 +12922,11 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
   // Templated name is not allowed on local declarations.
   if (CurContext->isFunctionOrMethod()) {
     if (TemplateDeclNameParmDecl *TDP =
-            DeclName.getCXXTemplatedNameParmDecl()) {
+            Name.getCXXTemplatedNameParmDecl()) {
       Diag(NameLoc, diag::err_templated_name_on_local_decl);
       Diag(TDP->getLocation(), diag::note_template_param_here);
       // Recover by making this an anonymous redefinition.
-      Name = nullptr;
-      DeclName = {};
+      Name = {};
       Previous.clear();
       Invalid = true;
     }
@@ -12964,7 +12952,7 @@ CreateNewDecl:
   if (Kind == TTK_Enum) {
     // FIXME: Tag decls should be chained to any simultaneous vardecls, e.g.:
     // enum X { A, B, C } D;    D should chain to X.
-    New = EnumDecl::Create(Context, SearchDC, KWLoc, Loc, DeclName,
+    New = EnumDecl::Create(Context, SearchDC, KWLoc, Loc, Name,
                            cast_or_null<EnumDecl>(PrevDecl), ScopedEnum,
                            ScopedEnumUsesClassTag, !EnumUnderlying.isNull());
     // If this is an undefined enum, warn.
@@ -13010,16 +12998,16 @@ CreateNewDecl:
     // struct X { int A; } D;    D should chain to X.
     if (getLangOpts().CPlusPlus) {
       // FIXME: Look for a way to use RecordDecl for simple structs.
-      New = CXXRecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, DeclName,
+      New = CXXRecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, Name,
                                   cast_or_null<CXXRecordDecl>(PrevDecl));
       if (isStdBadAlloc && (!StdBadAlloc || getStdBadAlloc()->isImplicit()))
         StdBadAlloc = cast<CXXRecordDecl>(New);
     } else
-      New = RecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, DeclName,
+      New = RecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, Name,
                                cast_or_null<RecordDecl>(PrevDecl));
   }
 
-  if (TemplateDeclNameParmDecl *TDP = DeclName.getCXXTemplatedNameParmDecl())
+  if (TemplateDeclNameParmDecl *TDP = Name.getCXXTemplatedNameParmDecl())
     TDP->setReferenced();
 
   // C++11 [dcl.type]p3:
@@ -13444,7 +13432,8 @@ FieldDecl *Sema::HandleField(Scope *S, RecordDecl *Record,
 
   // Check to see if this name was declared as a member previously
   NamedDecl *PrevDecl = nullptr;
-  LookupResult Previous(*this, II, Loc, LookupMemberName, ForRedeclaration);
+  DeclarationName Name = getPossiblyTemplatedName(II);
+  LookupResult Previous(*this, Name, Loc, LookupMemberName, ForRedeclaration);
   LookupName(Previous, S);
   switch (Previous.getResultKind()) {
     case LookupResult::Found:
@@ -13477,7 +13466,7 @@ FieldDecl *Sema::HandleField(Scope *S, RecordDecl *Record,
     = (D.getDeclSpec().getStorageClassSpec() == DeclSpec::SCS_mutable);
   SourceLocation TSSL = D.getLocStart();
   FieldDecl *NewFD =
-      CheckFieldDecl(Previous.getLookupName(), T, TInfo, Record, Loc, Mutable,
+      CheckFieldDecl(Name, T, TInfo, Record, Loc, Mutable,
                      BitWidth, InitStyle, TSSL, AS, PrevDecl, &D);
 
   if (NewFD->isInvalidDecl())
