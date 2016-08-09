@@ -723,8 +723,9 @@ Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
     cast<Decl>(Owner)->setInvalidDecl();
     return nullptr;
   }
-
+  
   SemaRef.InstantiateAttrs(TemplateArgs, D, Field, LateAttrs, StartingScope);
+  Field->setInstantiatedFromMemberField(D);
 
   if (Field->hasAttrs())
     SemaRef.CheckAlignasUnderalignment(Field);
@@ -4496,6 +4497,19 @@ static bool isInstantiationOf(EnumDecl *Pattern,
   return false;
 }
 
+static bool isInstantiationOf(FieldDecl *Pattern,
+                              FieldDecl *Instance) {
+  Pattern = Pattern->getCanonicalDecl();
+
+  do {
+    Instance = Instance->getCanonicalDecl();
+    if (Pattern == Instance) return true;
+    Instance = Instance->getInstantiatedFromMemberField();
+  } while (Instance);
+
+  return false;
+}
+
 static bool isInstantiationOf(UsingShadowDecl *Pattern,
                               UsingShadowDecl *Instance,
                               ASTContext &C) {
@@ -4587,6 +4601,7 @@ static bool isInstantiationOf(ASTContext &Ctx, NamedDecl *D, Decl *Other) {
       return declaresSameEntity(Ctx.getInstantiatedFromUnnamedFieldDecl(Field),
                                 cast<FieldDecl>(D));
     }
+    return isInstantiationOf(cast<FieldDecl>(D), Field);
   }
 
   if (UsingDecl *Using = dyn_cast<UsingDecl>(Other))

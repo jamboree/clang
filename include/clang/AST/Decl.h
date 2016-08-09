@@ -2362,16 +2362,16 @@ class FieldDecl : public DeclaratorDecl, public Mergeable<FieldDecl> {
   /// \brief If this field is an instantiation of a data member
   /// of a class template specialization, this is the member specialization
   /// information.
-  MemberSpecializationInfo *SpecializationInfo;
+  FieldDecl *Specialization;
 
 protected:
   FieldDecl(Kind DK, DeclContext *DC, SourceLocation StartLoc,
-            SourceLocation IdLoc, DeclarationName N,
-            QualType T, TypeSourceInfo *TInfo, Expr *BW, bool Mutable,
+            SourceLocation IdLoc, DeclarationName N, QualType T,
+            TypeSourceInfo *TInfo, Expr *BW, bool Mutable,
             InClassInitStyle InitStyle)
-    : DeclaratorDecl(DK, DC, IdLoc, N, T, TInfo, StartLoc),
-      Mutable(Mutable), CachedFieldIndex(0),
-      InitStorage(BW, (InitStorageKind) InitStyle) {
+      : DeclaratorDecl(DK, DC, IdLoc, N, T, TInfo, StartLoc), Mutable(Mutable),
+        CachedFieldIndex(0), InitStorage(BW, (InitStorageKind)InitStyle),
+        Specialization(nullptr) {
     assert((!BW || InitStyle == ICIS_NoInit) && "got initializer for bitfield");
   }
 
@@ -2503,6 +2503,10 @@ public:
   DeclarationNameInfo getNameInfo() const {
     return DeclarationNameInfo(getDeclName(), getLocation());
   }
+
+  void setInstantiatedFromMemberField(FieldDecl *D) { Specialization = D; }
+
+  FieldDecl *getInstantiatedFromMemberField() const { return Specialization; }
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }

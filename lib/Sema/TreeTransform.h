@@ -8630,12 +8630,13 @@ TreeTransform<Derived>::TransformMemberExpr(MemberExpr *E) {
   // base (and therefore couldn't do the check) and a
   // nested-name-qualifier (and therefore could do the lookup).
   NamedDecl *FirstQualifierInScope = nullptr;
-
+  DeclarationNameInfo NameInfo =
+      getDerived().TransformDeclarationNameInfo(E->getMemberNameInfo());
   return getDerived().RebuildMemberExpr(Base.get(), FakeOperatorLoc,
                                         E->isArrow(),
                                         QualifierLoc,
                                         TemplateKWLoc,
-                                        E->getMemberNameInfo(),
+                                        NameInfo,
                                         Member,
                                         FoundDecl,
                                         (E->hasExplicitTemplateArgs()
