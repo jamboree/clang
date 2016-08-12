@@ -8788,7 +8788,11 @@ Decl *Sema::ActOnAliasDeclaration(Scope *S,
     return nullptr;
 
   bool Invalid = false;
-  DeclarationNameInfo NameInfo = GetNameFromUnqualifiedId(Name);
+
+  assert(Name.Kind == UnqualifiedId::IK_Identifier &&
+      "name in alias declaration must be an identifier");
+  DeclarationNameInfo NameInfo(getPossiblyTemplatedName(Name.Identifier),
+                               Name.StartLocation);
   TypeSourceInfo *TInfo = nullptr;
   GetTypeFromParser(Type.get(), &TInfo);
 
@@ -8812,11 +8816,9 @@ Decl *Sema::ActOnAliasDeclaration(Scope *S,
     Previous.clear();
   }
 
-  assert(Name.Kind == UnqualifiedId::IK_Identifier &&
-         "name in alias declaration must be an identifier");
   TypeAliasDecl *NewTD = TypeAliasDecl::Create(Context, CurContext, UsingLoc,
-                                               Name.StartLocation,
-                                               Name.Identifier, TInfo);
+                                               NameInfo.getLoc(),
+                                               NameInfo.getName(), TInfo);
 
   NewTD->setAccess(AS);
 

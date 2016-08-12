@@ -4929,6 +4929,8 @@ NamedDecl *Sema::HandleDeclarator(Scope *S, Declarator &D,
                                   MultiTemplateParamsArg TemplateParamLists) {
   // TODO: consider using NameInfo for diagnostic.
   DeclarationNameInfo NameInfo = GetNameForDeclarator(D);
+  if (IdentifierInfo *II = NameInfo.getName().getAsIdentifierInfo())
+    NameInfo.setName(getPossiblyTemplatedName(II));
   DeclarationName Name = NameInfo.getName();
 
   // All of these full declarators require an identifier.  If it doesn't have
@@ -7350,6 +7352,8 @@ static FunctionDecl* CreateNewFunctionDecl(Sema &SemaRef, Declarator &D,
                                            StorageClass SC,
                                            bool &IsVirtualOkay) {
   DeclarationNameInfo NameInfo = SemaRef.GetNameForDeclarator(D);
+  if (IdentifierInfo *II = NameInfo.getName().getAsIdentifierInfo())
+    NameInfo.setName(SemaRef.getPossiblyTemplatedName(II));
   DeclarationName Name = NameInfo.getName();
 
   FunctionDecl *NewFD = nullptr;
@@ -7677,6 +7681,8 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
 
   // TODO: consider using NameInfo for diagnostic.
   DeclarationNameInfo NameInfo = GetNameForDeclarator(D);
+  if (IdentifierInfo *II = NameInfo.getName().getAsIdentifierInfo())
+    NameInfo.setName(getPossiblyTemplatedName(II));
   DeclarationName Name = NameInfo.getName();
   StorageClass SC = getFunctionStorageClass(*this, D);
 
@@ -11969,11 +11975,12 @@ TypedefDecl *Sema::ParseTypedefDecl(Scope *S, Declarator &D, QualType T,
     TInfo = Context.getTrivialTypeSourceInfo(T);
   }
 
+  DeclarationName Name = getPossiblyTemplatedName(D.getIdentifier());
   // Scope manipulation handled by caller.
   TypedefDecl *NewTD = TypedefDecl::Create(Context, CurContext,
                                            D.getLocStart(),
                                            D.getIdentifierLoc(),
-                                           D.getIdentifier(),
+                                           Name,
                                            TInfo);
 
   // Bail out immediately if we have an invalid declaration.
@@ -12920,17 +12927,17 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
   }
 
   // Templated name is not allowed on local declarations.
-  if (CurContext->isFunctionOrMethod()) {
-    if (TemplateDeclNameParmDecl *TDP =
-            Name.getCXXTemplatedNameParmDecl()) {
-      Diag(NameLoc, diag::err_templated_name_on_local_decl);
-      Diag(TDP->getLocation(), diag::note_template_param_here);
-      // Recover by making this an anonymous redefinition.
-      Name = {};
-      Previous.clear();
-      Invalid = true;
-    }
-  }
+  //if (CurContext->isFunctionOrMethod()) {
+  //  if (TemplateDeclNameParmDecl *TDP =
+  //          Name.getCXXTemplatedNameParmDecl()) {
+  //    Diag(NameLoc, diag::err_templated_name_on_local_decl);
+  //    Diag(TDP->getLocation(), diag::note_template_param_here);
+  //    // Recover by making this an anonymous redefinition.
+  //    Name = {};
+  //    Previous.clear();
+  //    Invalid = true;
+  //  }
+  //}
 
 CreateNewDecl:
 

@@ -313,6 +313,7 @@ bool Sema::DiagnoseUnexpandedParameterPack(const DeclarationNameInfo &NameInfo,
   // C++0x [temp.variadic]p5:
   //   An appearance of a name of a parameter pack that is not expanded is 
   //   ill-formed.
+  SmallVector<UnexpandedParameterPack, 2> Unexpanded;
   switch (NameInfo.getName().getNameKind()) {
   case DeclarationName::Identifier:
   case DeclarationName::ObjCZeroArgSelector:
@@ -333,12 +334,17 @@ bool Sema::DiagnoseUnexpandedParameterPack(const DeclarationNameInfo &NameInfo,
     if (!NameInfo.getName().getCXXNameType()->containsUnexpandedParameterPack())
       return false;
 
+    CollectUnexpandedParameterPacksVisitor(Unexpanded)
+        .TraverseType(NameInfo.getName().getCXXNameType());
+    break;
+
+  case DeclarationName::CXXTemplatedName:
+    if (!NameInfo.getName().getCXXTemplatedName()->isParameterPack())
+      return false;
+    // FIXME: add it to Unexpanded
     break;
   }
 
-  SmallVector<UnexpandedParameterPack, 2> Unexpanded;
-  CollectUnexpandedParameterPacksVisitor(Unexpanded)
-    .TraverseType(NameInfo.getName().getCXXNameType());
   assert(!Unexpanded.empty() && "Unable to find unexpanded parameter packs");
   return DiagnoseUnexpandedParameterPacks(NameInfo.getLoc(), UPPC, Unexpanded);
 }

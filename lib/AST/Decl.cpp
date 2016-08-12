@@ -4135,8 +4135,8 @@ void TypeDecl::anchor() { }
 
 TypedefDecl *TypedefDecl::Create(ASTContext &C, DeclContext *DC,
                                  SourceLocation StartLoc, SourceLocation IdLoc,
-                                 IdentifierInfo *Id, TypeSourceInfo *TInfo) {
-  return new (C, DC) TypedefDecl(C, DC, StartLoc, IdLoc, Id, TInfo);
+                                 DeclarationName N, TypeSourceInfo *TInfo) {
+  return new (C, DC) TypedefDecl(C, DC, StartLoc, IdLoc, N, TInfo);
 }
 
 void TypedefNameDecl::anchor() { }
@@ -4158,19 +4158,19 @@ TagDecl *TypedefNameDecl::getAnonDeclWithTypedefName(bool AnyRedecl) const {
 
 TypedefDecl *TypedefDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) TypedefDecl(C, nullptr, SourceLocation(), SourceLocation(),
-                                 nullptr, nullptr);
+                                 {}, nullptr);
 }
 
 TypeAliasDecl *TypeAliasDecl::Create(ASTContext &C, DeclContext *DC,
                                      SourceLocation StartLoc,
-                                     SourceLocation IdLoc, IdentifierInfo *Id,
+                                     SourceLocation IdLoc, DeclarationName N,
                                      TypeSourceInfo *TInfo) {
-  return new (C, DC) TypeAliasDecl(C, DC, StartLoc, IdLoc, Id, TInfo);
+  return new (C, DC) TypeAliasDecl(C, DC, StartLoc, IdLoc, N, TInfo);
 }
 
 TypeAliasDecl *TypeAliasDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) TypeAliasDecl(C, nullptr, SourceLocation(),
-                                   SourceLocation(), nullptr, nullptr);
+                                   SourceLocation(), {}, nullptr);
 }
 
 SourceRange TypedefDecl::getSourceRange() const {

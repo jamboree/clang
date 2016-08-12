@@ -470,10 +470,12 @@ Decl *TemplateDeclInstantiator::InstantiateTypedefNameDecl(TypedefNameDecl *D,
                                                            bool IsTypeAlias) {
   bool Invalid = false;
   TypeSourceInfo *DI = D->getTypeSourceInfo();
+  DeclarationNameInfo NameInfo =
+      SemaRef.SubstDeclarationNameInfo(D->getNameInfo(), TemplateArgs);
   if (DI->getType()->isInstantiationDependentType() ||
       DI->getType()->isVariablyModifiedType()) {
     DI = SemaRef.SubstType(DI, TemplateArgs,
-                           D->getLocation(), D->getDeclName());
+                           D->getLocation(), NameInfo.getName());
     if (!DI) {
       Invalid = true;
       DI = SemaRef.Context.getTrivialTypeSourceInfo(SemaRef.Context.IntTy);
@@ -492,7 +494,8 @@ Decl *TemplateDeclInstantiator::InstantiateTypedefNameDecl(TypedefNameDecl *D,
       DT->isReferenceType() &&
       RD->getEnclosingNamespaceContext() == SemaRef.getStdNamespace() &&
       RD->getIdentifier() && RD->getIdentifier()->isStr("common_type") &&
-      D->getIdentifier() && D->getIdentifier()->isStr("type") &&
+      NameInfo.getName().isIdentifier() &&
+      NameInfo.getName().getAsIdentifierInfo()->isStr("type") &&
       SemaRef.getSourceManager().isInSystemHeader(D->getLocStart()))
     // Fold it to the (non-reference) type which g++ would have produced.
     DI = SemaRef.Context.getTrivialTypeSourceInfo(
@@ -502,10 +505,10 @@ Decl *TemplateDeclInstantiator::InstantiateTypedefNameDecl(TypedefNameDecl *D,
   TypedefNameDecl *Typedef;
   if (IsTypeAlias)
     Typedef = TypeAliasDecl::Create(SemaRef.Context, Owner, D->getLocStart(),
-                                    D->getLocation(), D->getIdentifier(), DI);
+                                    D->getLocation(), NameInfo.getName(), DI);
   else
     Typedef = TypedefDecl::Create(SemaRef.Context, Owner, D->getLocStart(),
-                                  D->getLocation(), D->getIdentifier(), DI);
+                                  D->getLocation(), NameInfo.getName(), DI);
   if (Invalid)
     Typedef->setInvalidDecl();
 
