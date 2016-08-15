@@ -781,7 +781,7 @@ Sema::ClassifyName(Scope *S, CXXScopeSpec &SS, IdentifierInfo *&Name,
                    SourceLocation NameLoc, const Token &NextToken,
                    bool IsAddressOfOperand,
                    std::unique_ptr<CorrectionCandidateCallback> CCC) {
-  DeclarationNameInfo NameInfo(Name, NameLoc);
+  DeclarationNameInfo NameInfo(getPossiblyTemplatedName(Name), NameLoc);
   ObjCMethodDecl *CurMethod = getCurMethodDecl();
 
   if (NextToken.is(tok::coloncolon)) {
@@ -789,7 +789,7 @@ Sema::ClassifyName(Scope *S, CXXScopeSpec &SS, IdentifierInfo *&Name,
                                 QualType(), false, SS, nullptr, false);
   }
 
-  LookupResult Result(*this, Name, NameLoc, LookupOrdinaryName);
+  LookupResult Result(*this, NameInfo, LookupOrdinaryName);
   LookupParsedName(Result, S, &SS, !CurMethod);
 
   // For unqualified lookup in a class template in MSVC mode, look into
@@ -842,6 +842,9 @@ Corrected:
         return BuildDeclarationNameExpr(SS, Result, /*ADL=*/false);
       }
     }
+
+    if (NameInfo.getName().isTemplatedName())
+      return NameClassification::DeclName();
 
     // In C, we first see whether there is a tag type by the same name, in
     // which case it's likely that the user just forgot to write "enum",
@@ -1052,9 +1055,6 @@ Corrected:
   if (isa<TemplateDecl>(FirstDecl) && !isa<FunctionTemplateDecl>(FirstDecl))
     return NameClassification::TypeTemplate(
         TemplateName(cast<TemplateDecl>(FirstDecl)));
-
-  if (isa<TemplateDeclNameParmDecl>(FirstDecl))
-    return NameClassification::DeclName();
 
   // Check for a tag type hidden by a non-type decl in a few cases where it
   // seems likely a type is wanted instead of the non-type that was found.
@@ -4462,7 +4462,7 @@ Decl *Sema::BuildAnonymousStructOrUnion(Scope *S, DeclSpec &DS,
 
     Anon = VarDecl::Create(Context, Owner,
                            DS.getLocStart(),
-                           Record->getLocation(), /*IdentifierInfo=*/nullptr,
+                           Record->getLocation(), /*DeclarationName=*/{},
                            Context.getTypeDeclType(Record),
                            TInfo, SC);
 
@@ -5934,10 +5934,10 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       << FixItHint::CreateRemoval(D.getDeclSpec().getStorageClassSpecLoc());
   }
 
-  IdentifierInfo *II = Name.getAsIdentifierInfo();
-  if (!II) {
-    Diag(D.getIdentifierLoc(), diag::err_bad_variable_name)
-      << Name;
+  if (IdentifierInfo *II = Name.getAsIdentifierInfo())
+    Name = getPossiblyTemplatedName(II);
+  else {
+    Diag(D.getIdentifierLoc(), diag::err_bad_variable_name) << Name;
     return nullptr;
   }
 
@@ -5988,7 +5988,7 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   TemplateParameterList *TemplateParams = nullptr;
   if (!getLangOpts().CPlusPlus) {
     NewVD = VarDecl::Create(Context, DC, D.getLocStart(),
-                            D.getIdentifierLoc(), II,
+                            D.getIdentifierLoc(), Name,
                             R, TInfo, SC);
 
     if (D.getDeclSpec().containsPlaceholderType() && R->getContainedAutoType())
@@ -6066,7 +6066,7 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
         // about it, but allow the declaration of the variable.
         Diag(TemplateParams->getTemplateLoc(),
              diag::err_template_variable_noparams)
-          << II
+          << Name
           << SourceRange(TemplateParams->getTemplateLoc(),
                          TemplateParams->getRAngleLoc());
         TemplateParams = nullptr;
@@ -6111,7 +6111,7 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       AddToScope = false;
     } else
       NewVD = VarDecl::Create(Context, DC, D.getLocStart(),
-                              D.getIdentifierLoc(), II, R, TInfo, SC);
+                              D.getIdentifierLoc(), Name, R, TInfo, SC);
 
     // If this is supposed to be a variable template, create it as such.
     if (IsVariableTemplate) {

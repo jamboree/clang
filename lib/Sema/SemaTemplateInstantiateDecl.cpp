@@ -626,9 +626,12 @@ Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D,
   if (D->isLocalExternDecl())
     SemaRef.adjustContextForLocalExternDecl(DC);
 
+  DeclarationNameInfo NameInfo =
+      SemaRef.SubstDeclarationNameInfo(D->getNameInfo(), TemplateArgs);
+
   // Build the instantiated declaration.
   VarDecl *Var = VarDecl::Create(SemaRef.Context, DC, D->getInnerLocStart(),
-                                 D->getLocation(), D->getIdentifier(),
+                                 NameInfo.getLoc(), NameInfo.getName(),
                                  DI->getType(), DI, D->getStorageClass());
 
   // In ARC, infer 'retaining' for variables of retainable type.

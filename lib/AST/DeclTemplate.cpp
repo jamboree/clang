@@ -1107,7 +1107,7 @@ VarTemplateSpecializationDecl::VarTemplateSpecializationDecl(
 
 VarTemplateSpecializationDecl::VarTemplateSpecializationDecl(Kind DK,
                                                              ASTContext &C)
-    : VarDecl(DK, C, nullptr, SourceLocation(), SourceLocation(), nullptr,
+    : VarDecl(DK, C, nullptr, SourceLocation(), SourceLocation(), {},
               QualType(), nullptr, SC_None),
       ExplicitInfo(nullptr), SpecializationKind(TSK_Undeclared) {}
 

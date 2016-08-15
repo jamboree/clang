@@ -911,7 +911,7 @@ protected:
   };
 
   VarDecl(Kind DK, ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
-          SourceLocation IdLoc, IdentifierInfo *Id, QualType T,
+          SourceLocation IdLoc, DeclarationName N, QualType T,
           TypeSourceInfo *TInfo, StorageClass SC);
 
   typedef Redeclarable<VarDecl> redeclarable_base;
@@ -937,7 +937,7 @@ public:
 
   static VarDecl *Create(ASTContext &C, DeclContext *DC,
                          SourceLocation StartLoc, SourceLocation IdLoc,
-                         IdentifierInfo *Id, QualType T, TypeSourceInfo *TInfo,
+                         DeclarationName N, QualType T, TypeSourceInfo *TInfo,
                          StorageClass S);
 
   static VarDecl *CreateDeserialized(ASTContext &C, unsigned ID);

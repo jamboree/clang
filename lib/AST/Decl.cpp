@@ -1790,9 +1790,9 @@ const char *VarDecl::getStorageClassSpecifierString(StorageClass SC) {
 
 VarDecl::VarDecl(Kind DK, ASTContext &C, DeclContext *DC,
                  SourceLocation StartLoc, SourceLocation IdLoc,
-                 IdentifierInfo *Id, QualType T, TypeSourceInfo *TInfo,
+                 DeclarationName N, QualType T, TypeSourceInfo *TInfo,
                  StorageClass SC)
-    : DeclaratorDecl(DK, DC, IdLoc, Id, T, TInfo, StartLoc),
+    : DeclaratorDecl(DK, DC, IdLoc, N, T, TInfo, StartLoc),
       redeclarable_base(C), Init() {
   static_assert(sizeof(VarDeclBitfields) <= sizeof(unsigned),
                 "VarDeclBitfields too large!");
@@ -1807,14 +1807,14 @@ VarDecl::VarDecl(Kind DK, ASTContext &C, DeclContext *DC,
 
 VarDecl *VarDecl::Create(ASTContext &C, DeclContext *DC,
                          SourceLocation StartL, SourceLocation IdL,
-                         IdentifierInfo *Id, QualType T, TypeSourceInfo *TInfo,
+                         DeclarationName N, QualType T, TypeSourceInfo *TInfo,
                          StorageClass S) {
-  return new (C, DC) VarDecl(Var, C, DC, StartL, IdL, Id, T, TInfo, S);
+  return new (C, DC) VarDecl(Var, C, DC, StartL, IdL, N, T, TInfo, S);
 }
 
 VarDecl *VarDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID)
-      VarDecl(Var, C, nullptr, SourceLocation(), SourceLocation(), nullptr,
+      VarDecl(Var, C, nullptr, SourceLocation(), SourceLocation(), {},
               QualType(), nullptr, SC_None);
 }
 

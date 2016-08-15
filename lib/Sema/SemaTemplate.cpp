@@ -150,7 +150,7 @@ TemplateNameKind Sema::isTemplateName(Scope *S,
 
   switch (Name.getKind()) {
   case UnqualifiedId::IK_Identifier:
-    TName = DeclarationName(Name.Identifier);
+    TName = getPossiblyTemplatedName(Name.Identifier);
     break;
 
   case UnqualifiedId::IK_OperatorFunctionId:
