@@ -3685,6 +3685,8 @@ def err_template_arg_nontype_ambig : Error<
   "template argument for non-type template parameter is treated as function type %0">;
 def err_template_arg_must_be_template : Error<
   "template argument for template template parameter must be a class template%select{| or type alias template}0">;
+def err_template_arg_must_be_declname : Error<
+  "template argument for template declname parameter must be a declaration name">;
 def ext_template_arg_local_type : ExtWarn<
   "template argument uses local type %0">, InGroup<LocalTypeTemplateArgs>;
 def ext_template_arg_unnamed_type : ExtWarn<

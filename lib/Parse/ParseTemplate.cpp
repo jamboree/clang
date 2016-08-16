@@ -1243,6 +1243,8 @@ Parser::ParseTemplateDeclNameArgument(unsigned &SoftError) {
   SourceLocation QuestionLoc;
   if (Tok.is(tok::question))
     QuestionLoc = ConsumeToken();
+  else if (Tok.is(tok::kw_declname))
+    ConsumeToken();
   if (Tok.is(tok::identifier)) {
     Name = Tok.getIdentifierInfo();
     NameLoc = ConsumeToken();

@@ -3814,8 +3814,37 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
       Converted.push_back(Arg.getArgument());
       break;
 
+    case TemplateArgument::Type: {
+      // C++ [temp.local]p1:
+      //   The injected-class-name can be used as a template-name or a
+      //   type-name. When it is used [...] as a template-argument for a
+      //   template template-parameter [...] it refers to the class template
+      //   itself.
+      QualType T = Arg.getArgument().getAsType();
+      if (!T.hasQualifiers()) {
+        if (const InjectedClassNameType *C =
+                T->getAs<InjectedClassNameType>()) {
+          CXXRecordDecl *Record = C->getDecl();
+          ClassTemplateDecl *Template = Record->getDescribedClassTemplate();
+          if (!Template)
+            if (ClassTemplateSpecializationDecl *Spec =
+                    dyn_cast<ClassTemplateSpecializationDecl>(Record))
+              Template = Spec->getSpecializedTemplate();
+
+          if (Template) {
+            Arg = TemplateArgumentLoc(TemplateArgument(TemplateName(Template)),
+                                      Arg.getLocInfo());
+            if (CheckTemplateArgument(TempParm, Arg, ArgumentPackIndex))
+              return true;
+
+            Converted.push_back(Arg.getArgument());
+            break;
+          }
+        }
+      }
+    }
+    // Fallthrough
     case TemplateArgument::Expression:
-    case TemplateArgument::Type:
     case TemplateArgument::DeclName:
     case TemplateArgument::DeclNameExpansion:
       // We have a template template parameter but the template
@@ -3856,9 +3885,9 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
     case TemplateArgument::Type:
     case TemplateArgument::Template:
     case TemplateArgument::TemplateExpansion:
-      // We have a template template parameter but the template
+      // We have a template declname parameter but the template
       // argument does not refer to a template.
-      Diag(Arg.getLocation(), diag::err_template_arg_must_be_template)
+      Diag(Arg.getLocation(), diag::err_template_arg_must_be_declname)
           << getLangOpts().CPlusPlus11;
       return true;
 
