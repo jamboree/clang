@@ -906,8 +906,11 @@ Decl *TemplateDeclInstantiator::VisitEnumDecl(EnumDecl *D) {
     PrevDecl = cast<EnumDecl>(Prev);
   }
 
+  DeclarationNameInfo NameInfo =
+      SemaRef.SubstDeclarationNameInfo(D->getNameInfo(), TemplateArgs);
+
   EnumDecl *Enum = EnumDecl::Create(SemaRef.Context, Owner, D->getLocStart(),
-                                    D->getLocation(), D->getIdentifier(),
+                                    NameInfo.getLoc(), NameInfo.getName(),
                                     PrevDecl, D->isScoped(),
                                     D->isScopedUsingClassTag(), D->isFixed());
   if (D->isFixed()) {
@@ -1005,9 +1008,12 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
       isInvalid = true;
     }
 
+    DeclarationNameInfo NameInfo =
+        SemaRef.SubstDeclarationNameInfo(EC->getNameInfo(), TemplateArgs);
+
     EnumConstantDecl *EnumConst
       = SemaRef.CheckEnumConstant(Enum, LastEnumConst,
-                                  EC->getLocation(), EC->getIdentifier(),
+                                  NameInfo.getLoc(), NameInfo.getName(),
                                   Value.get());
 
     if (isInvalid) {

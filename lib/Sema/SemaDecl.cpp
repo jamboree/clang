@@ -12603,6 +12603,16 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
 
       // Find the scope where we'll be declaring the tag.
       S = getTagInjectionScope(S, getLangOpts());
+
+      if (SearchDC != CurContext) {
+        if (TemplateDeclNameParmDecl *TDP =
+                Name.getCXXTemplatedNameParmDecl()) {
+          Diag(NameLoc, diag::err_templated_name_on_unresolved_elaborated_type);
+          Diag(TDP->getLocation(), diag::note_template_param_here);
+          Invalid = true;
+          goto CreateNewDecl;
+        }
+      }
     } else {
       assert(TUK == TUK_Friend);
       // C++ [namespace.memdef]p3:
@@ -14357,8 +14367,8 @@ static QualType getNextLargerIntegralType(ASTContext &Context, QualType T) {
 
 EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
                                           EnumConstantDecl *LastEnumConst,
-                                          SourceLocation IdLoc,
-                                          IdentifierInfo *Id,
+                                          SourceLocation NameLoc,
+                                          DeclarationName Name,
                                           Expr *Val) {
   unsigned IntWidth = Context.getTargetInfo().getIntWidth();
   llvm::APSInt EnumVal(IntWidth);
@@ -14402,10 +14412,10 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
           // expression checking.
           if (!isRepresentableIntegerValue(Context, EnumVal, EltTy)) {
             if (getLangOpts().MSVCCompat) {
-              Diag(IdLoc, diag::ext_enumerator_too_large) << EltTy;
+              Diag(NameLoc, diag::ext_enumerator_too_large) << EltTy;
               Val = ImpCastExprToType(Val, EltTy, CK_IntegralCast).get();
             } else
-              Diag(IdLoc, diag::err_enumerator_too_large) << EltTy;
+              Diag(NameLoc, diag::err_enumerator_too_large) << EltTy;
           } else
             Val = ImpCastExprToType(Val, EltTy,
                                     EltTy->isBooleanType() ?
@@ -14426,7 +14436,7 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
 
           // Complain if the value is not representable in an int.
           if (!isRepresentableIntegerValue(Context, EnumVal, Context.IntTy))
-            Diag(IdLoc, diag::ext_enum_value_not_int)
+            Diag(NameLoc, diag::ext_enum_value_not_int)
               << EnumVal.toString(10) << Val->getSourceRange()
               << (EnumVal.isUnsigned() || EnumVal.isNonNegative());
           else if (!Context.hasSameType(Val->getType(), Context.IntTy)) {
@@ -14484,11 +14494,11 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
           ++EnumVal;
           if (Enum->isFixed())
             // When the underlying type is fixed, this is ill-formed.
-            Diag(IdLoc, diag::err_enumerator_wrapped)
+            Diag(NameLoc, diag::err_enumerator_wrapped)
               << EnumVal.toString(10)
               << EltTy;
           else
-            Diag(IdLoc, diag::ext_enumerator_increment_too_large)
+            Diag(NameLoc, diag::ext_enumerator_increment_too_large)
               << EnumVal.toString(10);
         } else {
           EltTy = T;
@@ -14508,11 +14518,11 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
         // permits enumerator values that are representable in some larger
         // integral type.
         if (!getLangOpts().CPlusPlus && !T.isNull())
-          Diag(IdLoc, diag::warn_enum_value_overflow);
+          Diag(NameLoc, diag::warn_enum_value_overflow);
       } else if (!getLangOpts().CPlusPlus &&
                  !isRepresentableIntegerValue(Context, EnumVal, EltTy)) {
         // Enforce C99 6.7.2.2p2 even when we compute the next value.
-        Diag(IdLoc, diag::ext_enum_value_not_int)
+        Diag(NameLoc, diag::ext_enum_value_not_int)
           << EnumVal.toString(10) << 1;
       }
     }
@@ -14525,7 +14535,7 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
     EnumVal.setIsSigned(EltTy->isSignedIntegerOrEnumerationType());
   }
 
-  return EnumConstantDecl::Create(Context, Enum, IdLoc, Id, EltTy,
+  return EnumConstantDecl::Create(Context, Enum, NameLoc, Name, EltTy,
                                   Val, EnumVal);
 }
 
@@ -14567,9 +14577,10 @@ Decl *Sema::ActOnEnumConstant(Scope *S, Decl *theEnumDecl, Decl *lastEnumConst,
   // we find one that is.
   S = getNonFieldDeclScope(S);
 
+  DeclarationName Name = getPossiblyTemplatedName(Id);
   // Verify that there isn't already something declared with this name in this
   // scope.
-  NamedDecl *PrevDecl = LookupSingleName(S, Id, IdLoc, LookupOrdinaryName,
+  NamedDecl *PrevDecl = LookupSingleName(S, Name, IdLoc, LookupOrdinaryName,
                                          ForRedeclaration);
   if (PrevDecl && PrevDecl->isTemplateParameter()) {
     // Maybe we will complain about the shadowed template parameter.
@@ -14585,10 +14596,10 @@ Decl *Sema::ActOnEnumConstant(Scope *S, Decl *theEnumDecl, Decl *lastEnumConst,
   // enumerated type
   if (!TheEnumDecl->isScoped())
     DiagnoseClassNameShadow(TheEnumDecl->getDeclContext(),
-                            DeclarationNameInfo(Id, IdLoc));
+                            DeclarationNameInfo(Name, IdLoc));
 
   EnumConstantDecl *New =
-    CheckEnumConstant(TheEnumDecl, LastEnumConst, IdLoc, Id, Val);
+    CheckEnumConstant(TheEnumDecl, LastEnumConst, IdLoc, Name, Val);
   if (!New)
     return nullptr;
 

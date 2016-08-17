@@ -5175,6 +5175,16 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
       Dependent = true;
     else if (Expr::hasAnyTypeDependentArguments(ArgExprs))
       Dependent = true;
+    else if (UnresolvedLookupExpr *ULE = dyn_cast<UnresolvedLookupExpr>(Fn)) {
+      if (!ArgExprs.empty() && ULE->getName().isTemplatedName()) {
+        AssociatedNamespaceSet AssociatedNamespaces;
+        AssociatedClassSet AssociatedClasses;
+        FindAssociatedClassesAndNamespaces(SourceLocation(), ArgExprs,
+                                           AssociatedNamespaces,
+                                           AssociatedClasses);
+        Dependent = !AssociatedNamespaces.empty();
+      }
+    }
 
     if (Dependent) {
       if (ExecConfig) {

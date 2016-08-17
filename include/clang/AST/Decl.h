@@ -2525,14 +2525,14 @@ class EnumConstantDecl : public ValueDecl, public Mergeable<EnumConstantDecl> {
   llvm::APSInt Val; // The value.
 protected:
   EnumConstantDecl(DeclContext *DC, SourceLocation L,
-                   IdentifierInfo *Id, QualType T, Expr *E,
+                   DeclarationName N, QualType T, Expr *E,
                    const llvm::APSInt &V)
-    : ValueDecl(EnumConstant, DC, L, Id, T), Init((Stmt*)E), Val(V) {}
+    : ValueDecl(EnumConstant, DC, L, N, T), Init((Stmt*)E), Val(V) {}
 
 public:
 
   static EnumConstantDecl *Create(ASTContext &C, EnumDecl *DC,
-                                  SourceLocation L, IdentifierInfo *Id,
+                                  SourceLocation L, DeclarationName N,
                                   QualType T, Expr *E,
                                   const llvm::APSInt &V);
   static EnumConstantDecl *CreateDeserialized(ASTContext &C, unsigned ID);

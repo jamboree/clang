@@ -2069,8 +2069,8 @@ public:
 
   EnumConstantDecl *CheckEnumConstant(EnumDecl *Enum,
                                       EnumConstantDecl *LastEnumConst,
-                                      SourceLocation IdLoc,
-                                      IdentifierInfo *Id,
+                                      SourceLocation NameLoc,
+                                      DeclarationName Name,
                                       Expr *val);
   bool CheckEnumUnderlyingType(TypeSourceInfo *TI);
   bool CheckEnumRedeclaration(SourceLocation EnumLoc, bool IsScoped,

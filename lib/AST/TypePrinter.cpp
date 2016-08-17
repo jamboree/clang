@@ -794,8 +794,7 @@ void TypePrinter::printFunctionNoProtoAfter(const FunctionNoProtoType *T,
 }
 
 void TypePrinter::printTypeSpec(const NamedDecl *D, raw_ostream &OS) {
-  IdentifierInfo *II = D->getIdentifier();
-  OS << II->getName();
+  OS << D->getDeclName();
   spaceBeforePlaceHolder(OS);
 }
 

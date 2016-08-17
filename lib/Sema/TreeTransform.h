@@ -9639,14 +9639,14 @@ template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformUnresolvedLookupExpr(
                                                   UnresolvedLookupExpr *Old) {
-  LookupResult R(SemaRef, Old->getName(), Old->getNameLoc(),
-                 Sema::LookupOrdinaryName);
-
+  DeclarationNameInfo NameInfo =
+      getDerived().TransformDeclarationNameInfo(Old->getNameInfo());
+  LookupResult R(SemaRef, NameInfo, Sema::LookupOrdinaryName);
   // Transform all the decls.
   for (UnresolvedLookupExpr::decls_iterator I = Old->decls_begin(),
          E = Old->decls_end(); I != E; ++I) {
     NamedDecl *InstD = static_cast<NamedDecl*>(
-                                 getDerived().TransformDecl(Old->getNameLoc(),
+                                 getDerived().TransformDecl(NameInfo.getLoc(),
                                                             *I));
     if (!InstD) {
       // Silently ignore these if a UsingShadowDecl instantiated to nothing.
@@ -9686,10 +9686,8 @@ TreeTransform<Derived>::TransformUnresolvedLookupExpr(
   }
 
   if (Old->getNamingClass()) {
-    CXXRecordDecl *NamingClass
-      = cast_or_null<CXXRecordDecl>(getDerived().TransformDecl(
-                                                            Old->getNameLoc(),
-                                                        Old->getNamingClass()));
+    CXXRecordDecl *NamingClass = cast_or_null<CXXRecordDecl>(
+        getDerived().TransformDecl(NameInfo.getLoc(), Old->getNamingClass()));
     if (!NamingClass) {
       R.clear();
       return ExprError();
