@@ -3280,7 +3280,7 @@ class UnresolvedUsingTypenameDecl
                               SourceLocation TypenameLoc,
                               NestedNameSpecifierLoc QualifierLoc,
                               SourceLocation TargetNameLoc,
-                              IdentifierInfo *TargetName)
+                              DeclarationName TargetName)
     : TypeDecl(UnresolvedUsingTypename, DC, TargetNameLoc, TargetName,
                UsingLoc),
       TypenameLocation(TypenameLoc), QualifierLoc(QualifierLoc) { }

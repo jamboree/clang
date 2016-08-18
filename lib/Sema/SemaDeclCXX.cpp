@@ -7875,6 +7875,8 @@ Decl *Sema::ActOnUsingDeclaration(Scope *S,
   }
 
   DeclarationNameInfo TargetNameInfo = GetNameFromUnqualifiedId(Name);
+  if (Name.Identifier)
+    TargetNameInfo.setName(getPossiblyTemplatedName(Name.Identifier));
   DeclarationName TargetName = TargetNameInfo.getName();
   if (!TargetName)
     return nullptr;
@@ -8329,7 +8331,7 @@ NamedDecl *Sema::BuildUsingDeclaration(Scope *S, AccessSpecifier AS,
   DeclContext *LookupContext = computeDeclContext(SS);
   NamedDecl *D;
   NestedNameSpecifierLoc QualifierLoc = SS.getWithLocInContext(Context);
-  if (!LookupContext) {
+  if (!LookupContext || NameInfo.getName().isDependentName()) {
     if (HasTypenameKeyword) {
       // FIXME: not all declaration name kinds are legal here
       D = UnresolvedUsingTypenameDecl::Create(Context, CurContext,

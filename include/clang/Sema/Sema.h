@@ -1967,6 +1967,8 @@ public:
                  bool ScopedEnumUsesClassTag, TypeResult UnderlyingType,
                  bool IsTypeSpecifier, SkipBodyInfo *SkipBody = nullptr);
 
+  void CheckTagDeclaration(TagDecl *NewTD, LookupResult &Previous);
+
   Decl *ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
                                 unsigned TagSpec, SourceLocation TagLoc,
                                 CXXScopeSpec &SS,

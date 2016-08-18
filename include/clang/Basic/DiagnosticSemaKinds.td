@@ -5323,6 +5323,9 @@ def ext_member_redeclared : ExtWarn<"class member cannot be redeclared">,
   InGroup<RedeclaredClassMember>;
 def err_member_redeclared_in_instantiation : Error<
   "multiple overloads of %0 instantiate to the same signature %1">;
+def err_member_name_conflict_in_instantiation : Error<
+  "declarations conflict in instantiated name %0">;
+def note_member_name_conflict : Note<"conflicting declaration %0 declared here">;
 def err_member_name_of_class : Error<"member %0 has the same name as its class">;
 def err_member_def_undefined_record : Error<
   "out-of-line definition of %0 from class %1 without definition">;

@@ -12760,6 +12760,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
             S->isDeclScope(PrevDecl)) {
           Diag(NameLoc, diag::ext_member_redeclared);
           Diag(PrevTagDecl->getLocation(), diag::note_previous_declaration);
+          return PrevTagDecl;
         }
 
         if (!Invalid) {
@@ -13172,6 +13173,42 @@ CreateNewDecl:
   // In C++, don't return an invalid declaration. We can't recover well from
   // the cases where we make the type anonymous.
   return (Invalid && getLangOpts().CPlusPlus) ? nullptr : New;
+}
+
+void Sema::CheckTagDeclaration(TagDecl *NewTD, LookupResult &Previous) {
+  DeclarationName Name = NewTD->getDeclName();
+  SourceLocation NameLoc = NewTD->getLocation();
+  SourceLocation KWLoc = NewTD->getLocStart();
+
+  if (DiagnoseClassNameShadow(NewTD->getDeclContext(),
+                              DeclarationNameInfo(Name, NameLoc))) {
+    NewTD->setInvalidDecl();
+    return;
+  }
+
+  if (Previous.empty())
+    return;
+
+  NamedDecl *PrevDecl = Previous.getFoundDecl();
+  NamedDecl *DirectPrevDecl = Previous.getRepresentativeDecl();
+
+  // If this is a redeclaration of a using shadow declaration, it must
+  // declare a tag in the same context. In MSVC mode, we allow a
+  // redefinition if either context is within the other.
+  if (auto *Shadow = dyn_cast<UsingShadowDecl>(DirectPrevDecl)) {
+    auto *OldTag = dyn_cast<TagDecl>(PrevDecl);
+    Diag(KWLoc, diag::err_using_decl_conflict_reverse);
+    Diag(Shadow->getTargetDecl()->getLocation(), diag::note_using_decl_target);
+    Diag(Shadow->getUsingDecl()->getLocation(), diag::note_using_decl) << 0;
+    NewTD->setInvalidDecl();
+    return;
+  }
+
+  if (isa<TagDecl>(PrevDecl) || isa<TypedefNameDecl>(PrevDecl)) {
+    Diag(NameLoc, diag::err_member_name_conflict_in_instantiation) << Name;
+    Diag(PrevDecl->getLocation(), diag::note_member_name_conflict) << PrevDecl;
+    NewTD->setInvalidDecl();
+  }
 }
 
 void Sema::ActOnTagStartDefinition(Scope *S, Decl *TagD) {

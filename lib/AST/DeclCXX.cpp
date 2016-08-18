@@ -2278,14 +2278,14 @@ UnresolvedUsingTypenameDecl::Create(ASTContext &C, DeclContext *DC,
                                     DeclarationName TargetName) {
   return new (C, DC) UnresolvedUsingTypenameDecl(
       DC, UsingLoc, TypenameLoc, QualifierLoc, TargetNameLoc,
-      TargetName.getAsIdentifierInfo());
+      TargetName);
 }
 
 UnresolvedUsingTypenameDecl *
 UnresolvedUsingTypenameDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) UnresolvedUsingTypenameDecl(
       nullptr, SourceLocation(), SourceLocation(), NestedNameSpecifierLoc(),
-      SourceLocation(), nullptr);
+      SourceLocation(), {});
 }
 
 void StaticAssertDecl::anchor() { }

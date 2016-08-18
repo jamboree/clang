@@ -1452,6 +1452,13 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
   if (TypedefNameDecl *TND = SemaRef.Context.getTypedefNameForUnnamedTagDecl(D))
     SemaRef.Context.addTypedefNameForUnnamedTagDecl(Record, TND);
 
+  if (!D->isInjectedClassName()) {
+    LookupResult Previous(SemaRef, NameInfo, Sema::LookupTagName,
+                          Sema::ForRedeclaration);
+    SemaRef.LookupQualifiedName(Previous, Owner);
+    SemaRef.CheckTagDeclaration(Record, Previous);
+  }
+
   Owner->addDecl(Record);
 
   // DR1484 clarifies that the members of a local class are instantiated as part
@@ -2525,7 +2532,9 @@ Decl * TemplateDeclInstantiator
 
   // Since NameInfo refers to a typename, it cannot be a C++ special name.
   // Hence, no transformation is required for it.
-  DeclarationNameInfo NameInfo(D->getDeclName(), D->getLocation());
+  DeclarationNameInfo NameInfo =
+      SemaRef.SubstDeclarationNameInfo(D->getNameInfo(), TemplateArgs);
+
   NamedDecl *UD =
     SemaRef.BuildUsingDeclaration(/*Scope*/ nullptr, D->getAccess(),
                                   D->getUsingLoc(), SS, NameInfo, nullptr,
