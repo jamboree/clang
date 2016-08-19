@@ -8331,7 +8331,8 @@ NamedDecl *Sema::BuildUsingDeclaration(Scope *S, AccessSpecifier AS,
   DeclContext *LookupContext = computeDeclContext(SS);
   NamedDecl *D;
   NestedNameSpecifierLoc QualifierLoc = SS.getWithLocInContext(Context);
-  if (!LookupContext || NameInfo.getName().isDependentName()) {
+  if (!LookupContext || (NameInfo.getName().isDependentName() &&
+                         SS.getScopeRep()->isValidTemplatedNamePrefix())) {
     if (HasTypenameKeyword) {
       // FIXME: not all declaration name kinds are legal here
       D = UnresolvedUsingTypenameDecl::Create(Context, CurContext,

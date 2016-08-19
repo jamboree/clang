@@ -8339,11 +8339,12 @@ Sema::ActOnDependentTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
       << (TUK == TUK_Definition) << Kind << SS.getRange();
     return true;
   }
-
+  
   // Create the resulting type.
   ElaboratedTypeKeyword Kwd = TypeWithKeyword::getKeywordForTagTypeKind(Kind);
-  QualType Result = Context.getDependentNameType(Kwd, NNS, Name);
-  
+  QualType Result =
+      Context.getDependentNameType(Kwd, NNS, getPossiblyTemplatedName(Name));
+
   // Create type-source location information for this type.
   TypeLocBuilder TLB;
   DependentNameTypeLoc TL = TLB.push<DependentNameTypeLoc>(Result);
@@ -8507,15 +8508,15 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
                         SourceLocation NameLoc) {
   CXXScopeSpec SS;
   SS.Adopt(QualifierLoc);
+  NestedNameSpecifier *NNS = QualifierLoc.getNestedNameSpecifier();
 
   DeclContext *Ctx = computeDeclContext(SS);
   if (!Ctx) {
     // If the nested-name-specifier is dependent and couldn't be
     // resolved to a type, build a typename type.
-    assert(QualifierLoc.getNestedNameSpecifier()->isDependent());
+    assert(NNS->isDependent());
 
-    return Context.getDependentNameType(
-        Keyword, QualifierLoc.getNestedNameSpecifier(), Name);
+    return Context.getDependentNameType(Keyword, NNS, Name);
   }
 
   // If the nested-name-specifier refers to the current instantiation,
@@ -8536,10 +8537,8 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
   case LookupResult::NotFound: {
     // If the name is templated and couldn't be resolved to a type,
     // build a typename type.
-    if (Name.isTemplatedName())
-      return Context.getDependentNameType(Keyword,
-                                          QualifierLoc.getNestedNameSpecifier(),
-                                          Name);
+    if (Name.isTemplatedName() && NNS->isValidTemplatedNamePrefix())
+      return Context.getDependentNameType(Keyword, NNS, Name);
 
     // If we're looking up 'type' within a template named 'enable_if', produce
     // a more specific diagnostic.
@@ -8573,17 +8572,14 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
 
   case LookupResult::NotFoundInCurrentInstantiation:
     // Okay, it's a member of an unknown instantiation.
-    return Context.getDependentNameType(Keyword, 
-                                        QualifierLoc.getNestedNameSpecifier(), 
-                                        Result.getLookupName());
+    return Context.getDependentNameType(Keyword, NNS, Result.getLookupName());
 
   case LookupResult::Found:
     if (TypeDecl *Type = dyn_cast<TypeDecl>(Result.getFoundDecl())) {
       // We found a type. Build an ElaboratedType, since the
       // typename-specifier was just sugar.
       MarkAnyDeclReferenced(Type->getLocation(), Type, /*OdrUse=*/false);
-      return Context.getElaboratedType(ETK_Typename, 
-                                       QualifierLoc.getNestedNameSpecifier(),
+      return Context.getElaboratedType(ETK_Typename, NNS,
                                        Context.getTypeDeclType(Type));
     }
 

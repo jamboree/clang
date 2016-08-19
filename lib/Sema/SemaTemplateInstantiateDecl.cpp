@@ -541,6 +541,11 @@ Decl *TemplateDeclInstantiator::InstantiateTypedefNameDecl(TypedefNameDecl *D,
 
   Typedef->setAccess(D->getAccess());
 
+  LookupResult Previous(SemaRef, NameInfo, Sema::LookupOrdinaryName,
+                        Sema::ForRedeclaration);
+  SemaRef.LookupQualifiedName(Previous, Owner);
+  SemaRef.CheckNameRedeclaration(Typedef, Previous);
+
   return Typedef;
 }
 
@@ -571,9 +576,14 @@ TemplateDeclInstantiator::VisitTypeAliasTemplateDecl(TypeAliasTemplateDecl *D) {
 
   TypeAliasDecl *Pattern = D->getTemplatedDecl();
 
+  DeclarationNameInfo PatternNameInfo =
+      SemaRef.SubstDeclarationNameInfo(Pattern->getNameInfo(), TemplateArgs);
+
+  DeclarationName Name = PatternNameInfo.getName();
+
   TypeAliasTemplateDecl *PrevAliasTemplate = nullptr;
   if (getPreviousDeclForInstantiation<TypedefNameDecl>(Pattern)) {
-    DeclContext::lookup_result Found = Owner->lookup(Pattern->getDeclName());
+    DeclContext::lookup_result Found = Owner->lookup(Name);
     if (!Found.empty()) {
       PrevAliasTemplate = dyn_cast<TypeAliasTemplateDecl>(Found.front());
     }
@@ -586,7 +596,7 @@ TemplateDeclInstantiator::VisitTypeAliasTemplateDecl(TypeAliasTemplateDecl *D) {
 
   TypeAliasTemplateDecl *Inst
     = TypeAliasTemplateDecl::Create(SemaRef.Context, Owner, D->getLocation(),
-                                    D->getDeclName(), InstParams, AliasInst);
+                                    Name, InstParams, AliasInst);
   AliasInst->setDescribedAliasTemplate(Inst);
   if (PrevAliasTemplate)
     Inst->setPreviousDecl(PrevAliasTemplate);
@@ -1068,6 +1078,11 @@ Decl *TemplateDeclInstantiator::VisitClassTemplateDecl(ClassTemplateDecl *D) {
 
   CXXRecordDecl *Pattern = D->getTemplatedDecl();
 
+  DeclarationNameInfo PatternNameInfo =
+      SemaRef.SubstDeclarationNameInfo(Pattern->getNameInfo(), TemplateArgs);
+
+  DeclarationName Name = PatternNameInfo.getName();
+
   // Instantiate the qualifier.  We have to do this first in case
   // we're a friend declaration, because if we are then we need to put
   // the new declaration in the appropriate context.
@@ -1083,7 +1098,7 @@ Decl *TemplateDeclInstantiator::VisitClassTemplateDecl(ClassTemplateDecl *D) {
   ClassTemplateDecl *PrevClassTemplate = nullptr;
 
   if (!isFriend && getPreviousDeclForInstantiation(Pattern)) {
-    DeclContext::lookup_result Found = Owner->lookup(Pattern->getDeclName());
+    DeclContext::lookup_result Found = Owner->lookup(Name);
     if (!Found.empty()) {
       PrevClassTemplate = dyn_cast<ClassTemplateDecl>(Found.front());
       if (PrevClassTemplate)
@@ -1110,8 +1125,8 @@ Decl *TemplateDeclInstantiator::VisitClassTemplateDecl(ClassTemplateDecl *D) {
 
     // Look for a previous declaration of the template in the owning
     // context.
-    LookupResult R(SemaRef, Pattern->getDeclName(), Pattern->getLocation(),
-                   Sema::LookupOrdinaryName, Sema::ForRedeclaration);
+    LookupResult R(SemaRef, PatternNameInfo, Sema::LookupOrdinaryName,
+                   Sema::ForRedeclaration);
     SemaRef.LookupQualifiedName(R, DC);
 
     if (R.isSingleResult()) {
@@ -1122,8 +1137,8 @@ Decl *TemplateDeclInstantiator::VisitClassTemplateDecl(ClassTemplateDecl *D) {
 
     if (!PrevClassTemplate && QualifierLoc) {
       SemaRef.Diag(Pattern->getLocation(), diag::err_not_tag_in_scope)
-        << D->getTemplatedDecl()->getTagKind() << Pattern->getDeclName() << DC
-        << QualifierLoc.getSourceRange();
+          << D->getTemplatedDecl()->getTagKind() << Name << DC
+          << QualifierLoc.getSourceRange();
       return nullptr;
     }
 
@@ -1177,16 +1192,22 @@ Decl *TemplateDeclInstantiator::VisitClassTemplateDecl(ClassTemplateDecl *D) {
   CXXRecordDecl *RecordInst
     = CXXRecordDecl::Create(SemaRef.Context, Pattern->getTagKind(), DC,
                             Pattern->getLocStart(), Pattern->getLocation(),
-                            Pattern->getIdentifier(), PrevDecl,
+                            Name, PrevDecl,
                             /*DelayTypeCreation=*/true);
 
   if (QualifierLoc)
     RecordInst->setQualifierInfo(QualifierLoc);
 
-  ClassTemplateDecl *Inst
-    = ClassTemplateDecl::Create(SemaRef.Context, DC, D->getLocation(),
-                                D->getIdentifier(), InstParams, RecordInst,
-                                PrevClassTemplate);
+  LookupResult Previous(SemaRef, PatternNameInfo,
+                        isFriend ? Sema::LookupTagName
+                                 : Sema::LookupOrdinaryName,
+                        Sema::ForRedeclaration);
+  SemaRef.LookupQualifiedName(Previous, Owner);
+  SemaRef.CheckNameRedeclaration(RecordInst, Previous);
+
+  ClassTemplateDecl *Inst =
+      ClassTemplateDecl::Create(SemaRef.Context, DC, D->getLocation(), Name,
+                                InstParams, RecordInst, PrevClassTemplate);
   RecordInst->setDescribedClassTemplate(Inst);
 
   if (isFriend) {
@@ -1456,7 +1477,7 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
     LookupResult Previous(SemaRef, NameInfo, Sema::LookupTagName,
                           Sema::ForRedeclaration);
     SemaRef.LookupQualifiedName(Previous, Owner);
-    SemaRef.CheckTagDeclaration(Record, Previous);
+    SemaRef.CheckNameRedeclaration(Record, Previous);
   }
 
   Owner->addDecl(Record);

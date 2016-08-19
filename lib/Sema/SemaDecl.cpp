@@ -12444,7 +12444,9 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
       // classes, we might find something at instantiation time: treat
       // this as a dependent elaborated-type-specifier.
       // But this only makes any sense for reference-like lookups.
-      if (Previous.wasNotFoundInCurrentInstantiation() &&
+      if ((Previous.wasNotFoundInCurrentInstantiation() ||
+           (Name.isTemplatedName() &&
+            SS.getScopeRep()->isValidTemplatedNamePrefix())) &&
           (TUK == TUK_Reference || TUK == TUK_Friend)) {
         IsDependent = true;
         return nullptr;
@@ -12603,16 +12605,6 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
 
       // Find the scope where we'll be declaring the tag.
       S = getTagInjectionScope(S, getLangOpts());
-
-      if (SearchDC != CurContext) {
-        if (TemplateDeclNameParmDecl *TDP =
-                Name.getCXXTemplatedNameParmDecl()) {
-          Diag(NameLoc, diag::err_templated_name_on_unresolved_elaborated_type);
-          Diag(TDP->getLocation(), diag::note_template_param_here);
-          Invalid = true;
-          goto CreateNewDecl;
-        }
-      }
     } else {
       assert(TUK == TUK_Friend);
       // C++ [namespace.memdef]p3:
@@ -12620,6 +12612,15 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
       //   class or function, the friend class or function is a member of
       //   the innermost enclosing namespace.
       SearchDC = SearchDC->getEnclosingNamespaceContext();
+    }
+
+    // Make sure the name of this undeclared reference (or friend reference)
+    // is not a templated name.
+    if (TemplateDeclNameParmDecl *TDP = Name.getCXXTemplatedNameParmDecl()) {
+      Diag(NameLoc, diag::err_templated_name_on_undeclared_elaborated_type);
+      Diag(TDP->getLocation(), diag::note_template_param_here);
+      Invalid = true;
+      goto CreateNewDecl;
     }
 
     // In C++, we need to do a redeclaration lookup to properly
@@ -13175,14 +13176,14 @@ CreateNewDecl:
   return (Invalid && getLangOpts().CPlusPlus) ? nullptr : New;
 }
 
-void Sema::CheckTagDeclaration(TagDecl *NewTD, LookupResult &Previous) {
-  DeclarationName Name = NewTD->getDeclName();
-  SourceLocation NameLoc = NewTD->getLocation();
-  SourceLocation KWLoc = NewTD->getLocStart();
+void Sema::CheckNameRedeclaration(NamedDecl *NewND, LookupResult &Previous) {
+  DeclarationName Name = NewND->getDeclName();
+  SourceLocation NameLoc = NewND->getLocation();
+  SourceLocation KWLoc = NewND->getLocStart();
 
-  if (DiagnoseClassNameShadow(NewTD->getDeclContext(),
+  if (DiagnoseClassNameShadow(NewND->getDeclContext(),
                               DeclarationNameInfo(Name, NameLoc))) {
-    NewTD->setInvalidDecl();
+    NewND->setInvalidDecl();
     return;
   }
 
@@ -13196,19 +13197,16 @@ void Sema::CheckTagDeclaration(TagDecl *NewTD, LookupResult &Previous) {
   // declare a tag in the same context. In MSVC mode, we allow a
   // redefinition if either context is within the other.
   if (auto *Shadow = dyn_cast<UsingShadowDecl>(DirectPrevDecl)) {
-    auto *OldTag = dyn_cast<TagDecl>(PrevDecl);
     Diag(KWLoc, diag::err_using_decl_conflict_reverse);
     Diag(Shadow->getTargetDecl()->getLocation(), diag::note_using_decl_target);
     Diag(Shadow->getUsingDecl()->getLocation(), diag::note_using_decl) << 0;
-    NewTD->setInvalidDecl();
+    NewND->setInvalidDecl();
     return;
   }
 
-  if (isa<TagDecl>(PrevDecl) || isa<TypedefNameDecl>(PrevDecl)) {
-    Diag(NameLoc, diag::err_member_name_conflict_in_instantiation) << Name;
-    Diag(PrevDecl->getLocation(), diag::note_member_name_conflict) << PrevDecl;
-    NewTD->setInvalidDecl();
-  }
+  Diag(NameLoc, diag::err_member_name_conflict_in_instantiation) << Name;
+  Diag(PrevDecl->getLocation(), diag::note_member_name_conflict) << PrevDecl;
+  NewND->setInvalidDecl();
 }
 
 void Sema::ActOnTagStartDefinition(Scope *S, Decl *TagD) {
