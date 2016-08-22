@@ -224,7 +224,6 @@ bool TemplateArgument::containsUnexpandedParameterPack() const {
   case Declaration:
   case Integral:
   case TemplateExpansion:
-  case DeclName:
   case DeclNameExpansion:
   case NullPtr:
     break;
@@ -241,6 +240,11 @@ bool TemplateArgument::containsUnexpandedParameterPack() const {
         
   case Expression:
     if (getAsExpr()->containsUnexpandedParameterPack())
+      return true;
+    break;
+
+  case DeclName:
+    if (getAsDeclName().containsUnexpandedParameterPack())
       return true;
     break;
 
@@ -321,6 +325,7 @@ void TemplateArgument::Profile(llvm::FoldingSetNodeID &ID,
     ID.AddInteger(Args.NumArgs);
     for (unsigned I = 0; I != Args.NumArgs; ++I)
       Args.Args[I].Profile(ID, Context);
+    break;
 
   case DeclName:
   case DeclNameExpansion: {

@@ -12317,6 +12317,10 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
   bool isExplicitSpecialization = false;
   bool Invalid = false;
 
+  if (DiagnoseUnexpandedParameterPack(DeclarationNameInfo(Name, NameLoc),
+                                      UPPC_DeclarationType))
+    return nullptr;
+
   // We only need to do this matching if we have template parameters
   // or a scope specifier, which also conveniently avoids this work
   // for non-C++ cases.
@@ -13485,6 +13489,11 @@ FieldDecl *Sema::HandleField(Scope *S, RecordDecl *Record,
   // Check to see if this name was declared as a member previously
   NamedDecl *PrevDecl = nullptr;
   DeclarationName Name = getPossiblyTemplatedName(II);
+
+  if (DiagnoseUnexpandedParameterPack(DeclarationNameInfo(Name, Loc),
+                                      UPPC_DeclarationType))
+    return nullptr;
+
   LookupResult Previous(*this, Name, Loc, LookupMemberName, ForRedeclaration);
   LookupName(Previous, S);
   switch (Previous.getResultKind()) {

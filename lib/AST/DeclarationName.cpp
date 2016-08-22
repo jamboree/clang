@@ -590,7 +590,6 @@ bool DeclarationNameInfo::containsUnexpandedParameterPack() const {
   case DeclarationName::CXXOperatorName:
   case DeclarationName::CXXLiteralOperatorName:
   case DeclarationName::CXXUsingDirective:
-  case DeclarationName::CXXTemplatedName:
     return false;
 
   case DeclarationName::CXXConstructorName:
@@ -600,6 +599,9 @@ bool DeclarationNameInfo::containsUnexpandedParameterPack() const {
       return TInfo->getType()->containsUnexpandedParameterPack();
 
     return Name.getCXXNameType()->containsUnexpandedParameterPack();
+
+  case DeclarationName::CXXTemplatedName:
+    return Name.getCXXTemplatedName()->isParameterPack();
   }
   llvm_unreachable("All name kinds handled.");
 }

@@ -194,6 +194,17 @@ namespace {
       InLambda = WasInLambda;
       return true;
     }
+
+    bool TraverseDeclarationNameInfo(DeclarationNameInfo NameInfo) {
+      if (CXXTemplateDeclNameParmName *TN =
+              NameInfo.getName().getCXXTemplatedName()) {
+        if (TN->isParameterPack())
+          Unexpanded.push_back(
+              UnexpandedParameterPack(TN->getDecl(), NameInfo.getLoc()));
+        return true;
+      }
+      return inherited::TraverseDeclarationNameInfo(NameInfo);
+    }
   };
 }
 
@@ -313,6 +324,7 @@ bool Sema::DiagnoseUnexpandedParameterPack(const DeclarationNameInfo &NameInfo,
   // C++0x [temp.variadic]p5:
   //   An appearance of a name of a parameter pack that is not expanded is 
   //   ill-formed.
+#if 0
   SmallVector<UnexpandedParameterPack, 2> Unexpanded;
   switch (NameInfo.getName().getNameKind()) {
   case DeclarationName::Identifier:
@@ -341,10 +353,19 @@ bool Sema::DiagnoseUnexpandedParameterPack(const DeclarationNameInfo &NameInfo,
   case DeclarationName::CXXTemplatedName:
     if (!NameInfo.getName().getCXXTemplatedName()->isParameterPack())
       return false;
-    // FIXME: add it to Unexpanded
+    Unexpanded.push_back(UnexpandedParameterPack(
+        NameInfo.getName().getCXXTemplatedNameParmDecl(), NameInfo.getLoc()));
     break;
   }
+#else
+  if (NameInfo.getName().isEmpty() ||
+      !NameInfo.getName().containsUnexpandedParameterPack())
+    return false;
 
+  SmallVector<UnexpandedParameterPack, 2> Unexpanded;
+  CollectUnexpandedParameterPacksVisitor(Unexpanded)
+      .TraverseDeclarationNameInfo(NameInfo);
+#endif
   assert(!Unexpanded.empty() && "Unable to find unexpanded parameter packs");
   return DiagnoseUnexpandedParameterPacks(NameInfo.getLoc(), UPPC, Unexpanded);
 }
@@ -455,18 +476,23 @@ Sema::ActOnPackExpansion(const ParsedTemplateArgument &Arg,
   }
     
   case ParsedTemplateArgument::Template:
-    if (!Arg.getAsTemplate().get().containsUnexpandedParameterPack()) {
-      SourceRange R(Arg.getLocation());
-      if (Arg.getScopeSpec().isValid())
-        R.setBegin(Arg.getScopeSpec().getBeginLoc());
-      Diag(EllipsisLoc, diag::err_pack_expansion_without_parameter_packs)
-        << R;
-      return ParsedTemplateArgument();
-    }
-      
-    return Arg.getTemplatePackExpansion(EllipsisLoc);
+    if (Arg.getAsTemplate().get().containsUnexpandedParameterPack())
+      return Arg.getTemplatePackExpansion(EllipsisLoc);
+    break;
+
+  case ParsedTemplateArgument::DeclName:
+    if (Arg.getAsDeclName().get().containsUnexpandedParameterPack())
+      return Arg.getDeclNamePackExpansion(EllipsisLoc);
+    break;
+
+  default:
+      llvm_unreachable("Unhandled template argument kind?");
   }
-  llvm_unreachable("Unhandled template argument kind?");
+  SourceRange R(Arg.getLocation());
+  if (Arg.getScopeSpec().isValid())
+    R.setBegin(Arg.getScopeSpec().getBeginLoc());
+  Diag(EllipsisLoc, diag::err_pack_expansion_without_parameter_packs) << R;
+  return ParsedTemplateArgument();
 }
 
 TypeResult Sema::ActOnPackExpansion(ParsedType Type, 

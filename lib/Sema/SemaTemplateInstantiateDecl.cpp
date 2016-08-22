@@ -957,6 +957,12 @@ Decl *TemplateDeclInstantiator::VisitEnumDecl(EnumDecl *D) {
   if (TypedefNameDecl *TND = SemaRef.Context.getTypedefNameForUnnamedTagDecl(D))
     SemaRef.Context.addTypedefNameForUnnamedTagDecl(Enum, TND);
   if (SubstQualifier(D, Enum)) return nullptr;
+
+  LookupResult Previous(SemaRef, NameInfo, Sema::LookupTagName,
+                        Sema::ForRedeclaration);
+  SemaRef.LookupQualifiedName(Previous, Owner);
+  SemaRef.CheckNameRedeclaration(Enum, Previous);
+
   Owner->addDecl(Enum);
 
   EnumDecl *Def = D->getDefinition();
@@ -1036,6 +1042,14 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
       SemaRef.InstantiateAttrs(TemplateArgs, EC, EnumConst);
 
       EnumConst->setAccess(Enum->getAccess());
+
+      LookupResult Previous(SemaRef, NameInfo, Sema::LookupOrdinaryName,
+                            Sema::ForRedeclaration);
+      SemaRef.LookupQualifiedName(Previous, Owner);
+      if (Previous.isSingleTagDecl())
+        Previous.clear();
+      SemaRef.CheckNameRedeclaration(EnumConst, Previous);
+
       Enum->addDecl(EnumConst);
       Enumerators.push_back(EnumConst);
       LastEnumConst = EnumConst;
