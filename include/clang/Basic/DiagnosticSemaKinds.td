@@ -3195,7 +3195,7 @@ def note_ovl_candidate_incomplete_deduction : Note<"candidate template ignored: 
     "couldn't infer template argument %0">;
 def note_ovl_candidate_inconsistent_deduction : Note<
     "candidate template ignored: deduced conflicting %select{types|values|"
-    "templates}0 for parameter %1%diff{ ($ vs. $)|}2,3">;
+    "templates|declnames}0 for parameter %1%diff{ ($ vs. $)|}2,3">;
 def note_ovl_candidate_explicit_arg_mismatch_named : Note<
     "candidate template ignored: invalid explicitly-specified argument "
     "for template parameter %0">;
@@ -4215,8 +4215,8 @@ def note_template_parameter_pack_here : Note<
   "parameter%select{| pack}1 declared here">;
   
 def err_unexpanded_parameter_pack : Error<
-  "%select{expression|base type|declaration type|data member type|bit-field "
-  "size|static assertion|fixed underlying type|enumerator value|"
+  "%select{expression|base type|declaration type|declaration name|data member "
+  "type|bit-field size|static assertion|fixed underlying type|enumerator value|"
   "using declaration|friend declaration|qualifier|initializer|default argument|"
   "non-type template parameter type|exception type|partial specialization|"
   "__if_exists name|__if_not_exists name|lambda|block}0 contains"

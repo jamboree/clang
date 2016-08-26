@@ -240,7 +240,8 @@ bool NestedNameSpecifier::isInstantiationDependent() const {
 bool NestedNameSpecifier::containsUnexpandedParameterPack() const {
   switch (getKind()) {
   case DeclName:
-    return getPrefix() && getPrefix()->containsUnexpandedParameterPack();
+    return getAsDeclName().containsUnexpandedParameterPack() ||
+           getPrefix() && getPrefix()->containsUnexpandedParameterPack();
 
   case Namespace:
   case NamespaceAlias:

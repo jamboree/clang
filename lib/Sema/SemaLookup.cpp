@@ -1498,7 +1498,9 @@ bool Sema::hasVisibleDefaultArgument(const NamedDecl *D,
     return ::hasVisibleDefaultArgument(*this, P, Modules);
   if (auto *P = dyn_cast<NonTypeTemplateParmDecl>(D))
     return ::hasVisibleDefaultArgument(*this, P, Modules);
-  return ::hasVisibleDefaultArgument(*this, cast<TemplateTemplateParmDecl>(D),
+  if (auto *P = dyn_cast<TemplateTemplateParmDecl>(D))
+      return ::hasVisibleDefaultArgument(*this, P, Modules);
+  return ::hasVisibleDefaultArgument(*this, cast<TemplateDeclNameParmDecl>(D),
                                      Modules);
 }
 

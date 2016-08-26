@@ -1387,9 +1387,9 @@ public:
 
 protected:
   ParmVarDecl(Kind DK, ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
-              SourceLocation IdLoc, IdentifierInfo *Id, QualType T,
+              SourceLocation IdLoc, DeclarationName N, QualType T,
               TypeSourceInfo *TInfo, StorageClass S, Expr *DefArg)
-      : VarDecl(DK, C, DC, StartLoc, IdLoc, Id, T, TInfo, S) {
+      : VarDecl(DK, C, DC, StartLoc, IdLoc, N, T, TInfo, S) {
     assert(ParmVarDeclBits.HasInheritedDefaultArg == false);
     assert(ParmVarDeclBits.DefaultArgKind == DAK_None);
     assert(ParmVarDeclBits.IsKNRPromoted == false);
@@ -1400,7 +1400,7 @@ protected:
 public:
   static ParmVarDecl *Create(ASTContext &C, DeclContext *DC,
                              SourceLocation StartLoc,
-                             SourceLocation IdLoc, IdentifierInfo *Id,
+                             SourceLocation IdLoc, DeclarationName N,
                              QualType T, TypeSourceInfo *TInfo,
                              StorageClass S, Expr *DefArg);
 

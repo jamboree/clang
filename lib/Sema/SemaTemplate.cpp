@@ -6467,13 +6467,21 @@ Sema::ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec,
             << DefArg->getSourceRange();
           NTTP->removeDefaultArgument();
         }
-      } else {
-        TemplateTemplateParmDecl *TTP = cast<TemplateTemplateParmDecl>(Param);
+      } else if (TemplateTemplateParmDecl *TTP =
+                     dyn_cast<TemplateTemplateParmDecl>(Param)) {
         if (TTP->hasDefaultArgument()) {
           Diag(TTP->getDefaultArgument().getLocation(),
                diag::err_default_arg_in_partial_spec)
-            << TTP->getDefaultArgument().getSourceRange();
+              << TTP->getDefaultArgument().getSourceRange();
           TTP->removeDefaultArgument();
+        }
+      } else {
+        TemplateDeclNameParmDecl *TDP = cast<TemplateDeclNameParmDecl>(Param);
+        if (TDP->hasDefaultArgument()) {
+          Diag(TDP->getDefaultArgument().getLocation(),
+               diag::err_default_arg_in_partial_spec)
+              << TDP->getDefaultArgument().getSourceRange();
+          TDP->removeDefaultArgument();
         }
       }
     }

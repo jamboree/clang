@@ -734,7 +734,6 @@ bool RecursiveASTVisitor<Derived>::TraverseNestedNameSpecifierLoc(
     TRY_TO(TraverseNestedNameSpecifierLoc(Prefix));
 
   switch (NNS.getNestedNameSpecifier()->getKind()) {
-  case NestedNameSpecifier::DeclName:
   case NestedNameSpecifier::Namespace:
   case NestedNameSpecifier::NamespaceAlias:
   case NestedNameSpecifier::Global:
@@ -744,6 +743,12 @@ bool RecursiveASTVisitor<Derived>::TraverseNestedNameSpecifierLoc(
   case NestedNameSpecifier::TypeSpec:
   case NestedNameSpecifier::TypeSpecWithTemplate:
     TRY_TO(TraverseTypeLoc(NNS.getTypeLoc()));
+    break;
+
+  case NestedNameSpecifier::DeclName:
+    TRY_TO(TraverseDeclarationNameInfo(
+        DeclarationNameInfo(NNS.getNestedNameSpecifier()->getAsDeclName(),
+                            NNS.getLocalBeginLoc())));
     break;
   }
 

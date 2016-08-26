@@ -36,13 +36,16 @@ class ClassTemplatePartialSpecializationDecl;
 class TemplateTypeParmDecl;
 class NonTypeTemplateParmDecl;
 class TemplateTemplateParmDecl;
+class TemplateDeclNameParmDecl;
 class TypeAliasTemplateDecl;
 class VarTemplateDecl;
 class VarTemplatePartialSpecializationDecl;
 
 /// \brief Stores a template parameter of any kind.
-typedef llvm::PointerUnion3<TemplateTypeParmDecl*, NonTypeTemplateParmDecl*,
-                            TemplateTemplateParmDecl*> TemplateParameter;
+typedef llvm::PointerUnion4<TemplateTypeParmDecl *, NonTypeTemplateParmDecl *,
+                            TemplateTemplateParmDecl *,
+                            TemplateDeclNameParmDecl *>
+    TemplateParameter;
 
 /// \brief Stores a list of template parameters for a TemplateDecl and its
 /// derived classes.

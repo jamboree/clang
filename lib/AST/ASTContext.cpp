@@ -578,10 +578,17 @@ ASTContext::CanonicalTemplateTemplateParm::Profile(llvm::FoldingSetNodeID &ID,
         ID.AddBoolean(false);
       continue;
     }
-    
-    TemplateTemplateParmDecl *TTP = cast<TemplateTemplateParmDecl>(*P);
-    ID.AddInteger(2);
-    Profile(ID, TTP);
+
+    if (TemplateTemplateParmDecl *TTP =
+            dyn_cast<TemplateTemplateParmDecl>(*P)) {
+      ID.AddInteger(2);
+      Profile(ID, TTP);
+      continue;
+    }
+
+    TemplateDeclNameParmDecl *TDP = cast<TemplateDeclNameParmDecl>(*P);
+    ID.AddInteger(3);
+    ID.AddBoolean(TDP->isParameterPack());
   }
 }
 
@@ -4460,9 +4467,12 @@ ASTContext::getCanonicalTemplateArgument(const TemplateArgument &Arg) const {
     }
 
     case TemplateArgument::DeclName:
+      return TemplateArgument(Arg.getAsDeclName().getCanonicalName());
+
     case TemplateArgument::DeclNameExpansion:
-      // These are always canonical. (no special names are allowed)
-      return Arg;
+      return TemplateArgument(
+          Arg.getAsDeclNameOrDeclNamePattern().getCanonicalName(),
+          Arg.getNumDeclNameExpansions());
   }
 
   // Silence GCC warning

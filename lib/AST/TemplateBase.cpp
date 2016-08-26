@@ -196,10 +196,12 @@ bool TemplateArgument::isPackExpansion() const {
   case Integral:
   case Pack:    
   case Template:
+  case DeclName:
   case NullPtr:
     return false;
       
   case TemplateExpansion:
+  case DeclNameExpansion:
     return true;
       
   case Type:
@@ -207,12 +209,6 @@ bool TemplateArgument::isPackExpansion() const {
           
   case Expression:
     return isa<PackExpansionExpr>(getAsExpr());
-
-  case DeclName:
-    return false;
-
-  case DeclNameExpansion:
-    return true;
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");

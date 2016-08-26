@@ -195,6 +195,16 @@ namespace {
       return true;
     }
 
+    bool TraverseDeclarationName(DeclarationName Name) {
+      if (CXXTemplateDeclNameParmName *TN = Name.getCXXTemplatedName()) {
+        if (TN->isParameterPack())
+          Unexpanded.push_back(
+              UnexpandedParameterPack(TN->getDecl(), SourceLocation()));
+        return true;
+      }
+      return inherited::TraverseDeclarationName(Name);
+    }
+
     bool TraverseDeclarationNameInfo(DeclarationNameInfo NameInfo) {
       if (CXXTemplateDeclNameParmName *TN =
               NameInfo.getName().getCXXTemplatedName()) {
@@ -313,7 +323,7 @@ bool Sema::DiagnoseUnexpandedParameterPack(const CXXScopeSpec &SS,
 
   SmallVector<UnexpandedParameterPack, 2> Unexpanded;
   CollectUnexpandedParameterPacksVisitor(Unexpanded)
-    .TraverseNestedNameSpecifier(SS.getScopeRep());
+    .TraverseNestedNameSpecifierLoc(SS.getWithLocInContext(Context));
   assert(!Unexpanded.empty() && "Unable to find unexpanded parameter packs");
   return DiagnoseUnexpandedParameterPacks(SS.getRange().getBegin(),
                                           UPPC, Unexpanded);

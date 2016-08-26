@@ -8800,6 +8800,9 @@ Decl *Sema::ActOnAliasDeclaration(Scope *S,
   TypeSourceInfo *TInfo = nullptr;
   GetTypeFromParser(Type.get(), &TInfo);
 
+  if (DiagnoseUnexpandedParameterPack(NameInfo, UPPC_DeclarationName))
+    return nullptr;
+
   if (DiagnoseClassNameShadow(CurContext, NameInfo))
     return nullptr;
 
@@ -9336,7 +9339,7 @@ Sema::findInheritingConstructor(SourceLocation Loc,
     TypeSourceInfo *TInfo =
         Context.getTrivialTypeSourceInfo(FPT->getParamType(I), UsingLoc);
     ParmVarDecl *PD = ParmVarDecl::Create(
-        Context, DerivedCtor, UsingLoc, UsingLoc, /*IdentifierInfo=*/nullptr,
+        Context, DerivedCtor, UsingLoc, UsingLoc, /*DeclarationName=*/{},
         FPT->getParamType(I), TInfo, SC_None, /*DefaultArg=*/nullptr);
     PD->setScopeInfo(0, I);
     PD->setImplicit();
@@ -10233,7 +10236,7 @@ CXXMethodDecl *Sema::DeclareImplicitCopyAssignment(CXXRecordDecl *ClassDecl) {
   // Add the parameter to the operator.
   ParmVarDecl *FromParam = ParmVarDecl::Create(Context, CopyAssignment,
                                                ClassLoc, ClassLoc,
-                                               /*Id=*/nullptr, ArgType,
+                                               /*DeclarationName=*/{}, ArgType,
                                                /*TInfo=*/nullptr, SC_None,
                                                nullptr);
   CopyAssignment->setParams(FromParam);
@@ -10625,7 +10628,7 @@ CXXMethodDecl *Sema::DeclareImplicitMoveAssignment(CXXRecordDecl *ClassDecl) {
   // Add the parameter to the operator.
   ParmVarDecl *FromParam = ParmVarDecl::Create(Context, MoveAssignment,
                                                ClassLoc, ClassLoc,
-                                               /*Id=*/nullptr, ArgType,
+                                               /*DeclarationName=*/{}, ArgType,
                                                /*TInfo=*/nullptr, SC_None,
                                                nullptr);
   MoveAssignment->setParams(FromParam);
@@ -11062,7 +11065,7 @@ CXXConstructorDecl *Sema::DeclareImplicitCopyConstructor(
   // Add the parameter to the constructor.
   ParmVarDecl *FromParam = ParmVarDecl::Create(Context, CopyConstructor,
                                                ClassLoc, ClassLoc,
-                                               /*IdentifierInfo=*/nullptr,
+                                               /*DeclarationName=*/{},
                                                ArgType, /*TInfo=*/nullptr,
                                                SC_None, nullptr);
   CopyConstructor->setParams(FromParam);
@@ -11242,7 +11245,7 @@ CXXConstructorDecl *Sema::DeclareImplicitMoveConstructor(
   // Add the parameter to the constructor.
   ParmVarDecl *FromParam = ParmVarDecl::Create(Context, MoveConstructor,
                                                ClassLoc, ClassLoc,
-                                               /*IdentifierInfo=*/nullptr,
+                                               /*DeclarationName=*/{},
                                                ArgType, /*TInfo=*/nullptr,
                                                SC_None, nullptr);
   MoveConstructor->setParams(FromParam);

@@ -2470,7 +2470,7 @@ void Sema::DeclareGlobalAllocationFunction(DeclarationName Name,
   ParmVarDecl *ParamDecls[2];
   for (unsigned I = 0; I != NumParams; ++I) {
     ParamDecls[I] = ParmVarDecl::Create(Context, Alloc, SourceLocation(),
-                                        SourceLocation(), nullptr,
+                                        SourceLocation(), {},
                                         Params[I], /*TInfo=*/nullptr,
                                         SC_None, nullptr);
     ParamDecls[I]->setImplicit();

@@ -201,6 +201,23 @@ checkDeducedTemplateArguments(ASTContext &Context,
     // All other combinations are incompatible.
     return DeducedTemplateArgument();
 
+  case TemplateArgument::DeclName:
+    if (Y.getKind() == TemplateArgument::DeclName &&
+        X.getAsDeclName() == Y.getAsDeclName())
+      return X;
+
+    // All other combinations are incompatible.
+    return DeducedTemplateArgument();
+
+  case TemplateArgument::DeclNameExpansion:
+    if (Y.getKind() == TemplateArgument::DeclNameExpansion &&
+        X.getAsDeclNameOrDeclNamePattern() ==
+            Y.getAsDeclNameOrDeclNamePattern())
+      return X;
+
+    // All other combinations are incompatible.
+    return DeducedTemplateArgument();
+
   case TemplateArgument::Expression:
     // If we deduced a dependent expression in one case and either an integral
     // constant or a declaration in another case, keep the integral constant
@@ -411,6 +428,37 @@ DeduceTemplateArguments(Sema &S,
   return Sema::TDK_NonDeducedMismatch;
 }
 
+static Sema::TemplateDeductionResult
+DeduceTemplateArguments(Sema &S, TemplateParameterList *TemplateParams,
+                        DeclarationName Param, DeclarationName Arg,
+                        TemplateDeductionInfo &Info,
+                        SmallVectorImpl<DeducedTemplateArgument> &Deduced) {
+  if (CXXTemplateDeclNameParmName *TN = Param.getCXXTemplatedName()) {
+    DeducedTemplateArgument NewDeduced(Arg);
+    DeducedTemplateArgument Result = checkDeducedTemplateArguments(
+        S.Context, Deduced[TN->getIndex()], NewDeduced);
+    if (Result.isNull()) {
+      Info.Param = cast<TemplateDeclNameParmDecl>(
+          TemplateParams->getParam(TN->getIndex()));
+      Info.FirstArg = Deduced[TN->getIndex()];
+      Info.SecondArg = NewDeduced;
+      return Sema::TDK_Inconsistent;
+    }
+
+    Deduced[TN->getIndex()] = Result;
+    return Sema::TDK_Success;
+  }
+
+  // Verify that the two declnames are equivalent.
+  if (Param == Arg)
+    return Sema::TDK_Success;
+
+  // Mismatch of non-dependent template parameter to argument.
+  Info.FirstArg = TemplateArgument(Param);
+  Info.SecondArg = TemplateArgument(Arg);
+  return Sema::TDK_NonDeducedMismatch;
+}
+
 /// \brief Deduce the template arguments by comparing the template parameter
 /// type (which is a template-id) with the template argument type.
 ///
@@ -547,6 +595,9 @@ static TemplateParameter makeTemplateParameter(Decl *D) {
     return TemplateParameter(TTP);
   if (NonTypeTemplateParmDecl *NTTP = dyn_cast<NonTypeTemplateParmDecl>(D))
     return TemplateParameter(NTTP);
+
+  if (TemplateTemplateParmDecl *TMP = dyn_cast<TemplateTemplateParmDecl>(D))
+    return TemplateParameter(TMP);
 
   return TemplateParameter(cast<TemplateTemplateParmDecl>(D));
 }
@@ -1695,20 +1746,23 @@ DeduceTemplateArguments(Sema &S,
                                                 Param.getAsType(),
                                                 Arg.getAsType(),
                                                 Info, Deduced, 0);
-    Info.FirstArg = Param;
-    Info.SecondArg = Arg;
-    return Sema::TDK_NonDeducedMismatch;
+    break;
 
   case TemplateArgument::Template:
     if (Arg.getKind() == TemplateArgument::Template)
       return DeduceTemplateArguments(S, TemplateParams,
                                      Param.getAsTemplate(),
                                      Arg.getAsTemplate(), Info, Deduced);
-    Info.FirstArg = Param;
-    Info.SecondArg = Arg;
-    return Sema::TDK_NonDeducedMismatch;
+    break;
+
+  case TemplateArgument::DeclName:
+    if (Arg.getKind() == TemplateArgument::DeclName)
+      return DeduceTemplateArguments(S, TemplateParams, Param.getAsDeclName(),
+                                     Arg.getAsDeclName(), Info, Deduced);
+    break;
 
   case TemplateArgument::TemplateExpansion:
+  case TemplateArgument::DeclNameExpansion:
     llvm_unreachable("caller should handle pack expansions");
 
   case TemplateArgument::Declaration:
@@ -1716,38 +1770,21 @@ DeduceTemplateArguments(Sema &S,
         isSameDeclaration(Param.getAsDecl(), Arg.getAsDecl()))
       return Sema::TDK_Success;
 
-    Info.FirstArg = Param;
-    Info.SecondArg = Arg;
-    return Sema::TDK_NonDeducedMismatch;
+    break;
 
   case TemplateArgument::NullPtr:
     if (Arg.getKind() == TemplateArgument::NullPtr &&
         S.Context.hasSameType(Param.getNullPtrType(), Arg.getNullPtrType()))
       return Sema::TDK_Success;
 
-    Info.FirstArg = Param;
-    Info.SecondArg = Arg;
-    return Sema::TDK_NonDeducedMismatch;
+    break;
 
   case TemplateArgument::Integral:
     if (Arg.getKind() == TemplateArgument::Integral) {
       if (hasSameExtendedValue(Param.getAsIntegral(), Arg.getAsIntegral()))
         return Sema::TDK_Success;
-
-      Info.FirstArg = Param;
-      Info.SecondArg = Arg;
-      return Sema::TDK_NonDeducedMismatch;
     }
-
-    if (Arg.getKind() == TemplateArgument::Expression) {
-      Info.FirstArg = Param;
-      Info.SecondArg = Arg;
-      return Sema::TDK_NonDeducedMismatch;
-    }
-
-    Info.FirstArg = Param;
-    Info.SecondArg = Arg;
-    return Sema::TDK_NonDeducedMismatch;
+    break;
 
   case TemplateArgument::Expression: {
     if (NonTypeTemplateParmDecl *NTTP
@@ -1765,9 +1802,7 @@ DeduceTemplateArguments(Sema &S,
         return DeduceNonTypeTemplateArgument(S, NTTP, Arg.getAsDecl(),
                                              Info, Deduced);
 
-      Info.FirstArg = Param;
-      Info.SecondArg = Arg;
-      return Sema::TDK_NonDeducedMismatch;
+      break;
     }
 
     // Can't deduce anything, but that's okay.
@@ -1775,9 +1810,14 @@ DeduceTemplateArguments(Sema &S,
   }
   case TemplateArgument::Pack:
     llvm_unreachable("Argument packs should be expanded by the caller!");
+
+  default:
+    llvm_unreachable("Invalid TemplateArgument Kind!");
   }
 
-  llvm_unreachable("Invalid TemplateArgument Kind!");
+  Info.FirstArg = Param;
+  Info.SecondArg = Arg;
+  return Sema::TDK_NonDeducedMismatch;
 }
 
 /// \brief Determine whether there is a template argument to be used for
@@ -1956,10 +1996,13 @@ static bool isSameTemplateArg(ASTContext &Context,
 
     case TemplateArgument::Template:
     case TemplateArgument::TemplateExpansion:
-      return Context.getCanonicalTemplateName(
-                    X.getAsTemplateOrTemplatePattern()).getAsVoidPointer() ==
-             Context.getCanonicalTemplateName(
-                    Y.getAsTemplateOrTemplatePattern()).getAsVoidPointer();
+      return Context.hasSameTemplateName(X.getAsTemplateOrTemplatePattern(),
+                                         Y.getAsTemplateOrTemplatePattern());
+
+    case TemplateArgument::DeclName:
+    case TemplateArgument::DeclNameExpansion:
+      return X.getAsDeclNameOrDeclNamePattern() ==
+             Y.getAsDeclNameOrDeclNamePattern();
 
     case TemplateArgument::Integral:
       return X.getAsIntegral() == Y.getAsIntegral();
@@ -2036,25 +2079,28 @@ getTrivialTemplateArgumentLoc(Sema &S,
     return TemplateArgumentLoc(TemplateArgument(E), E);
   }
 
-    case TemplateArgument::Template:
-    case TemplateArgument::TemplateExpansion: {
-      NestedNameSpecifierLocBuilder Builder;
-      TemplateName Template = Arg.getAsTemplate();
-      if (DependentTemplateName *DTN = Template.getAsDependentTemplateName())
-        Builder.MakeTrivial(S.Context, DTN->getQualifier(), Loc);
-      else if (QualifiedTemplateName *QTN =
-                   Template.getAsQualifiedTemplateName())
-        Builder.MakeTrivial(S.Context, QTN->getQualifier(), Loc);
-      
-      if (Arg.getKind() == TemplateArgument::Template)
-        return TemplateArgumentLoc(Arg, 
-                                   Builder.getWithLocInContext(S.Context),
-                                   Loc);
-      
-      
+  case TemplateArgument::Template:
+  case TemplateArgument::TemplateExpansion: {
+    NestedNameSpecifierLocBuilder Builder;
+    TemplateName Template = Arg.getAsTemplate();
+    if (DependentTemplateName *DTN = Template.getAsDependentTemplateName())
+      Builder.MakeTrivial(S.Context, DTN->getQualifier(), Loc);
+    else if (QualifiedTemplateName *QTN = Template.getAsQualifiedTemplateName())
+      Builder.MakeTrivial(S.Context, QTN->getQualifier(), Loc);
+
+    if (Arg.getKind() == TemplateArgument::Template)
       return TemplateArgumentLoc(Arg, Builder.getWithLocInContext(S.Context),
-                                 Loc, Loc);
-    }
+                                 Loc);
+
+    return TemplateArgumentLoc(Arg, Builder.getWithLocInContext(S.Context), Loc,
+                               Loc);
+  }
+
+  case TemplateArgument::DeclName:
+    return TemplateArgumentLoc(Arg, Loc);
+
+  case TemplateArgument::DeclNameExpansion:
+    return TemplateArgumentLoc(Arg, Loc, Loc);
 
   case TemplateArgument::Expression:
     return TemplateArgumentLoc(Arg, Arg.getAsExpr());
@@ -4826,6 +4872,17 @@ MarkUsedTemplateParameters(ASTContext &Ctx,
 }
 
 /// \brief Mark the template parameters that are used by the given
+/// declname.
+static void MarkUsedTemplateParameters(ASTContext &Ctx, DeclarationName Name,
+                                       bool OnlyDeduced, unsigned Depth,
+                                       llvm::SmallBitVector &Used) {
+  if (CXXTemplateDeclNameParmName *TN = Name.getCXXTemplatedName()) {
+    if (TN->getDepth() == Depth)
+      Used[TN->getIndex()] = true;
+  }
+}
+
+/// \brief Mark the template parameters that are used by the given
 /// type.
 static void
 MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
@@ -5090,6 +5147,13 @@ MarkUsedTemplateParameters(ASTContext &Ctx,
   case TemplateArgument::TemplateExpansion:
     MarkUsedTemplateParameters(Ctx,
                                TemplateArg.getAsTemplateOrTemplatePattern(),
+                               OnlyDeduced, Depth, Used);
+    break;
+
+  case TemplateArgument::DeclName:
+  case TemplateArgument::DeclNameExpansion:
+    MarkUsedTemplateParameters(Ctx,
+                               TemplateArg.getAsDeclNameOrDeclNamePattern(),
                                OnlyDeduced, Depth, Used);
     break;
 

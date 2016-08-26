@@ -9601,7 +9601,8 @@ static void DiagnoseBadDeduction(Sema &S, NamedDecl *Found, Decl *Templated,
   NamedDecl *ParamD;
   (ParamD = Param.dyn_cast<TemplateTypeParmDecl*>()) ||
   (ParamD = Param.dyn_cast<NonTypeTemplateParmDecl*>()) ||
-  (ParamD = Param.dyn_cast<TemplateTemplateParmDecl*>());
+  (ParamD = Param.dyn_cast<TemplateTemplateParmDecl*>()) ||
+  (ParamD = Param.dyn_cast<TemplateDeclNameParmDecl*>());
   switch (DeductionFailure.Result) {
   case Sema::TDK_Success:
     llvm_unreachable("TDK_success while diagnosing bad deduction");
@@ -9647,8 +9648,10 @@ static void DiagnoseBadDeduction(Sema &S, NamedDecl *Found, Decl *Templated,
       which = 0;
     else if (isa<NonTypeTemplateParmDecl>(ParamD))
       which = 1;
+    else if (isa<TemplateTemplateParmDecl>(ParamD))
+        which = 2;
     else {
-      which = 2;
+      which = 3;
     }
 
     S.Diag(Templated->getLocation(),
@@ -9672,6 +9675,9 @@ static void DiagnoseBadDeduction(Sema &S, NamedDecl *Found, Decl *Templated,
       else if (NonTypeTemplateParmDecl *NTTP
                                   = dyn_cast<NonTypeTemplateParmDecl>(ParamD))
         index = NTTP->getIndex();
+      else if (TemplateTemplateParmDecl *TMP =
+                   dyn_cast<TemplateTemplateParmDecl>(ParamD))
+        index = TMP->getIndex();
       else
         index = cast<TemplateTemplateParmDecl>(ParamD)->getIndex();
       S.Diag(Templated->getLocation(),

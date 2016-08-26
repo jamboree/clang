@@ -2335,10 +2335,10 @@ VarDecl::setInstantiationOfStaticDataMember(VarDecl *VD,
 
 ParmVarDecl *ParmVarDecl::Create(ASTContext &C, DeclContext *DC,
                                  SourceLocation StartLoc,
-                                 SourceLocation IdLoc, IdentifierInfo *Id,
+                                 SourceLocation IdLoc, DeclarationName N,
                                  QualType T, TypeSourceInfo *TInfo,
                                  StorageClass S, Expr *DefArg) {
-  return new (C, DC) ParmVarDecl(ParmVar, C, DC, StartLoc, IdLoc, Id, T, TInfo,
+  return new (C, DC) ParmVarDecl(ParmVar, C, DC, StartLoc, IdLoc, N, T, TInfo,
                                  S, DefArg);
 }
 
@@ -2353,7 +2353,7 @@ QualType ParmVarDecl::getOriginalType() const {
 ParmVarDecl *ParmVarDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID)
       ParmVarDecl(ParmVar, C, nullptr, SourceLocation(), SourceLocation(),
-                  nullptr, QualType(), nullptr, SC_None, nullptr);
+                  {}, QualType(), nullptr, SC_None, nullptr);
 }
 
 SourceRange ParmVarDecl::getSourceRange() const {

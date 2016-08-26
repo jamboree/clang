@@ -5116,7 +5116,7 @@ static FunctionDecl *rewriteBuiltinFunctionDecl(Sema *Sema, ASTContext &Context,
     QualType ParamType = FT->getParamType(i);
     ParmVarDecl *Parm =
         ParmVarDecl::Create(Context, OverloadDecl, SourceLocation(),
-                                SourceLocation(), nullptr, ParamType,
+                                SourceLocation(), {}, ParamType,
                                 /*TInfo=*/nullptr, SC_None, nullptr);
     Parm->setScopeInfo(0, i);
     Params.push_back(Parm);

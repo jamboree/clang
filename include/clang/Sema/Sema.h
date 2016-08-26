@@ -1754,7 +1754,7 @@ public:
                                           SourceLocation Loc,
                                           QualType T);
   ParmVarDecl *CheckParameter(DeclContext *DC, SourceLocation StartLoc,
-                              SourceLocation NameLoc, IdentifierInfo *Name,
+                              SourceLocation NameLoc, DeclarationName Name,
                               QualType T, TypeSourceInfo *TSInfo,
                               StorageClass SC);
   void ActOnParamDefaultArgument(Decl *param,
@@ -6157,6 +6157,9 @@ public:
 
     /// \brief The type of an arbitrary declaration.
     UPPC_DeclarationType,
+
+    /// \brief The name of an arbitrary declaration.
+    UPPC_DeclarationName,
 
     /// \brief The type of a data member.
     UPPC_DataMemberType,

@@ -1837,7 +1837,7 @@ NamedDecl *Sema::LazilyCreateBuiltin(IdentifierInfo *II, unsigned ID,
     for (unsigned i = 0, e = FT->getNumParams(); i != e; ++i) {
       ParmVarDecl *parm =
           ParmVarDecl::Create(Context, New, SourceLocation(), SourceLocation(),
-                              nullptr, FT->getParamType(i), /*TInfo=*/nullptr,
+                              {}, FT->getParamType(i), /*TInfo=*/nullptr,
                               SC_None, nullptr);
       parm->setScopeInfo(0, i);
       Params.push_back(parm);
@@ -3148,7 +3148,7 @@ bool Sema::MergeFunctionDecl(FunctionDecl *New, NamedDecl *&OldD,
       SmallVector<ParmVarDecl*, 16> Params;
       for (const auto &ParamType : OldProto->param_types()) {
         ParmVarDecl *Param = ParmVarDecl::Create(Context, New, SourceLocation(),
-                                                 SourceLocation(), nullptr,
+                                                 SourceLocation(), {},
                                                  ParamType, /*TInfo=*/nullptr,
                                                  SC_None, nullptr);
         Param->setScopeInfo(0, Params.size());
@@ -4941,7 +4941,7 @@ NamedDecl *Sema::HandleDeclarator(Scope *S, Declarator &D,
            diag::err_declarator_need_ident)
         << D.getDeclSpec().getSourceRange() << D.getSourceRange();
     return nullptr;
-  } else if (DiagnoseUnexpandedParameterPack(NameInfo, UPPC_DeclarationType))
+  } else if (DiagnoseUnexpandedParameterPack(NameInfo, UPPC_DeclarationName))
     return nullptr;
 
   // The scope passed in may not be a decl scope.  Zip up the scope tree until
@@ -10856,19 +10856,26 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   }
 
   // Ensure we have a valid name
-  IdentifierInfo *II = nullptr;
+  DeclarationName Name;
   if (D.hasName()) {
-    II = D.getIdentifier();
-    if (!II) {
+    if (IdentifierInfo *II = D.getIdentifier()) {
+      Name = getPossiblyTemplatedName(II);
+      if (DiagnoseUnexpandedParameterPack(
+              DeclarationNameInfo(Name, D.getIdentifierLoc()),
+              UPPC_DeclarationName)) {
+        Name = {};
+        D.setInvalidType(true);
+      }
+    } else {
       Diag(D.getIdentifierLoc(), diag::err_bad_parameter_name)
-        << GetNameForDeclarator(D).getName();
+          << GetNameForDeclarator(D).getName();
       D.setInvalidType(true);
     }
   }
 
   // Check for redeclaration of parameters, e.g. int foo(int x, int x);
-  if (II) {
-    LookupResult R(*this, II, D.getIdentifierLoc(), LookupOrdinaryName,
+  if (Name) {
+    LookupResult R(*this, Name, D.getIdentifierLoc(), LookupOrdinaryName,
                    ForRedeclaration);
     LookupName(R, S);
     if (R.isSingleResult()) {
@@ -10879,11 +10886,11 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
         // Just pretend that we didn't see the previous declaration.
         PrevDecl = nullptr;
       } else if (S->isDeclScope(PrevDecl)) {
-        Diag(D.getIdentifierLoc(), diag::err_param_redefinition) << II;
+        Diag(D.getIdentifierLoc(), diag::err_param_redefinition) << Name;
         Diag(PrevDecl->getLocation(), diag::note_previous_declaration);
 
         // Recover by removing the name
-        II = nullptr;
+        Name = {};
         D.SetIdentifier(nullptr, D.getIdentifierLoc());
         D.setInvalidType(true);
       }
@@ -10895,7 +10902,7 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   // looking like class members in C++.
   ParmVarDecl *New = CheckParameter(Context.getTranslationUnitDecl(),
                                     D.getLocStart(),
-                                    D.getIdentifierLoc(), II,
+                                    D.getIdentifierLoc(), Name,
                                     parmDeclType, TInfo,
                                     SC);
 
@@ -10917,7 +10924,7 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
 
   // Add the parameter declaration into this scope.
   S->AddDecl(New);
-  if (II)
+  if (Name)
     IdResolver.AddDecl(New);
 
   ProcessDeclAttributes(S, New, D);
@@ -10942,7 +10949,7 @@ ParmVarDecl *Sema::BuildParmVarDeclForTypedef(DeclContext *DC,
   /* FIXME: setting StartLoc == Loc.
      Would it be worth to modify callers so as to provide proper source
      location for the unnamed parameters, embedding the parameter's type? */
-  ParmVarDecl *Param = ParmVarDecl::Create(Context, DC, Loc, Loc, nullptr,
+  ParmVarDecl *Param = ParmVarDecl::Create(Context, DC, Loc, Loc, {},
                                 T, Context.getTrivialTypeSourceInfo(T, Loc),
                                            SC_None, nullptr);
   Param->setImplicit();
@@ -10992,7 +10999,7 @@ void Sema::DiagnoseSizeOfParametersAndReturnValue(
 }
 
 ParmVarDecl *Sema::CheckParameter(DeclContext *DC, SourceLocation StartLoc,
-                                  SourceLocation NameLoc, IdentifierInfo *Name,
+                                  SourceLocation NameLoc, DeclarationName Name,
                                   QualType T, TypeSourceInfo *TSInfo,
                                   StorageClass SC) {
   // In ARC, infer a lifetime qualifier for appropriate parameter types.
@@ -12318,7 +12325,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
   bool Invalid = false;
 
   if (DiagnoseUnexpandedParameterPack(DeclarationNameInfo(Name, NameLoc),
-                                      UPPC_DeclarationType))
+                                      UPPC_DeclarationName))
     return nullptr;
 
   // We only need to do this matching if we have template parameters
@@ -13491,7 +13498,7 @@ FieldDecl *Sema::HandleField(Scope *S, RecordDecl *Record,
   DeclarationName Name = getPossiblyTemplatedName(II);
 
   if (DiagnoseUnexpandedParameterPack(DeclarationNameInfo(Name, Loc),
-                                      UPPC_DeclarationType))
+                                      UPPC_DeclarationName))
     return nullptr;
 
   LookupResult Previous(*this, Name, Loc, LookupMemberName, ForRedeclaration);
