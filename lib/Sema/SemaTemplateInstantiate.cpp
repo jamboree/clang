@@ -911,8 +911,8 @@ Decl *TemplateInstantiator::TransformDecl(SourceLocation Loc, Decl *D) {
 
 DeclarationNameInfo TemplateInstantiator::TransformDeclarationNameInfo(
     const DeclarationNameInfo &NameInfo) {
-  if (CXXTemplateDeclNameParmName *TDP =
-          NameInfo.getName().getCXXTemplatedName()) {
+  if (TemplateDeclNameParmDecl *TDP =
+          NameInfo.getName().getCXXTemplatedNameParmDecl()) {
     if (TDP->getDepth() < TemplateArgs.getNumLevels()) {
       // If the corresponding template argument is NULL or non-existent, it's
       // because we are performing instantiation from explicitly-specified
@@ -923,9 +923,37 @@ DeclarationNameInfo TemplateInstantiator::TransformDeclarationNameInfo(
         return NameInfo;
 
       TemplateArgument Arg = TemplateArgs(TDP->getDepth(), TDP->getIndex());
+
+      if (TDP->isParameterPack()) {
+          assert(Arg.getKind() == TemplateArgument::Pack &&
+              "Missing argument pack");
+
+          if (getSema().ArgumentPackSubstitutionIndex == -1) {
+              // We have the template argument pack to substitute, but we're not
+              // actually expanding the enclosing pack expansion yet. So, just
+              // keep the entire argument pack.
+              return DeclarationNameInfo(
+                  getSema().Context.getSubstTemplateDeclNameParmPack(TDP, Arg),
+                  NameInfo.getLoc());
+          }
+
+          Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
+      }
+
       return DeclarationNameInfo(Arg.getAsDeclName(), NameInfo.getLoc());
     }
   }
+
+  if (SubstTemplateDeclNameParmPackStorage *SubstPack =
+          NameInfo.getName().getAsSubstTemplateDeclNameParmPack()) {
+    if (getSema().ArgumentPackSubstitutionIndex == -1)
+      return NameInfo;
+
+    TemplateArgument Arg = SubstPack->getArgumentPack();
+    Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
+    return DeclarationNameInfo(Arg.getAsDeclName(), NameInfo.getLoc());
+  }
+
   return inherited::TransformDeclarationNameInfo(NameInfo);
 }
 

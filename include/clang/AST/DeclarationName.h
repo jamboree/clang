@@ -38,6 +38,7 @@ namespace clang {
   class TypeSourceInfo;
   class UsingDirectiveDecl;
   class TemplateDeclNameParmDecl;
+  class SubstTemplateDeclNameParmPackStorage;
 
   template <typename> class CanQual;
   typedef CanQual<Type> CanQualType;
@@ -62,7 +63,8 @@ public:
     CXXOperatorName,
     CXXLiteralOperatorName,
     CXXUsingDirective,
-    CXXTemplatedName
+    CXXTemplatedName,
+    SubstTemplateDeclNameParmPack
   };
   static const unsigned NumNameKinds = CXXTemplatedName + 1;
 
@@ -197,6 +199,13 @@ public:
   // Construct a declaration name from an Objective-C selector.
   DeclarationName(Selector Sel) : Ptr(Sel.InfoPtr) { }
 
+  DeclarationName(SubstTemplateDeclNameParmPackStorage *Name)
+      : Ptr(reinterpret_cast<uintptr_t>(Name)) {
+    assert((Ptr & PtrMask) == 0 &&
+           "Improperly aligned CXXTemplateDeclNameParmName");
+    Ptr |= StoredDeclarationNameExtra;
+  }
+
   /// getUsingDirectiveName - Return name for all using-directives.
   static DeclarationName getUsingDirectiveName();
 
@@ -253,6 +262,19 @@ public:
     return nullptr;
   }
 
+  /// \brief Retrieve the substituted template declname parameter pack, if
+  /// known.
+  ///
+  /// \returns The storage for the substituted template declname parameter pack,
+  /// if known. Otherwise, returns NULL.
+  SubstTemplateDeclNameParmPackStorage *
+  getAsSubstTemplateDeclNameParmPack() const {
+    if (getNameKind() == SubstTemplateDeclNameParmPack)
+      return reinterpret_cast<SubstTemplateDeclNameParmPackStorage *>(Ptr &
+                                                                      ~PtrMask);
+    return nullptr;
+  }
+
   /// getAsOpaqueInteger - Get the representation of this declaration
   /// name as an opaque integer.
   uintptr_t getAsOpaqueInteger() const { return Ptr; }
@@ -286,10 +308,6 @@ public:
   /// getCXXLiteralIdentifier - If this name is the name of a literal
   /// operator, retrieve the identifier associated with it.
   IdentifierInfo *getCXXLiteralIdentifier() const;
-
-  CXXTemplateDeclNameParmName *getCXXTemplatedName() const {
-    return getAsCXXTemplateDeclNameParmName();
-  }
 
   TemplateDeclNameParmDecl *getCXXTemplatedNameParmDecl() const;
 
@@ -375,25 +393,8 @@ inline bool operator>=(DeclarationName LHS, DeclarationName RHS) {
 /// the declname paramter.
 class CXXTemplateDeclNameParmName : public DeclarationNameExtra,
                                     public llvm::FoldingSetNode {
-  // Helper data collector for canonical types.
-  struct CanonicalTDPTInfo {
-    unsigned Depth : 15;
-    unsigned ParameterPack : 1;
-    unsigned Index : 16;
-  };
-
   CXXTemplateDeclNameParmName *CanonicalName;
-
-  union {
-    // Info for the canonical type.
-    CanonicalTDPTInfo CanTDPTInfo;
-    // Info for the non-canonical type.
-    TemplateDeclNameParmDecl *TDPDecl;
-  };
-
-  const CanonicalTDPTInfo &getCanTDPTInfo() const {
-    return CanonicalName->CanTDPTInfo;
-  }
+  TemplateDeclNameParmDecl *TDPDecl;
 
 public:
   /// FETokenInfo - Extra information associated with this operator
@@ -406,16 +407,12 @@ public:
       : CanonicalName(Canon), TDPDecl(TDPDecl) {}
 
   /// Build the canonical type.
-  CXXTemplateDeclNameParmName(unsigned D, unsigned I, bool PP)
-      : CanonicalName(this) {
-    CanTDPTInfo.Depth = D;
-    CanTDPTInfo.Index = I;
-    CanTDPTInfo.ParameterPack = PP;
-  }
+  CXXTemplateDeclNameParmName(TemplateDeclNameParmDecl *TDPDecl)
+      : CanonicalName(this), TDPDecl(TDPDecl) {}
 
-  unsigned getDepth() const { return getCanTDPTInfo().Depth; }
-  unsigned getIndex() const { return getCanTDPTInfo().Index; }
-  bool isParameterPack() const { return getCanTDPTInfo().ParameterPack; }
+  //unsigned getDepth() const;
+  //unsigned getIndex() const;
+  //bool isParameterPack() const;
 
   bool isCanonical() const { return CanonicalName == this; }
 
@@ -424,21 +421,12 @@ public:
   }
 
   TemplateDeclNameParmDecl *getDecl() const {
-    return isCanonical() ? nullptr : TDPDecl;
+    return TDPDecl;
   }
 
-  IdentifierInfo *getIdentifier() const;
+  //IdentifierInfo *getIdentifier() const;
 
   void Profile(llvm::FoldingSetNodeID &ID) {
-    Profile(ID, getDepth(), getIndex(), isParameterPack(), getDecl());
-  }
-
-  static void Profile(llvm::FoldingSetNodeID &ID, unsigned Depth,
-                      unsigned Index, bool ParameterPack,
-                      TemplateDeclNameParmDecl *TDPDecl) {
-    ID.AddInteger(Depth);
-    ID.AddInteger(Index);
-    ID.AddBoolean(ParameterPack);
     ID.AddPointer(TDPDecl);
   }
 };
@@ -461,6 +449,43 @@ inline DeclarationName DeclarationName::getCanonicalName() const {
     return DeclarationName(TN->getCanonicalName());
   return *this;
 }
+
+class SubstTemplateDeclNameParmPackStorage : public DeclarationNameExtra,
+                                             public llvm::FoldingSetNode {
+  unsigned Size;
+  TemplateDeclNameParmDecl *Parameter;
+  const TemplateArgument *Arguments;
+
+public:
+  SubstTemplateDeclNameParmPackStorage(TemplateDeclNameParmDecl *Parameter,
+                                       unsigned Size,
+                                       const TemplateArgument *Arguments)
+      : Size(Size), Parameter(Parameter), Arguments(Arguments) {
+    ExtraKindOrNumArgs = SubstTemplateDeclNameParmPack;
+  }
+
+  unsigned size() const { return Size; }
+
+  /// \brief Retrieve the template declname parameter pack being substituted.
+  TemplateDeclNameParmDecl *getParameterPack() const { return Parameter; }
+
+  /// \brief Retrieve the template declname argument pack with which this
+  /// parameter was substituted.
+  TemplateArgument getArgumentPack() const {
+    return TemplateArgument(llvm::makeArrayRef(Arguments, size()));
+  }
+
+  void Profile(llvm::FoldingSetNodeID &ID, ASTContext &Context) {
+    Profile(ID, Context, Parameter, getArgumentPack());
+  }
+
+  static void Profile(llvm::FoldingSetNodeID &ID, ASTContext &Context,
+                      TemplateDeclNameParmDecl *Parameter,
+                      const TemplateArgument &ArgPack) {
+    ID.AddPointer(Parameter);
+    ArgPack.Profile(ID, Context);
+  }
+};
 
 /// DeclarationNameTable - Used to store and retrieve DeclarationName
 /// instances for the various kinds of declaration names, e.g., normal

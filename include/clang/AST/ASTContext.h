@@ -144,7 +144,10 @@ class ASTContext : public RefCountedBase<ASTContext> {
   mutable llvm::ContextualFoldingSet<SubstTemplateTemplateParmPackStorage,
                                      ASTContext&> 
     SubstTemplateTemplateParmPacks;
-  
+  mutable llvm::ContextualFoldingSet<SubstTemplateDeclNameParmPackStorage,
+                                     ASTContext&> 
+    SubstTemplateDeclNameParmPacks;
+
   /// \brief The set of nested name specifiers.
   ///
   /// This set is managed by the NestedNameSpecifier class.
@@ -1755,7 +1758,10 @@ public:
                                             TemplateName replacement) const;
   TemplateName getSubstTemplateTemplateParmPack(TemplateTemplateParmDecl *Param,
                                         const TemplateArgument &ArgPack) const;
-  
+  DeclarationName
+  getSubstTemplateDeclNameParmPack(TemplateDeclNameParmDecl *Param,
+                                   const TemplateArgument &ArgPack) const;
+
   enum GetBuiltinTypeError {
     GE_None,              ///< No error
     GE_Missing_stdio,     ///< Missing a type from <stdio.h>

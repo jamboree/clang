@@ -632,7 +632,7 @@ void CXXNameMangler::mangleDeclName(DeclarationName Name) {
     mangleSourceName(Name.getAsIdentifierInfo());
     break;
   case DeclarationName::CXXTemplatedName:
-    mangleTemplateParameter(Name.getCXXTemplatedName()->getIndex());
+    mangleTemplateParameter(Name.getCXXTemplatedNameParmDecl()->getIndex());
     break;
   default:
     llvm_unreachable("Can't mangle this declname!");
@@ -1185,7 +1185,7 @@ void CXXNameMangler::mangleUnresolvedName(NestedNameSpecifier *qualifier,
       mangleOperatorName(name, knownArity);
       break;
     case DeclarationName::CXXTemplatedName:
-      mangleTemplateParameter(name.getCXXTemplatedName()->getIndex());
+      mangleTemplateParameter(name.getCXXTemplatedNameParmDecl()->getIndex());
       break;
     case DeclarationName::CXXConstructorName:
       llvm_unreachable("Can't mangle a constructor name!");
@@ -1392,7 +1392,7 @@ void CXXNameMangler::mangleUnqualifiedName(const NamedDecl *ND,
     llvm_unreachable("Can't mangle a using directive name!");
 
   case DeclarationName::CXXTemplatedName:
-    mangleTemplateParameter(Name.getCXXTemplatedName()->getIndex());
+    mangleTemplateParameter(Name.getCXXTemplatedNameParmDecl()->getIndex());
     writeAbiTags(ND, AdditionalAbiTags);
     break;
   }

@@ -222,7 +222,7 @@ void DeclarationName::print(raw_ostream &OS, const PrintingPolicy &Policy) {
     OS << "<using-directive>";
     return;
   case DeclarationName::CXXTemplatedName: {
-    CXXTemplateDeclNameParmName *TDP = N.getAsCXXTemplateDeclNameParmName();
+    TemplateDeclNameParmDecl *TDP = N.getCXXTemplatedNameParmDecl();
     //if (IdentifierInfo *Id = TDP->getIdentifier())
     //  OS << Id->getName();
     //else
@@ -268,6 +268,9 @@ DeclarationName::NameKind DeclarationName::getNameKind() const {
     case DeclarationNameExtra::CXXTemplatedName:
       return CXXTemplatedName;
 
+    case DeclarationNameExtra::SubstTemplateDeclNameParmPack:
+      return SubstTemplateDeclNameParmPack;
+
     default:
       // Check if we have one of the CXXOperator* enumeration values.
       if (getExtra()->ExtraKindOrNumArgs <
@@ -295,7 +298,7 @@ bool DeclarationName::isTemplatedName() const {
 }
 
 bool clang::DeclarationName::containsUnexpandedParameterPack() const {
-  if (CXXTemplateDeclNameParmName *TDP = getAsCXXTemplateDeclNameParmName()) {
+  if (TemplateDeclNameParmDecl *TDP = getCXXTemplatedNameParmDecl()) {
     return TDP->isParameterPack();
   }
   return false;
@@ -525,8 +528,11 @@ DeclarationNameTable::getCXXTemplatedName(unsigned Depth, unsigned Index,
           CXXTemplatedNames);
 
   llvm::FoldingSetNodeID ID;
-  CXXTemplateDeclNameParmName::Profile(ID, Depth, Index, ParameterPack,
-                                       TDPDecl);
+  ID.AddInteger(Depth);
+  ID.AddInteger(Index);
+  ID.AddBoolean(ParameterPack);
+  ID.AddPointer(TDPDecl);
+
   void *InsertPos = nullptr;
   CXXTemplateDeclNameParmName *NameParm =
       TemplatedNames->FindNodeOrInsertPos(ID, InsertPos);
@@ -537,7 +543,7 @@ DeclarationNameTable::getCXXTemplatedName(unsigned Depth, unsigned Index,
   if (TDPDecl) {
     DeclarationName Canon = getCXXTemplatedName(Depth, Index, ParameterPack);
     NameParm = new (Ctx) CXXTemplateDeclNameParmName(
-        TDPDecl, Canon.getCXXTemplatedName());
+        TDPDecl, Canon.getAsCXXTemplateDeclNameParmName());
 
     CXXTemplateDeclNameParmName *NameCheck =
         TemplatedNames->FindNodeOrInsertPos(ID, InsertPos);
@@ -545,7 +551,9 @@ DeclarationNameTable::getCXXTemplatedName(unsigned Depth, unsigned Index,
     (void)NameCheck;
   } else
     NameParm =
-        new (Ctx) CXXTemplateDeclNameParmName(Depth, Index, ParameterPack);
+        new (Ctx) CXXTemplateDeclNameParmName(TemplateDeclNameParmDecl::Create(
+            Ctx, Ctx.getTranslationUnitDecl(), SourceLocation(),
+            SourceLocation(), Depth, Index, ParameterPack, nullptr));
 
   NameParm->ExtraKindOrNumArgs = DeclarationNameExtra::CXXTemplatedName;
   NameParm->FETokenInfo = nullptr;
@@ -601,7 +609,7 @@ bool DeclarationNameInfo::containsUnexpandedParameterPack() const {
     return Name.getCXXNameType()->containsUnexpandedParameterPack();
 
   case DeclarationName::CXXTemplatedName:
-    return Name.getCXXTemplatedName()->isParameterPack();
+    return Name.getCXXTemplatedNameParmDecl()->isParameterPack();
   }
   llvm_unreachable("All name kinds handled.");
 }
@@ -702,7 +710,19 @@ SourceLocation DeclarationNameInfo::getEndLoc() const {
   }
   llvm_unreachable("Unexpected declaration name kind");
 }
-
-inline IdentifierInfo *CXXTemplateDeclNameParmName::getIdentifier() const {
-  return isCanonical() ? nullptr : TDPDecl->getIdentifier();
-}
+//
+//inline IdentifierInfo *CXXTemplateDeclNameParmName::getIdentifier() const {
+//  return TDPDecl->getIdentifier();
+//}
+//
+//inline unsigned CXXTemplateDeclNameParmName::getDepth() const {
+//  return TDPDecl->getDepth();
+//}
+//
+//inline unsigned CXXTemplateDeclNameParmName::getIndex() const {
+//  return TDPDecl->getIndex();
+//}
+//
+//inline bool CXXTemplateDeclNameParmName::isParameterPack() const {
+//  return TDPDecl->isParameterPack();
+//}

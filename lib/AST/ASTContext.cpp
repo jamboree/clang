@@ -6732,6 +6732,27 @@ ASTContext::getSubstTemplateTemplateParmPack(TemplateTemplateParmDecl *Param,
   return TemplateName(Subst);
 }
 
+DeclarationName
+ASTContext::getSubstTemplateDeclNameParmPack(TemplateDeclNameParmDecl *Param,
+                                       const TemplateArgument &ArgPack) const {
+  ASTContext &Self = const_cast<ASTContext &>(*this);
+  llvm::FoldingSetNodeID ID;
+  SubstTemplateDeclNameParmPackStorage::Profile(ID, Self, Param, ArgPack);
+
+  void *InsertPos = nullptr;
+  SubstTemplateDeclNameParmPackStorage *Subst
+    = SubstTemplateDeclNameParmPacks.FindNodeOrInsertPos(ID, InsertPos);
+  
+  if (!Subst) {
+    Subst = new (*this) SubstTemplateDeclNameParmPackStorage(Param, 
+                                                           ArgPack.pack_size(),
+                                                         ArgPack.pack_begin());
+    SubstTemplateDeclNameParmPacks.InsertNode(Subst, InsertPos);
+  }
+
+  return DeclarationName(Subst);
+}
+
 /// getFromTargetType - Given one of the integer types provided by
 /// TargetInfo, produce the corresponding type. The unsigned @p Type
 /// is actually a value of type @c TargetInfo::IntType.

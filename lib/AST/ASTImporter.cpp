@@ -6618,11 +6618,10 @@ DeclarationName ASTImporter::Import(DeclarationName FromName) {
     return DeclarationName::getUsingDirectiveName();
 
   case DeclarationName::CXXTemplatedName: {
-    CXXTemplateDeclNameParmName *TN = FromName.getCXXTemplatedName();
-    TemplateDeclNameParmDecl *TDP =
-        cast_or_null<TemplateDeclNameParmDecl>(Import(TN->getDecl()));
+    TemplateDeclNameParmDecl *TDP = cast<TemplateDeclNameParmDecl>(
+        Import(FromName.getCXXTemplatedNameParmDecl()));
     return ToContext.DeclarationNames.getCXXTemplatedName(
-        TN->getDepth(), TN->getIndex(), TN->isParameterPack(), TDP);
+        TDP->getDepth(), TDP->getIndex(), TDP->isParameterPack(), TDP);
   }
   }
 

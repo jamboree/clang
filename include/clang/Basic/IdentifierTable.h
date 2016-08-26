@@ -809,6 +809,7 @@ public:
     CXXLiteralOperator,
     CXXUsingDirective,
     CXXTemplatedName,
+    SubstTemplateDeclNameParmPack,
     NUM_EXTRA_KINDS
   };
 

@@ -2611,8 +2611,8 @@ static bool isTemplateArgumentTemplateParameter(
   }
 
   case TemplateArgument::DeclName: {
-    const CXXTemplateDeclNameParmName *TDP =
-        Arg.getAsDeclName().getCXXTemplatedName();
+    const TemplateDeclNameParmDecl *TDP =
+        Arg.getAsDeclName().getCXXTemplatedNameParmDecl();
     return TDP && TDP->getDepth() == Depth && TDP->getIndex() == Index;
   }
   }

@@ -196,21 +196,21 @@ namespace {
     }
 
     bool TraverseDeclarationName(DeclarationName Name) {
-      if (CXXTemplateDeclNameParmName *TN = Name.getCXXTemplatedName()) {
-        if (TN->isParameterPack())
+      if (TemplateDeclNameParmDecl *TDP = Name.getCXXTemplatedNameParmDecl()) {
+        if (TDP->isParameterPack())
           Unexpanded.push_back(
-              UnexpandedParameterPack(TN->getDecl(), SourceLocation()));
+              UnexpandedParameterPack(TDP, SourceLocation()));
         return true;
       }
       return inherited::TraverseDeclarationName(Name);
     }
 
     bool TraverseDeclarationNameInfo(DeclarationNameInfo NameInfo) {
-      if (CXXTemplateDeclNameParmName *TN =
-              NameInfo.getName().getCXXTemplatedName()) {
-        if (TN->isParameterPack())
+      if (TemplateDeclNameParmDecl *TDP =
+              NameInfo.getName().getCXXTemplatedNameParmDecl()) {
+        if (TDP->isParameterPack())
           Unexpanded.push_back(
-              UnexpandedParameterPack(TN->getDecl(), NameInfo.getLoc()));
+              UnexpandedParameterPack(TDP, NameInfo.getLoc()));
         return true;
       }
       return inherited::TraverseDeclarationNameInfo(NameInfo);
@@ -361,7 +361,7 @@ bool Sema::DiagnoseUnexpandedParameterPack(const DeclarationNameInfo &NameInfo,
     break;
 
   case DeclarationName::CXXTemplatedName:
-    if (!NameInfo.getName().getCXXTemplatedName()->isParameterPack())
+    if (!NameInfo.getName().getCXXTemplatedNameParmDecl()->isParameterPack())
       return false;
     Unexpanded.push_back(UnexpandedParameterPack(
         NameInfo.getName().getCXXTemplatedNameParmDecl(), NameInfo.getLoc()));
@@ -578,16 +578,19 @@ ExprResult Sema::CheckPackExpansion(Expr *Pattern, SourceLocation EllipsisLoc,
 }
 
 /// \brief Retrieve the depth and index of a parameter pack.
-static std::pair<unsigned, unsigned> 
+static std::pair<unsigned, unsigned>
 getDepthAndIndex(NamedDecl *ND) {
   if (TemplateTypeParmDecl *TTP = dyn_cast<TemplateTypeParmDecl>(ND))
     return std::make_pair(TTP->getDepth(), TTP->getIndex());
-  
+
   if (NonTypeTemplateParmDecl *NTTP = dyn_cast<NonTypeTemplateParmDecl>(ND))
     return std::make_pair(NTTP->getDepth(), NTTP->getIndex());
-  
-  TemplateTemplateParmDecl *TTP = cast<TemplateTemplateParmDecl>(ND);
-  return std::make_pair(TTP->getDepth(), TTP->getIndex());
+
+  if (TemplateTemplateParmDecl *TTP = dyn_cast<TemplateTemplateParmDecl>(ND))
+    return std::make_pair(TTP->getDepth(), TTP->getIndex());
+
+  TemplateDeclNameParmDecl *TDP = cast<TemplateDeclNameParmDecl>(ND);
+  return std::make_pair(TDP->getDepth(), TDP->getIndex());
 }
 
 bool Sema::CheckParameterPacksForExpansion(
@@ -979,9 +982,16 @@ Sema::getTemplateArgumentPackExpansionPattern(
                                OrigLoc.getTemplateQualifierLoc(),
                                OrigLoc.getTemplateNameLoc());
 
+  case TemplateArgument::DeclNameExpansion:
+    Ellipsis = OrigLoc.getDeclNameEllipsisLoc();
+    NumExpansions = Argument.getNumDeclNameExpansions();
+    return TemplateArgumentLoc(Argument.getPackExpansionPattern(),
+                               OrigLoc.getDeclNameLoc());
+
   case TemplateArgument::Declaration:
   case TemplateArgument::NullPtr:
   case TemplateArgument::Template:
+  case TemplateArgument::DeclName:
   case TemplateArgument::Integral:
   case TemplateArgument::Pack:
   case TemplateArgument::Null:

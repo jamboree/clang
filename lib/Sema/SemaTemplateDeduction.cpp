@@ -433,19 +433,19 @@ DeduceTemplateArguments(Sema &S, TemplateParameterList *TemplateParams,
                         DeclarationName Param, DeclarationName Arg,
                         TemplateDeductionInfo &Info,
                         SmallVectorImpl<DeducedTemplateArgument> &Deduced) {
-  if (CXXTemplateDeclNameParmName *TN = Param.getCXXTemplatedName()) {
+  if (TemplateDeclNameParmDecl *TDP = Param.getCXXTemplatedNameParmDecl()) {
     DeducedTemplateArgument NewDeduced(Arg);
     DeducedTemplateArgument Result = checkDeducedTemplateArguments(
-        S.Context, Deduced[TN->getIndex()], NewDeduced);
+        S.Context, Deduced[TDP->getIndex()], NewDeduced);
     if (Result.isNull()) {
       Info.Param = cast<TemplateDeclNameParmDecl>(
-          TemplateParams->getParam(TN->getIndex()));
-      Info.FirstArg = Deduced[TN->getIndex()];
+          TemplateParams->getParam(TDP->getIndex()));
+      Info.FirstArg = Deduced[TDP->getIndex()];
       Info.SecondArg = NewDeduced;
       return Sema::TDK_Inconsistent;
     }
 
-    Deduced[TN->getIndex()] = Result;
+    Deduced[TDP->getIndex()] = Result;
     return Sema::TDK_Success;
   }
 
@@ -574,8 +574,11 @@ getDepthAndIndex(NamedDecl *ND) {
   if (NonTypeTemplateParmDecl *NTTP = dyn_cast<NonTypeTemplateParmDecl>(ND))
     return std::make_pair(NTTP->getDepth(), NTTP->getIndex());
 
-  TemplateTemplateParmDecl *TTP = cast<TemplateTemplateParmDecl>(ND);
-  return std::make_pair(TTP->getDepth(), TTP->getIndex());
+  if (TemplateTemplateParmDecl *TTP = dyn_cast<TemplateTemplateParmDecl>(ND))
+    return std::make_pair(TTP->getDepth(), TTP->getIndex());
+
+  TemplateDeclNameParmDecl *TDP = cast<TemplateDeclNameParmDecl>(ND);
+  return std::make_pair(TDP->getDepth(), TDP->getIndex());
 }
 
 /// \brief Retrieve the depth and index of an unexpanded parameter pack.
@@ -595,9 +598,8 @@ static TemplateParameter makeTemplateParameter(Decl *D) {
     return TemplateParameter(TTP);
   if (NonTypeTemplateParmDecl *NTTP = dyn_cast<NonTypeTemplateParmDecl>(D))
     return TemplateParameter(NTTP);
-
-  if (TemplateTemplateParmDecl *TMP = dyn_cast<TemplateTemplateParmDecl>(D))
-    return TemplateParameter(TMP);
+  if (TemplateTemplateParmDecl *TTP = dyn_cast<TemplateTemplateParmDecl>(D))
+    return TemplateParameter(TTP);
 
   return TemplateParameter(cast<TemplateTemplateParmDecl>(D));
 }
@@ -4876,9 +4878,9 @@ MarkUsedTemplateParameters(ASTContext &Ctx,
 static void MarkUsedTemplateParameters(ASTContext &Ctx, DeclarationName Name,
                                        bool OnlyDeduced, unsigned Depth,
                                        llvm::SmallBitVector &Used) {
-  if (CXXTemplateDeclNameParmName *TN = Name.getCXXTemplatedName()) {
-    if (TN->getDepth() == Depth)
-      Used[TN->getIndex()] = true;
+  if (TemplateDeclNameParmDecl *TDP = Name.getCXXTemplatedNameParmDecl()) {
+    if (TDP->getDepth() == Depth)
+      Used[TDP->getIndex()] = true;
   }
 }
 
