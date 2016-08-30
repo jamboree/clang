@@ -135,9 +135,12 @@ int DeclarationName::compare(DeclarationName LHS, DeclarationName RHS) {
     return 0;
 
   case DeclarationName::CXXTemplatedName:
-    return comparePtr(
-        LHS.getAsCXXTemplateDeclNameParmName()->getCanonicalName(),
-        RHS.getAsCXXTemplateDeclNameParmName()->getCanonicalName());
+    return comparePtr(LHS.getAsCXXTemplateDeclNameParmName(),
+                      RHS.getAsCXXTemplateDeclNameParmName());
+
+  case DeclarationName::SubstTemplateDeclNameParmPack:
+    // FIXME: is this ok?
+    return 0;
   }
 
   llvm_unreachable("Invalid DeclarationName Kind!");
@@ -221,11 +224,21 @@ void DeclarationName::print(raw_ostream &OS, const PrintingPolicy &Policy) {
   case DeclarationName::CXXUsingDirective:
     OS << "<using-directive>";
     return;
+
   case DeclarationName::CXXTemplatedName: {
     TemplateDeclNameParmDecl *TDP = N.getCXXTemplatedNameParmDecl();
     //if (IdentifierInfo *Id = TDP->getIdentifier())
     //  OS << Id->getName();
     //else
+      OS << "declname-parameter-" << TDP->getDepth() << '-' << TDP->getIndex();
+    return;
+  }
+  case DeclarationName::SubstTemplateDeclNameParmPack: {
+    TemplateDeclNameParmDecl *TDP =
+        N.getAsSubstTemplateDeclNameParmPack()->getParameterPack();
+    if (IdentifierInfo *Id = TDP->getIdentifier())
+      OS << Id->getName();
+    else
       OS << "declname-parameter-" << TDP->getDepth() << '-' << TDP->getIndex();
     return;
   }
@@ -297,11 +310,11 @@ bool DeclarationName::isTemplatedName() const {
              DeclarationNameExtra::CXXTemplatedName;
 }
 
-bool clang::DeclarationName::containsUnexpandedParameterPack() const {
+bool DeclarationName::containsUnexpandedParameterPack() const {
   if (TemplateDeclNameParmDecl *TDP = getCXXTemplatedNameParmDecl()) {
     return TDP->isParameterPack();
   }
-  return false;
+  return getAsSubstTemplateDeclNameParmPack() != nullptr;
 }
 
 std::string DeclarationName::getAsString() const {
@@ -528,10 +541,8 @@ DeclarationNameTable::getCXXTemplatedName(unsigned Depth, unsigned Index,
           CXXTemplatedNames);
 
   llvm::FoldingSetNodeID ID;
-  ID.AddInteger(Depth);
-  ID.AddInteger(Index);
-  ID.AddBoolean(ParameterPack);
-  ID.AddPointer(TDPDecl);
+  CXXTemplateDeclNameParmName::Profile(ID, Depth, Index, ParameterPack,
+                                       TDPDecl);
 
   void *InsertPos = nullptr;
   CXXTemplateDeclNameParmName *NameParm =
@@ -585,6 +596,7 @@ DeclarationNameLoc::DeclarationNameLoc(DeclarationName Name) {
     break;
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXTemplatedName:
+  case DeclarationName::SubstTemplateDeclNameParmPack:
     break;
   }
 }
@@ -610,6 +622,9 @@ bool DeclarationNameInfo::containsUnexpandedParameterPack() const {
 
   case DeclarationName::CXXTemplatedName:
     return Name.getCXXTemplatedNameParmDecl()->isParameterPack();
+
+  case DeclarationName::SubstTemplateDeclNameParmPack:
+    return true;
   }
   llvm_unreachable("All name kinds handled.");
 }
@@ -633,6 +648,7 @@ bool DeclarationNameInfo::isInstantiationDependent() const {
     
     return Name.getCXXNameType()->isInstantiationDependentType();
   case DeclarationName::CXXTemplatedName:
+  case DeclarationName::SubstTemplateDeclNameParmPack:
     return true;
   }
   llvm_unreachable("All name kinds handled.");
@@ -655,6 +671,7 @@ void DeclarationNameInfo::printName(raw_ostream &OS) const {
   case DeclarationName::CXXLiteralOperatorName:
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXTemplatedName:
+  case DeclarationName::SubstTemplateDeclNameParmPack:
     OS << Name;
     return;
 
@@ -706,9 +723,31 @@ SourceLocation DeclarationNameInfo::getEndLoc() const {
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXTemplatedName:
+  case DeclarationName::SubstTemplateDeclNameParmPack:
     return NameLoc;
   }
   llvm_unreachable("Unexpected declaration name kind");
+}
+
+void CXXTemplateDeclNameParmName::Profile(llvm::FoldingSetNodeID &ID) {
+  Profile(ID, TDPDecl->getDepth(), TDPDecl->getIndex(),
+          TDPDecl->isParameterPack(), isCanonical() ? nullptr : TDPDecl);
+}
+
+TemplateArgument SubstTemplateDeclNameParmPackStorage::getArgumentPack() const {
+  return TemplateArgument(llvm::makeArrayRef(Arguments, size()));
+}
+
+void SubstTemplateDeclNameParmPackStorage::Profile(llvm::FoldingSetNodeID &ID,
+                                                   ASTContext &Context) {
+  Profile(ID, Context, Parameter, getArgumentPack());
+}
+
+void SubstTemplateDeclNameParmPackStorage::Profile(
+    llvm::FoldingSetNodeID &ID, ASTContext &Context,
+    TemplateDeclNameParmDecl *Parameter, const TemplateArgument &ArgPack) {
+  ID.AddPointer(Parameter);
+  ArgPack.Profile(ID, Context);
 }
 //
 //inline IdentifierInfo *CXXTemplateDeclNameParmName::getIdentifier() const {

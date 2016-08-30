@@ -601,7 +601,7 @@ static TemplateParameter makeTemplateParameter(Decl *D) {
   if (TemplateTemplateParmDecl *TTP = dyn_cast<TemplateTemplateParmDecl>(D))
     return TemplateParameter(TTP);
 
-  return TemplateParameter(cast<TemplateTemplateParmDecl>(D));
+  return TemplateParameter(cast<TemplateDeclNameParmDecl>(D));
 }
 
 /// A pack that we're currently deducing.

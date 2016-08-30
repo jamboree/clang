@@ -6623,6 +6623,22 @@ DeclarationName ASTImporter::Import(DeclarationName FromName) {
     return ToContext.DeclarationNames.getCXXTemplatedName(
         TDP->getDepth(), TDP->getIndex(), TDP->isParameterPack(), TDP);
   }
+  case DeclarationName::SubstTemplateDeclNameParmPack: {
+    SubstTemplateDeclNameParmPackStorage *SubstPack =
+        FromName.getAsSubstTemplateDeclNameParmPack();
+    TemplateDeclNameParmDecl *Param = cast_or_null<TemplateDeclNameParmDecl>(
+        Import(SubstPack->getParameterPack()));
+    if (!Param)
+      return DeclarationName();
+
+    ASTNodeImporter Importer(*this);
+    TemplateArgument ArgPack =
+        Importer.ImportTemplateArgument(SubstPack->getArgumentPack());
+    if (ArgPack.isNull())
+      return DeclarationName();
+
+    return ToContext.getSubstTemplateDeclNameParmPack(Param, ArgPack);
+  }
   }
 
   llvm_unreachable("Invalid DeclarationName Kind!");

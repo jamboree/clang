@@ -3541,7 +3541,6 @@ TreeTransform<Derived>
   case DeclarationName::CXXOperatorName:
   case DeclarationName::CXXLiteralOperatorName:
   case DeclarationName::CXXUsingDirective:
-  case DeclarationName::CXXTemplatedName:
     return NameInfo;
 
   case DeclarationName::CXXConstructorName:
@@ -3572,6 +3571,27 @@ TreeTransform<Derived>
     NewNameInfo.setNamedTypeInfo(NewTInfo);
     return NewNameInfo;
   }
+  case DeclarationName::CXXTemplatedName: {
+    TemplateDeclNameParmDecl *TDP = Name.getCXXTemplatedNameParmDecl();
+    TemplateDeclNameParmDecl *NewTDP = cast_or_null<TemplateDeclNameParmDecl>(
+        getDerived().TransformDecl(NameInfo.getLoc(), TDP));
+    if (!NewTDP)
+      return DeclarationNameInfo();
+
+    if (!getDerived().AlwaysRebuild() && NewTDP == TDP)
+      return NameInfo;
+
+    DeclarationName NewName =
+        SemaRef.Context.DeclarationNames.getCXXTemplatedName(
+            NewTDP->getDepth(), NewTDP->getIndex(), NewTDP->isParameterPack(),
+            NewTDP);
+
+    DeclarationNameInfo NewNameInfo(NameInfo);
+    NewNameInfo.setName(NewName);
+    return NewNameInfo;
+  }
+  // FIXME
+  // case DeclarationName::SubstTemplateDeclNameParmPack:
   }
 
   llvm_unreachable("Unknown name kind.");

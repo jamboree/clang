@@ -11343,8 +11343,8 @@ Decl *Sema::ActOnStartOfFunctionDef(Scope *FnBodyScope, Decl *D,
   for (auto Param : FD->parameters()) {
     Param->setOwningFunction(FD);
 
-    // If this has an identifier, add it to the scope stack.
-    if (Param->getIdentifier() && FnBodyScope) {
+    // If this has an name, add it to the scope stack.
+    if (Param->getDeclName() && FnBodyScope) {
       CheckShadow(FnBodyScope, Param);
 
       PushOnScopeChains(Param, FnBodyScope);

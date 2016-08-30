@@ -904,6 +904,31 @@ Decl *TemplateInstantiator::TransformDecl(SourceLocation Loc, Decl *D) {
 
     // Fall through to find the instantiated declaration for this template
     // template parameter.
+  } else if (TemplateDeclNameParmDecl *TDP =
+                 dyn_cast<TemplateDeclNameParmDecl>(D)) {
+    if (TDP->getDepth() < TemplateArgs.getNumLevels()) {
+      // If the corresponding template argument is NULL or non-existent, it's
+      // because we are performing instantiation from explicitly-specified
+      // template arguments in a function template, but there were some
+      // arguments left unspecified.
+      if (!TemplateArgs.hasTemplateArgument(TDP->getDepth(),
+                                            TDP->getPosition()))
+        return D;
+
+      TemplateArgument Arg = TemplateArgs(TDP->getDepth(), TDP->getPosition());
+
+      if (TDP->isParameterPack()) {
+        assert(Arg.getKind() == TemplateArgument::Pack &&
+               "Missing argument pack");
+        Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
+      }
+
+      DeclarationName Name = Arg.getAsDeclName();
+      return Name.getCXXTemplatedNameParmDecl();
+    }
+
+    // Fall through to find the instantiated declaration for this template
+    // declname parameter.
   }
 
   return SemaRef.FindInstantiatedDecl(Loc, cast<NamedDecl>(D), TemplateArgs);
@@ -1709,10 +1734,15 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
     return nullptr;
   }
 
+  DeclarationNameInfo NameInfo =
+      SubstDeclarationNameInfo(OldParm->getNameInfo(), TemplateArgs);
+
+  // FIXME: diagnose duplicate designatable params
+
   ParmVarDecl *NewParm = CheckParameter(Context.getTranslationUnitDecl(),
                                         OldParm->getInnerLocStart(),
-                                        OldParm->getLocation(),
-                                        OldParm->getIdentifier(),
+                                        NameInfo.getLoc(),
+                                        NameInfo.getName(),
                                         NewDI->getType(), NewDI,
                                         OldParm->getStorageClass());
   if (!NewParm)

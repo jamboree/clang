@@ -39,6 +39,7 @@ namespace clang {
   class UsingDirectiveDecl;
   class TemplateDeclNameParmDecl;
   class SubstTemplateDeclNameParmPackStorage;
+  class TemplateArgument;
 
   template <typename> class CanQual;
   typedef CanQual<Type> CanQualType;
@@ -410,10 +411,6 @@ public:
   CXXTemplateDeclNameParmName(TemplateDeclNameParmDecl *TDPDecl)
       : CanonicalName(this), TDPDecl(TDPDecl) {}
 
-  //unsigned getDepth() const;
-  //unsigned getIndex() const;
-  //bool isParameterPack() const;
-
   bool isCanonical() const { return CanonicalName == this; }
 
   CXXTemplateDeclNameParmName *getCanonicalName() const {
@@ -424,9 +421,14 @@ public:
     return TDPDecl;
   }
 
-  //IdentifierInfo *getIdentifier() const;
+  void Profile(llvm::FoldingSetNodeID &ID);
 
-  void Profile(llvm::FoldingSetNodeID &ID) {
+  static void Profile(llvm::FoldingSetNodeID &ID, unsigned Depth,
+                      unsigned Index, bool ParameterPack,
+                      TemplateDeclNameParmDecl *TDPDecl) {
+    ID.AddInteger(Depth);
+    ID.AddInteger(Index);
+    ID.AddBoolean(ParameterPack);
     ID.AddPointer(TDPDecl);
   }
 };
@@ -471,20 +473,13 @@ public:
 
   /// \brief Retrieve the template declname argument pack with which this
   /// parameter was substituted.
-  TemplateArgument getArgumentPack() const {
-    return TemplateArgument(llvm::makeArrayRef(Arguments, size()));
-  }
+  TemplateArgument getArgumentPack() const;
 
-  void Profile(llvm::FoldingSetNodeID &ID, ASTContext &Context) {
-    Profile(ID, Context, Parameter, getArgumentPack());
-  }
+  void Profile(llvm::FoldingSetNodeID &ID, ASTContext &Context);
 
   static void Profile(llvm::FoldingSetNodeID &ID, ASTContext &Context,
                       TemplateDeclNameParmDecl *Parameter,
-                      const TemplateArgument &ArgPack) {
-    ID.AddPointer(Parameter);
-    ArgPack.Profile(ID, Context);
-  }
+                      const TemplateArgument &ArgPack);
 };
 
 /// DeclarationNameTable - Used to store and retrieve DeclarationName

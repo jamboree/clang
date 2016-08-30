@@ -499,7 +499,8 @@ Sema::ActOnPackExpansion(const ParsedTemplateArgument &Arg,
       llvm_unreachable("Unhandled template argument kind?");
   }
   SourceRange R(Arg.getLocation());
-  if (Arg.getScopeSpec().isValid())
+  if (Arg.getKind() == ParsedTemplateArgument::Template &&
+      Arg.getScopeSpec().isValid())
     R.setBegin(Arg.getScopeSpec().getBeginLoc());
   Diag(EllipsisLoc, diag::err_pack_expansion_without_parameter_packs) << R;
   return ParsedTemplateArgument();
