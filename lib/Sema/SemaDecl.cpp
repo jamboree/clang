@@ -10860,7 +10860,8 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   if (D.hasName()) {
     if (IdentifierInfo *II = D.getIdentifier()) {
       Name = getPossiblyTemplatedName(II);
-      if (DiagnoseUnexpandedParameterPack(
+      if (!D.isEllipsisPostfix() &&
+          DiagnoseUnexpandedParameterPack(
               DeclarationNameInfo(Name, D.getIdentifierLoc()),
               UPPC_DeclarationName)) {
         Name = {};
@@ -10916,7 +10917,7 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
                     S->getNextFunctionPrototypeIndex());
 
   if (D.isDesignator()) {
-    if (New->isParameterPack())
+    if (New->isParameterPack() && !D.isEllipsisPostfix())
       Diag(D.getPeriodLoc(), diag::err_param_designator_on_parameter_pack);
     else
       New->setDesignatable(D.isDesignator());

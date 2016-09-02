@@ -1679,7 +1679,10 @@ private:
   unsigned Redeclaration : 1;
 
   /// \brief Is this Declarator a designator?
-  bool Designator : 1;
+  unsigned Designator : 1;
+
+  /// \brief Is the ellipsis postfix?
+  unsigned EllipsisPostfix : 1;
 
   /// Attrs - Attributes.
   ParsedAttributes Attrs;
@@ -1721,7 +1724,7 @@ public:
     : DS(ds), Range(ds.getSourceRange()), Context(C),
       InvalidType(DS.getTypeSpecType() == DeclSpec::TST_error),
       GroupingParens(false), FunctionDefinition(FDK_Declaration), 
-      Redeclaration(false), Designator(false),
+      Redeclaration(false), Designator(false), EllipsisPostfix(false),
       Attrs(ds.getAttributePool().getFactory()), AsmLabel(nullptr),
       InlineParamsUsed(false), Extension(false), ObjCIvar(false),
       ObjCWeakProperty(false) {
@@ -2275,6 +2278,9 @@ public:
 
   void setDesignator(bool Val) { Designator = Val; }
   bool isDesignator() const { return Designator; }
+
+  void setEllipsisPostfix(bool Val) { EllipsisPostfix = Val; }
+  bool isEllipsisPostfix() const { return EllipsisPostfix; }
 };
 
 /// \brief This little struct is used to capture information about

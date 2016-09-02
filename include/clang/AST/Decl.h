@@ -1583,21 +1583,21 @@ public:
   /// `Find` should not be called with the same `Id` more than once.
   class DesigParamFinder {
     llvm::SmallDenseMap<IdentifierInfo *, unsigned> Cache;
-    FunctionDecl *Function;
+    ParmVarDecl *const *ParamDecls;
     unsigned Index;
 
   public:
     const unsigned End;
 
-    DesigParamFinder(FunctionDecl *Function, unsigned NumParams)
-        : Function(Function), Index(0), End(NumParams) {}
+    explicit DesigParamFinder(ArrayRef<ParmVarDecl *> ParamDecls)
+        : ParamDecls(ParamDecls.data()), Index(0), End(ParamDecls.size()) {}
 
     unsigned Find(IdentifierInfo *Id) {
       auto I = Cache.find(Id);
       if (I != Cache.end())
         return I->second;
       for (; Index != End; ++Index) {
-        auto Param = Function->getParamDecl(Index);
+        auto Param = ParamDecls[Index];
         if (Param->isDesignatable()) {
           auto PId = Param->getIdentifier();
           if (Id == PId)

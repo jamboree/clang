@@ -5418,6 +5418,15 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
   assert(D.isPastIdentifier() &&
          "Haven't past the location of the identifier yet?");
 
+  // Parse posfix ellipsis for unexpanded templated name.
+  if (Tok.is(tok::ellipsis) && D.hasName() && !D.hasEllipsis() &&
+      Actions.getPossiblyTemplatedName(D.getIdentifier())
+          .containsUnexpandedParameterPack()) {
+    SourceLocation EllipsisLoc = ConsumeToken();
+    D.setEllipsisLoc(EllipsisLoc);
+    D.setEllipsisPostfix(true);
+  }
+
   // Don't parse attributes unless we have parsed an unparenthesized name.
   if (D.hasName() && !D.getNumTypeObjects())
     MaybeParseCXX11Attributes(D);

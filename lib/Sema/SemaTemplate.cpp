@@ -3527,6 +3527,37 @@ SubstDefaultTemplateArgument(Sema &SemaRef,
              TemplateArgLists);
 }
 
+static DeclarationName SubstDefaultTemplateArgument(
+    Sema &SemaRef, TemplateDecl *Template, SourceLocation TemplateLoc,
+    SourceLocation RAngleLoc, TemplateDeclNameParmDecl *Param,
+    SmallVectorImpl<TemplateArgument> &Converted) {
+  Sema::InstantiatingTemplate Inst(SemaRef, TemplateLoc, Template, Converted,
+                                   SourceRange(TemplateLoc, RAngleLoc));
+  DeclarationName ArgName =
+      Param->getDefaultArgument().getArgument().getAsDeclName();
+  if (ArgName.isTemplatedName()) {
+    if (Inst.isInvalid())
+      return DeclarationName();
+
+    TemplateArgumentList TemplateArgs(TemplateArgumentList::OnStack, Converted);
+
+    // Only substitute for the innermost template argument list.
+    MultiLevelTemplateArgumentList TemplateArgLists;
+    TemplateArgLists.addOuterTemplateArguments(&TemplateArgs);
+    for (unsigned i = 0, e = Param->getDepth(); i != e; ++i)
+      TemplateArgLists.addOuterTemplateArguments(None);
+
+    Sema::ContextRAII SavedContext(SemaRef, Template->getDeclContext());
+
+    ArgName = SemaRef
+                  .SubstDeclarationNameInfo(
+                      DeclarationNameInfo(ArgName, SourceLocation()),
+                      TemplateArgLists)
+                  .getName();
+  }
+  return ArgName;
+}
+
 /// \brief If the given template parameter has a default template
 /// argument, substitute into that default template argument and
 /// return the corresponding template argument.
@@ -3574,25 +3605,40 @@ Sema::SubstDefaultTemplateArgumentIfAvailable(TemplateDecl *Template,
     return TemplateArgumentLoc(TemplateArgument(ArgE), ArgE);
   }
 
-  TemplateTemplateParmDecl *TempTempParm
-    = cast<TemplateTemplateParmDecl>(Param);
-  if (!hasVisibleDefaultArgument(TempTempParm))
+  if (TemplateTemplateParmDecl *TempTempParm =
+          dyn_cast<TemplateTemplateParmDecl>(Param)) {
+    if (!hasVisibleDefaultArgument(TempTempParm))
+      return TemplateArgumentLoc();
+
+    HasDefaultArg = true;
+    NestedNameSpecifierLoc QualifierLoc;
+    TemplateName TName =
+        SubstDefaultTemplateArgument(*this, Template, TemplateLoc, RAngleLoc,
+                                     TempTempParm, Converted, QualifierLoc);
+    if (TName.isNull())
+      return TemplateArgumentLoc();
+
+    return TemplateArgumentLoc(
+        TemplateArgument(TName),
+        TempTempParm->getDefaultArgument().getTemplateQualifierLoc(),
+        TempTempParm->getDefaultArgument().getTemplateNameLoc());
+  }
+
+  TemplateDeclNameParmDecl *TempNameParm =
+      cast<TemplateDeclNameParmDecl>(Param);
+
+  if (!hasVisibleDefaultArgument(TempNameParm))
     return TemplateArgumentLoc();
 
   HasDefaultArg = true;
-  NestedNameSpecifierLoc QualifierLoc;
-  TemplateName TName = SubstDefaultTemplateArgument(*this, Template,
-                                                    TemplateLoc,
-                                                    RAngleLoc,
-                                                    TempTempParm,
-                                                    Converted,
-                                                    QualifierLoc);
-  if (TName.isNull())
+  DeclarationName DName = SubstDefaultTemplateArgument(
+      *this, Template, TemplateLoc, RAngleLoc, TempNameParm, Converted);
+
+  if (DName.isEmpty())
     return TemplateArgumentLoc();
 
-  return TemplateArgumentLoc(TemplateArgument(TName),
-                TempTempParm->getDefaultArgument().getTemplateQualifierLoc(),
-                TempTempParm->getDefaultArgument().getTemplateNameLoc());
+  return TemplateArgumentLoc(TemplateArgument(DName),
+                             TempNameParm->getDefaultArgumentLoc());
 }
 
 /// \brief Check that the given template argument corresponds to the given
@@ -8729,7 +8775,11 @@ bool Sema::RebuildTemplateParamsInCurrentInstantiation(
     // There is nothing to rebuild in a type parameter.
     if (isa<TemplateTypeParmDecl>(Param))
       continue;
-    
+
+    // There is nothing to rebuild in a declname parameter.
+    if (isa<TemplateDeclNameParmDecl>(Param))
+        continue;
+
     // Rebuild the template parameter list of a template template parameter.
     if (TemplateTemplateParmDecl *TTP 
         = dyn_cast<TemplateTemplateParmDecl>(Param)) {

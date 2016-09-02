@@ -6446,14 +6446,14 @@ public:
                                        bool &RetainExpansion,
                                        Optional<unsigned> &NumExpansions);
 
-  /// \brief Determine the number of arguments in the given pack expansion
-  /// type.
+  /// \brief Determine the number of arguments in the given parameter pack.
   ///
   /// This routine assumes that the number of arguments in the expansion is
   /// consistent across all of the unexpanded parameter packs in its pattern.
   ///
   /// Returns an empty Optional if the type can't be expanded.
-  Optional<unsigned> getNumArgumentsInExpansion(QualType T,
+  Optional<unsigned> getNumArgumentsInExpansion(
+      const ParmVarDecl *Parm,
       const MultiLevelTemplateArgumentList &TemplateArgs);
 
   /// \brief Determine whether the given declarator contains any unexpanded
@@ -6563,7 +6563,8 @@ public:
       FunctionTemplateDecl *FunctionTemplate,
       TemplateArgumentListInfo &ExplicitTemplateArgs,
       SmallVectorImpl<DeducedTemplateArgument> &Deduced,
-      SmallVectorImpl<QualType> &ParamTypes, QualType *FunctionType,
+      SmallVectorImpl<QualType> &ParamTypes,
+      SmallVectorImpl<ParmVarDecl *> *OutParams, QualType *FunctionType,
       sema::TemplateDeductionInfo &Info);
 
   /// brief A function argument from which we performed template argument

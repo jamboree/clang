@@ -620,9 +620,12 @@ getDepthAndIndex(NamedDecl *ND) {
   
   if (NonTypeTemplateParmDecl *NTTP = dyn_cast<NonTypeTemplateParmDecl>(ND))
     return std::make_pair(NTTP->getDepth(), NTTP->getIndex());
-  
-  TemplateTemplateParmDecl *TTP = cast<TemplateTemplateParmDecl>(ND);
-  return std::make_pair(TTP->getDepth(), TTP->getIndex());
+
+  if (TemplateTemplateParmDecl *TTP = dyn_cast<TemplateTemplateParmDecl>(ND))
+    return std::make_pair(TTP->getDepth(), TTP->getIndex());
+
+  TemplateDeclNameParmDecl *TDP = cast<TemplateDeclNameParmDecl>(ND);
+  return std::make_pair(TDP->getDepth(), TDP->getIndex());
 }
 
 //===----------------------------------------------------------------------===/
@@ -1737,7 +1740,18 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
   DeclarationNameInfo NameInfo =
       SubstDeclarationNameInfo(OldParm->getNameInfo(), TemplateArgs);
 
-  // FIXME: diagnose duplicate designatable params
+  // Diagnose duplicate designatable parameter.
+  ParmVarDecl **DesigParmEntry = nullptr;
+  if (OldParm->isDesignatable()) {
+    if (IdentifierInfo *Id = NameInfo.getName().getAsIdentifierInfo()) {
+      DesigParmEntry = CurrentInstantiationScope->getDesignatableParmEntry(Id);
+      if (ParmVarDecl *ConflictParm = *DesigParmEntry) {
+        Diag(OldParm->getLocation(), diag::err_param_redefinition) << Id;
+        Diag(ConflictParm->getLocation(), diag::note_previous_declaration);
+        return nullptr;
+      }
+    }
+  }
 
   ParmVarDecl *NewParm = CheckParameter(Context.getTranslationUnitDecl(),
                                         OldParm->getInnerLocStart(),
@@ -1747,6 +1761,9 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
                                         OldParm->getStorageClass());
   if (!NewParm)
     return nullptr;
+
+  if (DesigParmEntry)
+    *DesigParmEntry = NewParm;
 
   // Mark the (new) default argument as uninstantiated (if any).
   if (OldParm->hasUninstantiatedDefaultArg()) {

@@ -3654,8 +3654,8 @@ QualType ASTContext::getPackExpansionType(QualType Pattern,
   llvm::FoldingSetNodeID ID;
   PackExpansionType::Profile(ID, Pattern, NumExpansions);
 
-  assert(Pattern->containsUnexpandedParameterPack() &&
-         "Pack expansions must expand one or more parameter packs");
+  //assert(Pattern->containsUnexpandedParameterPack() &&
+  //       "Pack expansions must expand one or more parameter packs");
   void *InsertPos = nullptr;
   PackExpansionType *T
     = PackExpansionTypes.FindNodeOrInsertPos(ID, InsertPos);

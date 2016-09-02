@@ -189,6 +189,9 @@ namespace clang {
         const Decl *, llvm::PointerUnion<Decl *, DeclArgumentPack *>, 4>
     LocalDeclsMap;
 
+    typedef llvm::SmallDenseMap<const IdentifierInfo *, ParmVarDecl *, 4>
+        DesignatableParmsMap;
+
     /// \brief A mapping from local declarations that occur
     /// within a template to their instantiations.
     ///
@@ -208,6 +211,8 @@ namespace clang {
     /// set of instantiated parameters. This is stored as a DeclArgumentPack
     /// pointer.
     LocalDeclsMap LocalDecls;
+
+    DesignatableParmsMap DesignatableParms;
 
     /// \brief The set of argument packs we've allocated.
     SmallVector<DeclArgumentPack *, 1> ArgumentPacks;
@@ -366,6 +371,11 @@ namespace clang {
     NamedDecl *
     getPartiallySubstitutedPack(const TemplateArgument **ExplicitArgs = nullptr,
                                 unsigned *NumExplicitArgs = nullptr) const;
+
+    /// \brief Retrieve an entry for a designatable parameter by name.
+    ParmVarDecl **getDesignatableParmEntry(const IdentifierInfo *Id) {
+      return &DesignatableParms[Id];
+    }
   };
 
   class TemplateDeclInstantiator

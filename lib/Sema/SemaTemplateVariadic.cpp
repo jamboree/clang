@@ -702,11 +702,14 @@ bool Sema::CheckParameterPacksForExpansion(
   return false;
 }
 
-Optional<unsigned> Sema::getNumArgumentsInExpansion(QualType T,
+Optional<unsigned> Sema::getNumArgumentsInExpansion(const ParmVarDecl *Parm,
                           const MultiLevelTemplateArgumentList &TemplateArgs) {
+  QualType T = Parm->getType();
   QualType Pattern = cast<PackExpansionType>(T)->getPattern();
   SmallVector<UnexpandedParameterPack, 2> Unexpanded;
-  CollectUnexpandedParameterPacksVisitor(Unexpanded).TraverseType(Pattern);
+  CollectUnexpandedParameterPacksVisitor Visitor(Unexpanded);
+  Visitor.TraverseType(Pattern);
+  Visitor.TraverseDeclarationNameInfo(Parm->getNameInfo());
 
   Optional<unsigned> Result;
   for (unsigned I = 0, N = Unexpanded.size(); I != N; ++I) {

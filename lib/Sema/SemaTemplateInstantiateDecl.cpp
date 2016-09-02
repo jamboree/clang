@@ -3314,7 +3314,7 @@ TemplateDeclInstantiator::SubstFunctionType(FunctionDecl *D,
         Optional<unsigned> NumArgumentsInExpansion;
         if (OldParam->isParameterPack())
           NumArgumentsInExpansion =
-              SemaRef.getNumArgumentsInExpansion(OldParam->getType(),
+              SemaRef.getNumArgumentsInExpansion(OldParam,
                                                  TemplateArgs);
         if (!NumArgumentsInExpansion) {
           // Simple case: normal parameter, or a parameter pack that's
@@ -3416,7 +3416,7 @@ static bool addInstantiatedParametersToScope(Sema &S, FunctionDecl *Function,
     // Expand the parameter pack.
     Scope.MakeInstantiatedLocalArgPack(PatternParam);
     Optional<unsigned> NumArgumentsInExpansion
-      = S.getNumArgumentsInExpansion(PatternParam->getType(), TemplateArgs);
+      = S.getNumArgumentsInExpansion(PatternParam, TemplateArgs);
     assert(NumArgumentsInExpansion &&
            "should only be called when all template arguments are known");
     QualType PatternType =

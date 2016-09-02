@@ -4504,7 +4504,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
       //
       // We represent function parameter packs as function parameters whose
       // type is a pack expansion.
-      if (!T->containsUnexpandedParameterPack()) {
+      if (!T->containsUnexpandedParameterPack() && !D.isEllipsisPostfix()) {
         S.Diag(D.getEllipsisLoc(),
              diag::err_function_parameter_pack_without_parameter_packs)
           << T <<  D.getSourceRange();

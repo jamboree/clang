@@ -655,7 +655,8 @@ public:
         }
       }
     }
-    assert(!Packs.empty() && "Pack expansion without unexpanded packs?");
+    // Jamboree: temporary fix
+    //assert(!Packs.empty() && "Pack expansion without unexpanded packs?");
 
     for (auto &Pack : Packs) {
       if (Info.PendingDeducedPacks.size() > Pack.Index)
@@ -2517,14 +2518,13 @@ static bool isSimpleTemplateIdType(QualType T) {
 ///
 /// \returns TDK_Success if substitution was successful, or some failure
 /// condition.
-Sema::TemplateDeductionResult
-Sema::SubstituteExplicitTemplateArguments(
-                                      FunctionTemplateDecl *FunctionTemplate,
-                               TemplateArgumentListInfo &ExplicitTemplateArgs,
-                       SmallVectorImpl<DeducedTemplateArgument> &Deduced,
-                                 SmallVectorImpl<QualType> &ParamTypes,
-                                          QualType *FunctionType,
-                                          TemplateDeductionInfo &Info) {
+Sema::TemplateDeductionResult Sema::SubstituteExplicitTemplateArguments(
+    FunctionTemplateDecl *FunctionTemplate,
+    TemplateArgumentListInfo &ExplicitTemplateArgs,
+    SmallVectorImpl<DeducedTemplateArgument> &Deduced,
+    SmallVectorImpl<QualType> &ParamTypes,
+    SmallVectorImpl<ParmVarDecl *> *OutParams, QualType *FunctionType,
+    TemplateDeductionInfo &Info) {
   FunctionDecl *Function = FunctionTemplate->getTemplatedDecl();
   TemplateParameterList *TemplateParams
     = FunctionTemplate->getTemplateParameters();
@@ -2618,7 +2618,7 @@ Sema::SubstituteExplicitTemplateArguments(
     if (SubstParmTypes(Function->getLocation(), Function->parameters(),
                        Proto->getExtParameterInfosOrNull(),
                        MultiLevelTemplateArgumentList(*ExplicitArgumentList),
-                       ParamTypes, /*params*/ nullptr, ExtParamInfos))
+                       ParamTypes, OutParams, ExtParamInfos))
       return TDK_SubstitutionFailure;
   }
   
@@ -2655,7 +2655,7 @@ Sema::SubstituteExplicitTemplateArguments(
       SubstParmTypes(Function->getLocation(), Function->parameters(),
                      Proto->getExtParameterInfosOrNull(),
                      MultiLevelTemplateArgumentList(*ExplicitArgumentList),
-                     ParamTypes, /*params*/ nullptr, ExtParamInfos))
+                     ParamTypes, OutParams, ExtParamInfos))
     return TDK_SubstitutionFailure;
 
   if (FunctionType) {
@@ -3403,19 +3403,20 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
     = FunctionTemplate->getTemplateParameters();
   SmallVector<DeducedTemplateArgument, 4> Deduced;
   SmallVector<QualType, 4> ParamTypes;
+  SmallVector<ParmVarDecl *, 4> OutParams;
+  ArrayRef<ParmVarDecl *> ParamDecls = Function->parameters();
   unsigned NumExplicitlySpecified = 0;
   if (ExplicitTemplateArgs) {
-    TemplateDeductionResult Result =
-      SubstituteExplicitTemplateArguments(FunctionTemplate,
-                                          *ExplicitTemplateArgs,
-                                          Deduced,
-                                          ParamTypes,
-                                          nullptr,
-                                          Info);
+    TemplateDeductionResult Result = SubstituteExplicitTemplateArguments(
+        FunctionTemplate, *ExplicitTemplateArgs, Deduced, ParamTypes,
+        &OutParams, nullptr, Info);
     if (Result)
       return Result;
 
     NumExplicitlySpecified = Deduced.size();
+
+    if (!OutParams.empty())
+      ParamDecls = OutParams;
   } else {
     // Just fill in the parameter types from the function declaration.
     for (unsigned I = 0; I != NumParams; ++I)
@@ -3426,42 +3427,32 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
   // for non-deduced parameter packs.
   class SkippedDesigParamFinder {
     llvm::SmallDenseMap<IdentifierInfo *, unsigned> Cache;
-    FunctionDecl *Function;
     const QualType *ParamTypes;
+    ParmVarDecl *const *ParamDecls;
     unsigned Index;
-    unsigned SubIndex;
     unsigned SkipCount;
-    const unsigned NumParams;
 
   public:
     const unsigned End;
 
-    SkippedDesigParamFinder(FunctionDecl *Function,
-                            unsigned NumParams, ArrayRef<QualType> ParamTypes)
-        : Function(Function), ParamTypes(ParamTypes.data()), Index(0),
-          SubIndex(0), SkipCount(0), NumParams(NumParams),
-          End(ParamTypes.size()) {}
+    SkippedDesigParamFinder(ArrayRef<QualType> ParamTypes,
+                            ArrayRef<ParmVarDecl *> ParamDecls)
+        : ParamTypes(ParamTypes.data()), ParamDecls(ParamDecls.data()),
+          Index(0), SkipCount(0), End(ParamTypes.size()) {}
 
     unsigned Find(IdentifierInfo *Id) {
       auto I = Cache.find(Id);
       if (I != Cache.end())
         return I->second;
-      for (; Index != NumParams; ++Index, ++SubIndex) {
-        auto Param = Function->getParamDecl(Index);
+      for (; Index != End; ++Index) {
+        auto Param = ParamDecls[Index];
         if (Param->isDesignatable()) {
           auto PId = Param->getIdentifier();
-          if (Id == PId) {
-            ++Index;
-            return SubIndex++ - SkipCount;
-          }
-          Cache[PId] = SubIndex - SkipCount;
-        } else if (Param->isParameterPack()) {
+          if (Id == PId)
+            return Index++ - SkipCount;
+          Cache[PId] = Index - SkipCount;
+        } else if (Param->isParameterPack())
           ++SkipCount;
-          while (!isa<PackExpansionType>(ParamTypes[SubIndex])) {
-            ++SubIndex;
-            assert(SubIndex != End);
-          }
-        }
       }
       return End;
     }
@@ -3469,7 +3460,7 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
 
   if (HasDesig) {
     // Build mapped arg-list
-    SkippedDesigParamFinder DesigParamFinder(Function, NumParams, ParamTypes);
+    SkippedDesigParamFinder DesigParamFinder(ParamTypes, ParamDecls);
     unsigned MaxArgs = ParamTypes.size();
     if (!Args.size())
       MaxArgs = 0;
@@ -3728,11 +3719,9 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
   unsigned NumExplicitlySpecified = 0;
   SmallVector<QualType, 4> ParamTypes;
   if (ExplicitTemplateArgs) {
-    if (TemplateDeductionResult Result
-          = SubstituteExplicitTemplateArguments(FunctionTemplate,
-                                                *ExplicitTemplateArgs,
-                                                Deduced, ParamTypes,
-                                                &FunctionType, Info))
+    if (TemplateDeductionResult Result = SubstituteExplicitTemplateArguments(
+            FunctionTemplate, *ExplicitTemplateArgs, Deduced, ParamTypes,
+            nullptr, &FunctionType, Info))
       return Result;
 
     NumExplicitlySpecified = Deduced.size();

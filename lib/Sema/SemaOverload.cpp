@@ -8615,7 +8615,7 @@ unsigned Sema::DesignateArguments(FunctionDecl *Function, unsigned NumParams,
     return 0;
 
   // Build mapped arg-list
-  FunctionDecl::DesigParamFinder DesigParamFinder(Function, NumParams);
+  FunctionDecl::DesigParamFinder DesigParamFinder(Function->parameters());
   unsigned MaxArgs = NumParams;
   if (!Args.size())
     MaxArgs = 0;

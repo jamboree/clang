@@ -4750,6 +4750,7 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
         PackExpansionTypeLoc ExpansionTL = TL.castAs<PackExpansionTypeLoc>();
         TypeLoc Pattern = ExpansionTL.getPatternLoc();
         SemaRef.collectUnexpandedParameterPacks(Pattern, Unexpanded);
+        SemaRef.collectUnexpandedParameterPacks(OldParm->getNameInfo(), Unexpanded);
         assert(Unexpanded.size() > 0 && "Could not find parameter packs!");
 
         // Determine whether we should expand the parameter packs.
