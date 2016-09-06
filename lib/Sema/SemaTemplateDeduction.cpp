@@ -3572,24 +3572,31 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
       continue;
     }
 
-    // C++0x [temp.deduct.call]p1:
-    //   For a function parameter pack that occurs at the end of the
-    //   parameter-declaration-list, the type A of each remaining argument of
-    //   the call is compared with the type P of the declarator-id of the
-    //   function parameter pack. Each comparison deduces template arguments
-    //   for subsequent positions in the template parameter packs expanded by
-    //   the function parameter pack. For a function parameter pack that does
-    //   not occur at the end of the parameter-declaration-list, the type of
-    //   the parameter pack is a non-deduced context.
-    if (ParamIdx + 1 < NumParamTypes)
+    Optional<unsigned> NumExpansions = ParamExpansion->getNumExpansions();
+    unsigned N = 0;
+    unsigned ArgEnd = Args.size();
+    if (NumExpansions) {
+      N = *NumExpansions;
+      ArgEnd = std::min(ArgIdx + N, ArgEnd);
+    } else if (ParamIdx + 1 < NumParamTypes) {
+      // C++0x [temp.deduct.call]p1:
+      //   For a function parameter pack that occurs at the end of the
+      //   parameter-declaration-list, the type A of each remaining argument of
+      //   the call is compared with the type P of the declarator-id of the
+      //   function parameter pack. Each comparison deduces template arguments
+      //   for subsequent positions in the template parameter packs expanded by
+      //   the function parameter pack. For a function parameter pack that does
+      //   not occur at the end of the parameter-declaration-list, the type of
+      //   the parameter pack is a non-deduced context.
       continue;
+    }
 
     QualType ParamPattern = ParamExpansion->getPattern();
     PackDeductionScope PackScope(*this, TemplateParams, Deduced, Info,
                                  ParamPattern);
 
     bool HasAnyArguments = false;
-    for (; ArgIdx < Args.size(); ++ArgIdx) {
+    for (; ArgIdx < ArgEnd; ++ArgIdx) {
       HasAnyArguments = true;
 
       QualType OrigParamType = ParamPattern;
@@ -3634,6 +3641,14 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
       }
 
       PackScope.nextPackElement();
+
+      // Move to next pattern.
+      if (N && --N) {
+        ++ParamIdx;
+        assert(ParamIdx != NumParamTypes);
+        ParamExpansion = cast<PackExpansionType>(ParamTypes[ParamIdx]);
+        ParamPattern = ParamExpansion->getPattern();
+      }
     }
 
     // Build argument packs for each of the parameter packs expanded by this
@@ -3642,7 +3657,8 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
       return Result;
 
     // After we've matching against a parameter pack, we're done.
-    break;
+    if (ArgIdx == Args.size())
+      break;
   }
 
   return FinishTemplateArgumentDeduction(FunctionTemplate, Deduced,

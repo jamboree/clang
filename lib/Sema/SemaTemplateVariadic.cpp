@@ -603,7 +603,8 @@ bool Sema::CheckParameterPacksForExpansion(
   RetainExpansion = false;
   std::pair<IdentifierInfo *, SourceLocation> FirstPack;
   bool HaveFirstPack = false;
-  
+  bool AnyToExpand = false;
+
   for (ArrayRef<UnexpandedParameterPack>::iterator i = Unexpanded.begin(),
                                                  end = Unexpanded.end();
                                                   i != end; ++i) {
@@ -639,6 +640,7 @@ bool Sema::CheckParameterPacksForExpansion(
       if (Instantiation->is<DeclArgumentPack *>()) {
         // We could expand this function parameter pack.
         NewPackSize = Instantiation->get<DeclArgumentPack *>()->size();
+        AnyToExpand = true;
       } else {
         // We can't expand this function parameter pack, so we can't expand
         // the pack expansion.
@@ -651,12 +653,13 @@ bool Sema::CheckParameterPacksForExpansion(
       // want to check any parameter packs we *do* have arguments for.
       if (Depth >= TemplateArgs.getNumLevels() ||
           !TemplateArgs.hasTemplateArgument(Depth, Index)) {
-        ShouldExpand = false;
+        //ShouldExpand = false;
         continue;
       }
-      
+
       // Determine the size of the argument pack.
       NewPackSize = TemplateArgs(Depth, Index).pack_size();
+      AnyToExpand = true;
     }
     
     // C++0x [temp.arg.explicit]p9:
@@ -698,14 +701,23 @@ bool Sema::CheckParameterPacksForExpansion(
       return true;
     }
   }
-  
+
+  if (!AnyToExpand)
+    ShouldExpand = false;
+
   return false;
 }
 
 Optional<unsigned> Sema::getNumArgumentsInExpansion(const ParmVarDecl *Parm,
                           const MultiLevelTemplateArgumentList &TemplateArgs) {
   QualType T = Parm->getType();
-  QualType Pattern = cast<PackExpansionType>(T)->getPattern();
+  const PackExpansionType *Expansion = cast<PackExpansionType>(T);
+  QualType Pattern = Expansion->getPattern();
+
+  // If it's already expanded, return none.
+  if (Expansion->getNumExpansions())
+    return None;
+
   SmallVector<UnexpandedParameterPack, 2> Unexpanded;
   CollectUnexpandedParameterPacksVisitor Visitor(Unexpanded);
   Visitor.TraverseType(Pattern);
@@ -733,7 +745,7 @@ Optional<unsigned> Sema::getNumArgumentsInExpansion(const ParmVarDecl *Parm,
         if (Instantiation->is<Decl*>())
           // The pattern refers to an unexpanded pack. We're not ready to expand
           // this pack yet.
-          return None;
+          continue;
 
         unsigned Size = Instantiation->get<DeclArgumentPack *>()->size();
         assert((!Result || *Result == Size) && "inconsistent pack sizes");
@@ -747,14 +759,14 @@ Optional<unsigned> Sema::getNumArgumentsInExpansion(const ParmVarDecl *Parm,
         !TemplateArgs.hasTemplateArgument(Depth, Index))
       // The pattern refers to an unknown template argument. We're not ready to
       // expand this pack yet.
-      return None;
-    
+      continue;
+
     // Determine the size of the argument pack.
     unsigned Size = TemplateArgs(Depth, Index).pack_size();
     assert((!Result || *Result == Size) && "inconsistent pack sizes");
     Result = Size;
   }
-  
+
   return Result;
 }
 

@@ -2795,9 +2795,21 @@ unsigned FunctionDecl::getMinRequiredArguments() const {
     return getNumParams();
 
   unsigned NumRequiredArgs = 0;
-  for (auto *Param : parameters())
-    if (!Param->isParameterPack() && !Param->hasDefaultArg())
+  ArrayRef<ParmVarDecl *> Parms = parameters();
+  param_const_iterator I = Parms.begin(), E = Parms.end();
+  while (I != E) {
+    ParmVarDecl *Parm = *I;
+    if (const PackExpansionType *Expansion =
+            dyn_cast<PackExpansionType>(Parm->getType())) {
+      if (Optional<unsigned> NumExpansions = Expansion->getNumExpansions()) {
+        NumRequiredArgs += *NumExpansions;
+        I += *NumExpansions;
+        continue;
+      }
+    } else if (!Parm->hasDefaultArg())
       ++NumRequiredArgs;
+    ++I;
+  }
   return NumRequiredArgs;
 }
 

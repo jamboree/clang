@@ -1796,8 +1796,9 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
   NewParm->setHasInheritedDefaultArg(OldParm->hasInheritedDefaultArg());
 
   NewParm->setDesignatable(OldParm->isDesignatable());
-  
-  if (OldParm->isParameterPack() && !NewParm->isParameterPack()) {
+
+  if (OldParm->isParameterPack() && !NumExpansions &&
+      !NewParm->isParameterPack()) {
     // Add the new parameter to the instantiated parameter pack.
     CurrentInstantiationScope->InstantiatedLocalPackArg(OldParm, NewParm);
   } else {

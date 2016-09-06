@@ -2799,9 +2799,11 @@ bool FunctionProtoType::isNothrow(const ASTContext &Ctx,
 
 bool FunctionProtoType::isTemplateVariadic() const {
   for (unsigned ArgIdx = getNumParams(); ArgIdx; --ArgIdx)
-    if (isa<PackExpansionType>(getParamType(ArgIdx - 1)))
-      return true;
-  
+    if (const PackExpansionType *Expansion =
+            dyn_cast<PackExpansionType>(getParamType(ArgIdx - 1)))
+      if (!Expansion->getNumExpansions())
+        return true;
+
   return false;
 }
 
