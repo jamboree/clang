@@ -9516,7 +9516,7 @@ static void DiagnoseBadArgumentPos(Sema &S, NamedDecl *Found, FunctionDecl *Fn,
                                    unsigned mode) {
   std::string Description;
   OverloadCandidateKind FnKind = ClassifyOverloadCandidate(S, Found, Fn, Description);
-  S.Diag(Fn->getParamDecl(Info.ParamIndex)->getLocation(),
+  S.Diag(Fn->getLocation(),
          diag::note_ovl_bad_argument_pos)
       << (unsigned)FnKind << (Fn->getDescribedFunctionTemplate() != nullptr)
       << mode << (Info.ParamIndex + 1);

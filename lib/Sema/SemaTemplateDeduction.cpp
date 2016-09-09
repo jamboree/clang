@@ -428,11 +428,10 @@ DeduceTemplateArguments(Sema &S,
   return Sema::TDK_NonDeducedMismatch;
 }
 
-static Sema::TemplateDeductionResult
-DeduceTemplateArguments(Sema &S, TemplateParameterList *TemplateParams,
-                        DeclarationName Param, DeclarationName Arg,
-                        TemplateDeductionInfo &Info,
-                        SmallVectorImpl<DeducedTemplateArgument> &Deduced) {
+static Sema::TemplateDeductionResult DeduceTemplateArguments(
+    Sema &S, TemplateParameterList *TemplateParams, DeclarationName Param,
+    DeclarationName Arg, TemplateDeductionInfo &Info,
+    SmallVectorImpl<DeducedTemplateArgument> &Deduced, bool SkipNonDependent) {
   if (TemplateDeclNameParmDecl *TDP = Param.getCXXTemplatedNameParmDecl()) {
     DeducedTemplateArgument NewDeduced(Arg);
     DeducedTemplateArgument Result = checkDeducedTemplateArguments(
@@ -448,6 +447,9 @@ DeduceTemplateArguments(Sema &S, TemplateParameterList *TemplateParams,
     Deduced[TDP->getIndex()] = Result;
     return Sema::TDK_Success;
   }
+
+  if (SkipNonDependent)
+    return Sema::TDK_Success;
 
   // Verify that the two declnames are equivalent.
   if (Param == Arg)
@@ -1761,7 +1763,7 @@ DeduceTemplateArguments(Sema &S,
   case TemplateArgument::DeclName:
     if (Arg.getKind() == TemplateArgument::DeclName)
       return DeduceTemplateArguments(S, TemplateParams, Param.getAsDeclName(),
-                                     Arg.getAsDeclName(), Info, Deduced);
+                                     Arg.getAsDeclName(), Info, Deduced, false);
     break;
 
   case TemplateArgument::TemplateExpansion:
@@ -3427,10 +3429,12 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
   // for non-deduced parameter packs.
   class SkippedDesigParamFinder {
     llvm::SmallDenseMap<IdentifierInfo *, unsigned> Cache;
+    llvm::SmallBitVector NameDeducible;
     const QualType *ParamTypes;
     ParmVarDecl *const *ParamDecls;
     unsigned Index;
     unsigned SkipCount;
+    unsigned LastPack;
 
   public:
     const unsigned End;
@@ -3438,23 +3442,39 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
     SkippedDesigParamFinder(ArrayRef<QualType> ParamTypes,
                             ArrayRef<ParmVarDecl *> ParamDecls)
         : ParamTypes(ParamTypes.data()), ParamDecls(ParamDecls.data()),
-          Index(0), SkipCount(0), End(ParamTypes.size()) {}
+          Index(0), SkipCount(0), LastPack(ParamTypes.size()), End(LastPack) {
+      NameDeducible.resize(End + 1);
+    }
 
     unsigned Find(IdentifierInfo *Id) {
       auto I = Cache.find(Id);
       if (I != Cache.end())
         return I->second;
       for (; Index != End; ++Index) {
+        if (auto Expansion = dyn_cast<PackExpansionType>(ParamTypes[Index]))
+          if (!Expansion->getNumExpansions()) {
+            if (Index + 1 != End) {
+              ++SkipCount;
+              continue;
+            }
+            LastPack = Index - SkipCount;
+          }
         auto Param = ParamDecls[Index];
         if (Param->isDesignatable()) {
-          auto PId = Param->getIdentifier();
-          if (Id == PId)
-            return Index++ - SkipCount;
-          Cache[PId] = Index - SkipCount;
-        } else if (Param->isParameterPack())
-          ++SkipCount;
+          DeclarationName Name = Param->getDeclName();
+          if (auto PId = Name.getAsIdentifierInfo()) {
+            if (Id == PId)
+              return Index++ - SkipCount;
+            Cache[PId] = Index - SkipCount;
+          } else if (Name.isTemplatedName())
+            NameDeducible.set(Index - SkipCount);
+        }
       }
       return End;
+    }
+
+    bool IsNameDeducible(unsigned I) const {
+      return NameDeducible.test(std::min(I, LastPack));
     }
   };
 
@@ -3476,13 +3496,17 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
     MappedArgs.resize(MaxArgs);
     unsigned NumArgs = 0;
     unsigned Index = 0;
-    for (auto Arg : Args) {
+    for (auto I = Args.begin(), E = Args.end(); I != E; ++I) {
+      auto Arg = *I;
       auto DIE = dyn_cast<DesignatedInitExpr>(Arg);
       if (DIE) {
         Index = DesigParamFinder.Find(DIE->getDesignator(0)->getFieldName());
         if (Index == DesigParamFinder.End) {
-          Info.DesignationFailure = {Arg, 0};
-          return TDK_DesignatorNotFound;
+          Index = I - Args.begin();
+          if (!DesigParamFinder.IsNameDeducible(Index)) {
+            Info.DesignationFailure = {Arg, 0};
+            return TDK_DesignatorNotFound;
+          }
         }
       }
       if (Index >= MaxArgs) {
@@ -3493,7 +3517,7 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
         Info.DesignationFailure = {Arg, Index};
         return TDK_OverlappedArguments;
       }
-      MappedArgs[Index] = DIE ? DIE->getInit() : Arg;
+      MappedArgs[Index] = Arg;
       ++Index;
       if (Index > NumArgs)
         NumArgs = Index;
@@ -3529,6 +3553,17 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
         ++ArgIdx;
         continue;
       }
+
+      DeclarationName ArgName;
+      if (auto DIE = dyn_cast<DesignatedInitExpr>(Arg)) {
+        Arg = DIE->getInit();
+        MappedArgs[ArgIdx] = Arg;
+        ArgName = DIE->getDesignator(0)->getFieldName();
+      }
+      if (TemplateDeductionResult Result = ::DeduceTemplateArguments(
+              *this, TemplateParams, ParamDecls[ParamIdx]->getDeclName(),
+              ArgName, Info, Deduced, true))
+        return Result;
 
       ++ArgIdx;
 
@@ -3573,11 +3608,22 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
     }
 
     Optional<unsigned> NumExpansions = ParamExpansion->getNumExpansions();
+    QualType ParamPattern = ParamExpansion->getPattern();
+    TemplateArgument FullPattern[2] = {ParamPattern,
+                                       ParamDecls[ParamIdx]->getDeclName()};
     unsigned N = 0;
     unsigned ArgEnd = Args.size();
     if (NumExpansions) {
       N = *NumExpansions;
-      ArgEnd = std::min(ArgIdx + N, ArgEnd);
+      unsigned SentinelIdx = ParamIdx + N;
+      const PackExpansionType *Sentinel =
+          cast<PackExpansionType>(ParamTypes[SentinelIdx]);
+      if (Sentinel->getNumExpansions() || SentinelIdx + 1 < NumParamTypes)
+        ArgEnd = std::min(ArgIdx + N, ArgEnd);
+      else {
+        FullPattern[0] = Sentinel->getPattern();
+        FullPattern[1] = ParamDecls[SentinelIdx]->getDeclName();
+      }
     } else if (ParamIdx + 1 < NumParamTypes) {
       // C++0x [temp.deduct.call]p1:
       //   For a function parameter pack that occurs at the end of the
@@ -3591,9 +3637,9 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
       continue;
     }
 
-    QualType ParamPattern = ParamExpansion->getPattern();
-    PackDeductionScope PackScope(*this, TemplateParams, Deduced, Info,
-                                 ParamPattern);
+    PackDeductionScope PackScope(
+        *this, TemplateParams, Deduced, Info,
+        TemplateArgument(llvm::makeArrayRef(FullPattern)));
 
     bool HasAnyArguments = false;
     for (; ArgIdx < ArgEnd; ++ArgIdx) {
@@ -3602,6 +3648,17 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
       QualType OrigParamType = ParamPattern;
       ParamType = OrigParamType;
       Expr *Arg = Args[ArgIdx];
+      DeclarationName ArgName;
+      if (auto DIE = dyn_cast<DesignatedInitExpr>(Arg)) {
+        Arg = DIE->getInit();
+        MappedArgs[ArgIdx] = Arg;
+        ArgName = DIE->getDesignator(0)->getFieldName();
+      }
+      if (TemplateDeductionResult Result = ::DeduceTemplateArguments(
+              *this, TemplateParams, ParamDecls[ParamIdx]->getDeclName(),
+              ArgName, Info, Deduced, true))
+        return Result;
+
       QualType ArgType = Arg->getType();
 
       unsigned TDF = 0;
@@ -3643,7 +3700,8 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
       PackScope.nextPackElement();
 
       // Move to next pattern.
-      if (N && --N) {
+      if (N) {
+        --N;
         ++ParamIdx;
         assert(ParamIdx != NumParamTypes);
         ParamExpansion = cast<PackExpansionType>(ParamTypes[ParamIdx]);

@@ -598,9 +598,9 @@ bool Sema::CheckParameterPacksForExpansion(
     SourceLocation EllipsisLoc, SourceRange PatternRange,
     ArrayRef<UnexpandedParameterPack> Unexpanded,
     const MultiLevelTemplateArgumentList &TemplateArgs, bool &ShouldExpand,
-    bool &RetainExpansion, Optional<unsigned> &NumExpansions) {
+    RetainExpansionMode &RetainExpansion, Optional<unsigned> &NumExpansions) {
   ShouldExpand = true;
-  RetainExpansion = false;
+  RetainExpansion = REM_None;
   std::pair<IdentifierInfo *, SourceLocation> FirstPack;
   bool HaveFirstPack = false;
   bool AnyToExpand = false;
@@ -629,7 +629,7 @@ bool Sema::CheckParameterPacksForExpansion(
     }
     
     // Determine the size of this argument pack.
-    unsigned NewPackSize;    
+    unsigned NewPackSize;
     if (IsFunctionParameterPack) {
       // Figure out whether we're instantiating to an argument pack or not.
       typedef LocalInstantiationScope::DeclArgumentPack DeclArgumentPack;
@@ -654,6 +654,8 @@ bool Sema::CheckParameterPacksForExpansion(
       if (Depth >= TemplateArgs.getNumLevels() ||
           !TemplateArgs.hasTemplateArgument(Depth, Index)) {
         //ShouldExpand = false;
+        if (!RetainExpansion)
+          RetainExpansion = REM_NoExpand;
         continue;
       }
 
@@ -672,7 +674,7 @@ bool Sema::CheckParameterPacksForExpansion(
         unsigned PartialDepth, PartialIndex;
         std::tie(PartialDepth, PartialIndex) = getDepthAndIndex(PartialPack);
         if (PartialDepth == Depth && PartialIndex == Index)
-          RetainExpansion = true;
+          RetainExpansion = REM_NoSubstitute;
       }
     }
     
@@ -687,6 +689,11 @@ bool Sema::CheckParameterPacksForExpansion(
     }
     
     if (NewPackSize != *NumExpansions) {
+      // In case that template arguments can be extended by template argument
+      // deduction, it's ok if the pack size is less than what it should be.
+      if (RetainExpansion == REM_NoSubstitute && NewPackSize < *NumExpansions)
+        continue;
+
       // C++0x [temp.variadic]p5:
       //   All of the parameter packs expanded by a pack expansion shall have 
       //   the same number of arguments specified.
@@ -714,9 +721,12 @@ Optional<unsigned> Sema::getNumArgumentsInExpansion(const ParmVarDecl *Parm,
   const PackExpansionType *Expansion = cast<PackExpansionType>(T);
   QualType Pattern = Expansion->getPattern();
 
-  // If it's already expanded, return none.
-  if (Expansion->getNumExpansions())
-    return None;
+  if (Optional<unsigned> NumExpansions = Expansion->getNumExpansions()) {
+    // If it's already expanded and not empty, return none.
+    if (*NumExpansions)
+      return None;
+    return 0;
+  }
 
   SmallVector<UnexpandedParameterPack, 2> Unexpanded;
   CollectUnexpandedParameterPacksVisitor Visitor(Unexpanded);
@@ -724,6 +734,7 @@ Optional<unsigned> Sema::getNumArgumentsInExpansion(const ParmVarDecl *Parm,
   Visitor.TraverseDeclarationNameInfo(Parm->getNameInfo());
 
   Optional<unsigned> Result;
+  bool Pad = false;
   for (unsigned I = 0, N = Unexpanded.size(); I != N; ++I) {
     // Compute the depth and index for this parameter pack.
     unsigned Depth;
@@ -756,16 +767,21 @@ Optional<unsigned> Sema::getNumArgumentsInExpansion(const ParmVarDecl *Parm,
       std::tie(Depth, Index) = getDepthAndIndex(ND);
     }
     if (Depth >= TemplateArgs.getNumLevels() ||
-        !TemplateArgs.hasTemplateArgument(Depth, Index))
+        !TemplateArgs.hasTemplateArgument(Depth, Index)) {
+      Pad = true;
       // The pattern refers to an unknown template argument. We're not ready to
       // expand this pack yet.
       continue;
+    }
 
     // Determine the size of the argument pack.
     unsigned Size = TemplateArgs(Depth, Index).pack_size();
     assert((!Result || *Result == Size) && "inconsistent pack sizes");
     Result = Size;
   }
+
+  if (Pad && Result)
+    ++*Result;
 
   return Result;
 }

@@ -6404,6 +6404,8 @@ public:
   ExprResult CheckPackExpansion(Expr *Pattern, SourceLocation EllipsisLoc,
                                 Optional<unsigned> NumExpansions);
 
+  enum RetainExpansionMode { REM_None, REM_NoExpand, REM_NoSubstitute };
+
   /// \brief Determine whether we could expand a pack expansion with the
   /// given set of parameter packs into separate arguments by repeatedly
   /// transforming the pattern.
@@ -6443,7 +6445,7 @@ public:
                              ArrayRef<UnexpandedParameterPack> Unexpanded,
                              const MultiLevelTemplateArgumentList &TemplateArgs,
                                        bool &ShouldExpand,
-                                       bool &RetainExpansion,
+                                       RetainExpansionMode &RetainExpansion,
                                        Optional<unsigned> &NumExpansions);
 
   /// \brief Determine the number of arguments in the given parameter pack.

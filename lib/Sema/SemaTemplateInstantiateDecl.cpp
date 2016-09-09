@@ -113,7 +113,8 @@ static void instantiateDependentAlignedAttr(
   assert(!Unexpanded.empty() && "Pack expansion without parameter packs?");
 
   // Determine whether we can expand this attribute pack yet.
-  bool Expand = true, RetainExpansion = false;
+  bool Expand = true;
+  Sema::RetainExpansionMode RetainExpansion = Sema::REM_None;
   Optional<unsigned> NumExpansions;
   // FIXME: Use the actual location of the ellipsis.
   SourceLocation EllipsisLoc = Aligned->getLocation();
@@ -2149,7 +2150,7 @@ Decl *TemplateDeclInstantiator::VisitNonTypeTemplateParmDecl(
     // Determine whether the set of unexpanded parameter packs can and should
     // be expanded.
     bool Expand = true;
-    bool RetainExpansion = false;
+    Sema::RetainExpansionMode RetainExpansion = Sema::REM_None;
     Optional<unsigned> OrigNumExpansions
       = Expansion.getTypePtr()->getNumExpansions();
     Optional<unsigned> NumExpansions = OrigNumExpansions;
@@ -2306,7 +2307,7 @@ TemplateDeclInstantiator::VisitTemplateTemplateParmDecl(
     // Determine whether the set of unexpanded parameter packs can and should
     // be expanded.
     bool Expand = true;
-    bool RetainExpansion = false;
+    Sema::RetainExpansionMode RetainExpansion = Sema::REM_None;
     Optional<unsigned> NumExpansions;
     if (SemaRef.CheckParameterPacksForExpansion(D->getLocation(),
                                                 TempParams->getSourceRange(),
@@ -4349,7 +4350,7 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
       collectUnexpandedParameterPacks(BaseTL, Unexpanded);
       collectUnexpandedParameterPacks(Init->getInit(), Unexpanded);
       bool ShouldExpand = false;
-      bool RetainExpansion = false;
+      Sema::RetainExpansionMode RetainExpansion = Sema::REM_None;
       Optional<unsigned> NumExpansions;
       if (CheckParameterPacksForExpansion(Init->getEllipsisLoc(),
                                           BaseTL.getSourceRange(),

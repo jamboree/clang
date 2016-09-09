@@ -2797,7 +2797,7 @@ unsigned FunctionDecl::getMinRequiredArguments() const {
   unsigned NumRequiredArgs = 0;
   ArrayRef<ParmVarDecl *> Parms = parameters();
   param_const_iterator I = Parms.begin(), E = Parms.end();
-  while (I != E) {
+  for (; I != E; ++I) {
     ParmVarDecl *Parm = *I;
     if (const PackExpansionType *Expansion =
             dyn_cast<PackExpansionType>(Parm->getType())) {
@@ -2808,7 +2808,6 @@ unsigned FunctionDecl::getMinRequiredArguments() const {
       }
     } else if (!Parm->hasDefaultArg())
       ++NumRequiredArgs;
-    ++I;
   }
   return NumRequiredArgs;
 }

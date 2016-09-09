@@ -670,7 +670,8 @@ namespace {
     bool TryExpandParameterPacks(SourceLocation EllipsisLoc,
                                  SourceRange PatternRange,
                                  ArrayRef<UnexpandedParameterPack> Unexpanded,
-                                 bool &ShouldExpand, bool &RetainExpansion,
+                                 bool &ShouldExpand,
+                                 Sema::RetainExpansionMode &RetainExpansion,
                                  Optional<unsigned> &NumExpansions) {
       return getSema().CheckParameterPacksForExpansion(EllipsisLoc, 
                                                        PatternRange, Unexpanded,
@@ -965,6 +966,9 @@ DeclarationNameInfo TemplateInstantiator::TransformDeclarationNameInfo(
                   NameInfo.getLoc());
           }
 
+          if (getSema().ArgumentPackSubstitutionIndex >= Arg.pack_size())
+            return NameInfo;
+
           Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
       }
 
@@ -1117,6 +1121,9 @@ TemplateName TemplateInstantiator::TransformTemplateName(CXXScopeSpec &SS,
           return getSema().Context.getSubstTemplateTemplateParmPack(TTP, Arg);
         }
 
+        if (getSema().ArgumentPackSubstitutionIndex >= Arg.pack_size())
+          return Name;
+
         Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
       }
       
@@ -1187,7 +1194,10 @@ TemplateInstantiator::TransformTemplateParmRefExpr(DeclRefExpr *E,
                                                               E->getLocation(),
                                                                     Arg);
     }
-    
+
+    if (getSema().ArgumentPackSubstitutionIndex >= Arg.pack_size())
+      return E;
+
     Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
   }
 
@@ -1426,6 +1436,7 @@ TemplateInstantiator::TransformTemplateTypeParmType(TypeLocBuilder &TLB,
     // template arguments in a function template class, but there were some
     // arguments left unspecified.
     if (!TemplateArgs.hasTemplateArgument(T->getDepth(), T->getIndex())) {
+    ArgUnavailable:
       TemplateTypeParmTypeLoc NewTL
         = TLB.push<TemplateTypeParmTypeLoc>(TL.getType());
       NewTL.setNameLoc(TL.getNameLoc());
@@ -1449,7 +1460,10 @@ TemplateInstantiator::TransformTemplateTypeParmType(TypeLocBuilder &TLB,
         NewTL.setNameLoc(TL.getNameLoc());
         return Result;
       }
-      
+
+      if (getSema().ArgumentPackSubstitutionIndex >= Arg.pack_size())
+          goto ArgUnavailable;
+
       Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
     }
     
@@ -1869,7 +1883,7 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
       collectUnexpandedParameterPacks(Base.getTypeSourceInfo()->getTypeLoc(),
                                       Unexpanded);
       bool ShouldExpand = false;
-      bool RetainExpansion = false;
+      Sema::RetainExpansionMode RetainExpansion = Sema::REM_None;
       Optional<unsigned> NumExpansions;
       if (CheckParameterPacksForExpansion(Base.getEllipsisLoc(), 
                                           Base.getSourceRange(),
