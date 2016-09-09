@@ -2632,6 +2632,7 @@ ExprResult Parser::ParseFoldExpression(ExprResult LHS,
 }
 
 ExprResult clang::Parser::ParseArgument() {
+  ExprResult Expr;
   // Designated argument
   if (getLangOpts().CPlusPlus && Tok.is(tok::period)) {
     // designator: '.' identifier
@@ -2642,30 +2643,28 @@ ExprResult clang::Parser::ParseArgument() {
       return ExprError();
     }
 
-    Designator Desig = Designator::getField(Tok.getIdentifierInfo(), DotLoc,
-                                            Tok.getLocation());
+    Designator Desig = Designator::getField(
+        Actions.getPossiblyTemplatedName(Tok.getIdentifierInfo()), DotLoc,
+        Tok.getLocation());
 
     ConsumeToken(); // Eat the identifier.
 
     // Handle a normal designator sequence end, which is an equal.
-    if (Tok.is(tok::equal)) {
-      SourceLocation EqualLoc = ConsumeToken();
-      return Actions.ActOnDesignatedArgument(Desig, EqualLoc,
-                                             ParseInitializer());
+    if (Tok.isNot(tok::equal)) {
+      Diag(Tok, diag::err_expected_equal_designator) << 1 /*C++*/;
+      return ExprError();
     }
 
-    Diag(Tok, diag::err_expected_equal_designator) << 1/*C++*/;
-    return ExprError();
+    SourceLocation EqualLoc = ConsumeToken();
+    Expr = Actions.ActOnDesignatedArgument(Desig, EqualLoc, ParseInitializer());
+  } else {
+    // Positional argument
+    if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace)) {
+      Diag(Tok, diag::warn_cxx98_compat_generalized_initializer_lists);
+      Expr = ParseBraceInitializer();
+    } else
+      Expr = ParseAssignmentExpression();
   }
-
-  // Positional argument
-  ExprResult Expr;
-
-  if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace)) {
-    Diag(Tok, diag::warn_cxx98_compat_generalized_initializer_lists);
-    Expr = ParseBraceInitializer();
-  } else
-    Expr = ParseAssignmentExpression();
 
   if (Tok.is(tok::ellipsis))
     Expr = Actions.ActOnPackExpansion(Expr.get(), ConsumeToken());

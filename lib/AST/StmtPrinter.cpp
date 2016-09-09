@@ -1674,12 +1674,12 @@ void StmtPrinter::VisitDesignatedInitExpr(DesignatedInitExpr *Node) {
   for (const DesignatedInitExpr::Designator &D : Node->designators()) {
     if (D.isFieldDesignator()) {
       if (D.getDotLoc().isInvalid()) {
-        if (IdentifierInfo *II = D.getFieldName()) {
-          OS << II->getName() << ":";
+        if (DeclarationName Name = D.getFieldName()) {
+          OS << Name << ":";
           NeedsEquals = false;
         }
       } else {
-        OS << "." << D.getFieldName()->getName();
+        OS << "." << D.getFieldName();
       }
     } else {
       OS << "[";

@@ -8628,7 +8628,8 @@ unsigned Sema::DesignateArguments(FunctionDecl *Function, unsigned NumParams,
   for (auto Arg : Args) {
     auto DIE = dyn_cast<DesignatedInitExpr>(Arg);
     if (DIE) {
-      Index = DesigParamFinder.Find(DIE->getDesignator(0)->getFieldName());
+      Index = DesigParamFinder.Find(
+          DIE->getDesignator(0)->getFieldName().getAsIdentifierInfo());
       if (Index == DesigParamFinder.End) {
         // Unmatched designator
         return Sink(ovl_fail_designator_not_found, {Arg, 0});

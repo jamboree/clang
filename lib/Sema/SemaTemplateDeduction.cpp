@@ -3500,7 +3500,8 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
       auto Arg = *I;
       auto DIE = dyn_cast<DesignatedInitExpr>(Arg);
       if (DIE) {
-        Index = DesigParamFinder.Find(DIE->getDesignator(0)->getFieldName());
+        Index = DesigParamFinder.Find(
+            DIE->getDesignator(0)->getFieldName().getAsIdentifierInfo());
         if (Index == DesigParamFinder.End) {
           Index = I - Args.begin();
           if (!DesigParamFinder.IsNameDeducible(Index)) {

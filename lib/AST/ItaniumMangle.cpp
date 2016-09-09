@@ -3969,7 +3969,7 @@ recurse:
       Diags.Report(E->getExprLoc(), DiagID) << DIE->getDesignatorsSourceRange();
       break;
     }
-    mangleSourceName(DIE->getDesignator(0)->getFieldName());
+    mangleDeclName(DIE->getDesignator(0)->getFieldName());
     mangleExpression(DIE->getInit());
     break;
   }

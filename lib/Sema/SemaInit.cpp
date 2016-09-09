@@ -2168,7 +2168,7 @@ InitListChecker::CheckDesignatedInitializer(const InitializedEntity &Entity,
 
     FieldDecl *KnownField = D->getField();
     if (!KnownField) {
-      IdentifierInfo *FieldName = D->getFieldName();
+      DeclarationName FieldName = D->getFieldName();
       DeclContext::lookup_result Lookup = RT->getDecl()->lookup(FieldName);
       for (NamedDecl *ND : Lookup) {
         if (auto *FD = dyn_cast<FieldDecl>(ND)) {

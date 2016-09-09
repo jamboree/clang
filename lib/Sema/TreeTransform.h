@@ -8908,9 +8908,11 @@ TreeTransform<Derived>::TransformDesignatedInitExpr(DesignatedInitExpr *E) {
   bool ExprChanged = false;
   for (const DesignatedInitExpr::Designator &D : E->designators()) {
     if (D.isFieldDesignator()) {
-      Desig.AddDesignator(Designator::getField(D.getFieldName(),
-                                               D.getDotLoc(),
-                                               D.getFieldLoc()));
+      DeclarationNameInfo NameInfo(D.getFieldName(), D.getFieldLoc());
+      NameInfo = getDerived().TransformDeclarationNameInfo(NameInfo);
+      Desig.AddDesignator(Designator::getField(
+          NameInfo.getName(), D.getDotLoc(), NameInfo.getLoc()));
+      ExprChanged = ExprChanged || NameInfo.getName() != D.getFieldName();
       continue;
     }
 
@@ -8953,6 +8955,13 @@ TreeTransform<Derived>::TransformDesignatedInitExpr(DesignatedInitExpr *E) {
       Init.get() == E->getInit() &&
       !ExprChanged)
     return E;
+
+  // If the designator is rendered to unnamed, it becomes a positional init.
+  if (Desig.getNumDesignators() == 1) {
+    const Designator &D = Desig.getDesignator(0);
+    if (D.isFieldDesignator() && !D.getField())
+      return Init;
+  }
 
   return getDerived().RebuildDesignatedInitExpr(Desig, ArrayExprs,
                                                 E->getEqualOrColonLoc(),

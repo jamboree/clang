@@ -5019,7 +5019,7 @@ static bool isPlaceholderToRemoveAsArg(QualType type) {
 /// Check an argument list for placeholders that we won't try to
 /// handle later.
 static bool checkDuplicateArgsAndPlaceholders(Sema &S, MultiExprArg args) {
-  llvm::DenseMap<IdentifierInfo *, DesignatedInitExpr *> Desigs;
+  llvm::DenseMap<DeclarationName, DesignatedInitExpr *> Desigs;
   // Apply this processing to all the arguments at once instead of
   // dying at the first failure.
   bool hasInvalid = false;
@@ -5623,7 +5623,7 @@ ExprResult
 Sema::ActOnInitList(SourceLocation LBraceLoc, MultiExprArg InitArgList,
                     SourceLocation RBraceLoc) {
   bool HasDuplicates = false;
-  llvm::DenseMap<IdentifierInfo *, DesignatedInitExpr *> Desigs;
+  llvm::DenseMap<DeclarationName, DesignatedInitExpr *> Desigs;
   // Immediately handle non-overload placeholders.  Overloads can be
   // resolved contextually, but everything else here can't.
   for (unsigned I = 0, E = InitArgList.size(); I != E; ++I) {
@@ -6188,7 +6188,7 @@ Sema::MaybeConvertParenListExprToParenExpr(Scope *S, Expr *OrigExpr) {
 
 bool Sema::CheckDuplicateDesignators(MultiExprArg Args) {
   bool HasDuplicates = false;
-  llvm::DenseMap<IdentifierInfo *, DesignatedInitExpr *> Desigs;
+  llvm::DenseMap<DeclarationName, DesignatedInitExpr *> Desigs;
   for (unsigned I = 0, E = Args.size(); I != E; ++I) {
     if (auto DIE = dyn_cast<DesignatedInitExpr>(Args[I])) {
       auto name = DIE->getDesignator(0)->getFieldName();

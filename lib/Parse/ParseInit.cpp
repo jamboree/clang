@@ -139,10 +139,11 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator() {
   // Handle it as a field designator.  Otherwise, this must be the start of a
   // normal expression.
   if (Tok.is(tok::identifier)) {
-    const IdentifierInfo *FieldName = Tok.getIdentifierInfo();
+    DeclarationName FieldName =
+        Actions.getPossiblyTemplatedName(Tok.getIdentifierInfo());
 
     SmallString<256> NewSyntax;
-    llvm::raw_svector_ostream(NewSyntax) << '.' << FieldName->getName()
+    llvm::raw_svector_ostream(NewSyntax) << '.' << FieldName
                                          << " = ";
 
     SourceLocation NameLoc = ConsumeToken(); // Eat the identifier.
@@ -176,8 +177,9 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator() {
         return ExprError();
       }
 
-      Desig.AddDesignator(Designator::getField(Tok.getIdentifierInfo(), DotLoc,
-                                               Tok.getLocation()));
+      Desig.AddDesignator(Designator::getField(
+          Actions.getPossiblyTemplatedName(Tok.getIdentifierInfo()), DotLoc,
+          Tok.getLocation()));
       ConsumeToken(); // Eat the identifier.
       continue;
     }
@@ -436,8 +438,7 @@ ExprResult Parser::ParseBraceInitializer() {
     else
       SubElt = ParseInitializer();
 
-    if (Tok.is(tok::ellipsis) &&
-        (SubElt.isInvalid() || !isa<DesignatedInitExpr>(SubElt.get())))
+    if (Tok.is(tok::ellipsis))
       SubElt = Actions.ActOnPackExpansion(SubElt.get(), ConsumeToken());
 
     SubElt = Actions.CorrectDelayedTyposInExpr(SubElt.get());

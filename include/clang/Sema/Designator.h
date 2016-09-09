@@ -16,6 +16,7 @@
 #define LLVM_CLANG_SEMA_DESIGNATOR_H
 
 #include "clang/Basic/SourceLocation.h"
+#include "clang/AST/DeclarationName.h"
 #include "llvm/ADT/SmallVector.h"
 
 namespace clang {
@@ -43,7 +44,7 @@ private:
   DesignatorKind Kind;
 
   struct FieldDesignatorInfo {
-    const IdentifierInfo *II;
+    void *Name;
     unsigned DotLoc;
     unsigned NameLoc;
   };
@@ -71,9 +72,9 @@ public:
   bool isArrayDesignator() const { return Kind == ArrayDesignator; }
   bool isArrayRangeDesignator() const { return Kind == ArrayRangeDesignator; }
 
-  const IdentifierInfo *getField() const {
+  DeclarationName getField() const {
     assert(isFieldDesignator() && "Invalid accessor");
-    return FieldInfo.II;
+    return DeclarationName::getFromOpaquePtr(FieldInfo.Name);
   }
 
   SourceLocation getDotLoc() const {
@@ -123,11 +124,11 @@ public:
     return SourceLocation::getFromRawEncoding(ArrayRangeInfo.EllipsisLoc);
   }
 
-  static Designator getField(const IdentifierInfo *II, SourceLocation DotLoc,
+  static Designator getField(DeclarationName Name, SourceLocation DotLoc,
                              SourceLocation NameLoc) {
     Designator D;
     D.Kind = FieldDesignator;
-    D.FieldInfo.II = II;
+    D.FieldInfo.Name = Name.getAsOpaquePtr();
     D.FieldInfo.DotLoc = DotLoc.getRawEncoding();
     D.FieldInfo.NameLoc = NameLoc.getRawEncoding();
     return D;

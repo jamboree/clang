@@ -142,12 +142,6 @@ private:
     return nullptr;
   }
 
-  CXXTemplateDeclNameParmName *getAsCXXTemplateDeclNameParmName() const {
-    if (getNameKind() == CXXTemplatedName)
-      return reinterpret_cast<CXXTemplateDeclNameParmName *>(Ptr & ~PtrMask);
-    return nullptr;
-  }
-
   // Construct a declaration name from the name of a C++ constructor,
   // destructor, or conversion function.
   DeclarationName(CXXSpecialName *Name)
@@ -167,13 +161,6 @@ private:
   DeclarationName(CXXLiteralOperatorIdName *Name)
     : Ptr(reinterpret_cast<uintptr_t>(Name)) {
     assert((Ptr & PtrMask) == 0 && "Improperly aligned CXXLiteralOperatorId");
-    Ptr |= StoredDeclarationNameExtra;
-  }
-
-  DeclarationName(CXXTemplateDeclNameParmName *Name)
-      : Ptr(reinterpret_cast<uintptr_t>(Name)) {
-    assert((Ptr & PtrMask) == 0 &&
-           "Improperly aligned CXXTemplateDeclNameParmName");
     Ptr |= StoredDeclarationNameExtra;
   }
 
@@ -199,6 +186,13 @@ public:
 
   // Construct a declaration name from an Objective-C selector.
   DeclarationName(Selector Sel) : Ptr(Sel.InfoPtr) { }
+
+  DeclarationName(CXXTemplateDeclNameParmName *Name)
+      : Ptr(reinterpret_cast<uintptr_t>(Name)) {
+    assert((Ptr & PtrMask) == 0 &&
+           "Improperly aligned CXXTemplateDeclNameParmName");
+    Ptr |= StoredDeclarationNameExtra;
+  }
 
   DeclarationName(SubstTemplateDeclNameParmPackStorage *Name)
       : Ptr(reinterpret_cast<uintptr_t>(Name)) {
@@ -260,6 +254,12 @@ public:
   IdentifierInfo *getAsIdentifierInfo() const {
     if (isIdentifier())
       return reinterpret_cast<IdentifierInfo *>(Ptr);
+    return nullptr;
+  }
+
+  CXXTemplateDeclNameParmName *getAsCXXTemplateDeclNameParmName() const {
+    if (getNameKind() == CXXTemplatedName)
+      return reinterpret_cast<CXXTemplateDeclNameParmName *>(Ptr & ~PtrMask);
     return nullptr;
   }
 

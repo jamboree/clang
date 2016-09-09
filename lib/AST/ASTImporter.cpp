@@ -5437,7 +5437,7 @@ Expr *ASTNodeImporter::VisitImplicitValueInitExpr(ImplicitValueInitExpr *E) {
 ASTNodeImporter::Designator
 ASTNodeImporter::ImportDesignator(const Designator &D) {
   if (D.isFieldDesignator()) {
-    IdentifierInfo *ToFieldName = Importer.Import(D.getFieldName());
+    DeclarationName ToFieldName = Importer.Import(D.getFieldName());
     // Caller checks for import error
     return Designator(ToFieldName, Importer.Import(D.getDotLoc()),
                       Importer.Import(D.getFieldLoc()));
