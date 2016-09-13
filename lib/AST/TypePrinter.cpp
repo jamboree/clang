@@ -1165,13 +1165,13 @@ void TypePrinter::printPackExpansionAfter(const PackExpansionType *T,
 }
 
 void TypePrinter::printDesignatingBefore(const DesignatingType *T,
-                                           raw_ostream &OS) {
-  // FIXME: what to do?
+                                         raw_ostream &OS) {
   printBefore(T->getMasterType(), OS);
+  OS << "." << T->getDesigName();
 }
+
 void TypePrinter::printDesignatingAfter(const DesignatingType *T,
-                                          raw_ostream &OS) {
-  // FIXME: what to do?
+                                        raw_ostream &OS) {
   printAfter(T->getMasterType(), OS);
 }
 

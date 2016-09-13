@@ -3948,10 +3948,7 @@ bool TreeTransform<Derived>::TransformTemplateArguments(
         continue;
       }
 
-      unsigned N = 0;
-      if (OrigNumExpansions) {
-        N = *OrigNumExpansions;
-      }
+      unsigned N = OrigNumExpansions.getValueOr(0);
       // The transform has determined that we should perform an elementwise
       // expansion of the pattern. Do so.
       for (unsigned I = 0, E = *NumExpansions; I != E; ++I) {
@@ -4788,10 +4785,7 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
                                                  NumExpansions)) {
           return true;
         }
-        unsigned N = 0;
-        if (OrigNumExpansions) {
-          N = *OrigNumExpansions;
-        }
+        unsigned N = OrigNumExpansions.getValueOr(0);
         if (ShouldExpand) {
           // Expand the function parameter pack into multiple, separate
           // parameters.

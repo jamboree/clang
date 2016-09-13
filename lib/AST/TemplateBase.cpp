@@ -401,6 +401,35 @@ TemplateArgument TemplateArgument::getPackExpansionPattern() const {
   llvm_unreachable("Invalid TemplateArgument Kind!");
 }
 
+Optional<unsigned> TemplateArgument::getNumExpansions() const {
+  assert(isPackExpansion());
+
+  switch (getKind()) {
+  case Type:
+    return getAsType()->getAs<PackExpansionType>()->getNumExpansions();
+
+  case Expression:
+    return cast<PackExpansionExpr>(getAsExpr())->getNumExpansions();
+
+  case TemplateExpansion:
+    return getNumTemplateExpansions();
+
+  case DeclNameExpansion:
+    return getNumDeclNameExpansions();
+
+  case Declaration:
+  case Integral:
+  case Pack:
+  case Null:
+  case Template:
+  case DeclName:
+  case NullPtr:
+    return None;
+  }
+
+  llvm_unreachable("Invalid TemplateArgument Kind!");
+}
+
 void TemplateArgument::print(const PrintingPolicy &Policy, 
                              raw_ostream &Out) const {
   switch (getKind()) {

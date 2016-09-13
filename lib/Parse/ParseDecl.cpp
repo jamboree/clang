@@ -5209,7 +5209,8 @@ static SourceLocation getMissingDeclaratorIdLoc(Declarator &D,
 void Parser::ParseDirectDeclarator(Declarator &D) {
   DeclaratorScopeObj DeclScopeObj(*this, D.getCXXScopeSpec());
 
-  if (getLangOpts().CPlusPlus && D.mayHaveIdentifier()) {
+  if (getLangOpts().CPlusPlus &&
+      (D.mayHaveIdentifier() || Tok.is(tok::period))) {
     // Don't parse FOO:BAR as if it were a typo for FOO::BAR inside a class, in
     // this context it is a bitfield. Also in range-based for statement colon
     // may delimit for-range-declaration.
@@ -5267,7 +5268,8 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
 
     if (Tok.is(tok::period)) {
       if (D.getContext() == Declarator::PrototypeContext ||
-          D.getContext() == Declarator::LambdaExprParameterContext) {
+          D.getContext() == Declarator::LambdaExprParameterContext ||
+          D.diagnoseIdentifier()) {
         SourceLocation PeriodLoc = ConsumeToken();
         if (!Tok.is(tok::identifier)) {
           // We have a designator introducer but no following unqualified-id.
@@ -5332,24 +5334,26 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
       D.SetIdentifier(nullptr, Tok.getLocation());
       goto PastIdentifier;
     }
-  } else if (Tok.is(tok::identifier) && D.mayHaveIdentifier()) {
-    assert(!getLangOpts().CPlusPlus &&
-           "There's a C++-specific check for tok::identifier above");
-    assert(Tok.getIdentifierInfo() && "Not an identifier?");
-    D.SetIdentifier(Tok.getIdentifierInfo(), Tok.getLocation());
-    D.SetRangeEnd(Tok.getLocation());
-    ConsumeToken();
-    goto PastIdentifier;
-  } else if (Tok.is(tok::identifier) && D.diagnoseIdentifier()) {
-    // A virt-specifier isn't treated as an identifier if it appears after a
-    // trailing-return-type.
-    if (D.getContext() != Declarator::TrailingReturnContext ||
-        !isCXX11VirtSpecifier(Tok)) {
-      Diag(Tok.getLocation(), diag::err_unexpected_unqualified_id)
-        << FixItHint::CreateRemoval(Tok.getLocation());
-      D.SetIdentifier(nullptr, Tok.getLocation());
+  } else if (Tok.is(tok::identifier)) {
+    if (D.mayHaveIdentifier()) {
+      assert(!getLangOpts().CPlusPlus &&
+             "There's a C++-specific check for tok::identifier above");
+      assert(Tok.getIdentifierInfo() && "Not an identifier?");
+      D.SetIdentifier(Tok.getIdentifierInfo(), Tok.getLocation());
+      D.SetRangeEnd(Tok.getLocation());
       ConsumeToken();
       goto PastIdentifier;
+    } else if (D.diagnoseIdentifier()) {
+      // A virt-specifier isn't treated as an identifier if it appears after a
+      // trailing-return-type.
+      if (D.getContext() != Declarator::TrailingReturnContext ||
+          !isCXX11VirtSpecifier(Tok)) {
+        Diag(Tok.getLocation(), diag::err_unexpected_unqualified_id)
+            << FixItHint::CreateRemoval(Tok.getLocation());
+        D.SetIdentifier(nullptr, Tok.getLocation());
+        ConsumeToken();
+        goto PastIdentifier;
+      }
     }
   }
 

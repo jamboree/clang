@@ -388,6 +388,8 @@ public:
   /// the pattern of the pack expansion.
   TemplateArgument getPackExpansionPattern() const;
 
+  Optional<unsigned> getNumExpansions() const;
+
   /// \brief Print this template argument to the given output stream.
   void print(const PrintingPolicy &Policy, raw_ostream &Out) const;
              

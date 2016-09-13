@@ -1989,6 +1989,10 @@ public:
   SourceLocation getDotLoc() const { return this->getLocalData()->DotLoc; }
   void setDotLoc(SourceLocation Loc) { this->getLocalData()->DotLoc = Loc; }
 
+  SourceRange getLocalSourceRange() const {
+      return SourceRange(getDotLoc(), getDotLoc());
+  }
+
   void initializeLocal(ASTContext &Context, SourceLocation Loc) {
     setDotLoc(Loc);
   }

@@ -866,12 +866,27 @@ DeduceTemplateArguments(Sema &S,
       continue;
     }
 
-    // C++0x [temp.deduct.type]p5:
-    //   The non-deduced contexts are:
-    //     - A function parameter pack that does not occur at the end of the
-    //       parameter-declaration-clause.
-    if (ParamIdx + 1 < NumParams)
-      return Sema::TDK_Success;
+    Optional<unsigned> NumExpansions = Expansion->getNumExpansions();
+    QualType Pattern = Expansion->getPattern();
+    TemplateArgument FullPattern = Pattern;
+    unsigned N = 0;
+    unsigned ArgEnd = NumArgs;
+    if (NumExpansions) {
+      N = *NumExpansions;
+      unsigned SentinelIdx = ParamIdx + N;
+      const PackExpansionType *Sentinel =
+          cast<PackExpansionType>(Params[SentinelIdx]);
+      if (Sentinel->getNumExpansions() || SentinelIdx + 1 < NumParams)
+        ArgEnd = std::min(ArgIdx + N, ArgEnd);
+      else
+        FullPattern = Sentinel->getPattern();
+    } else if (ParamIdx + 1 < NumParams) {
+      // C++0x [temp.deduct.type]p5:
+      //   The non-deduced contexts are:
+      //     - A function parameter pack that does not occur at the end of the
+      //       parameter-declaration-clause.
+      continue;
+    }
 
     // C++0x [temp.deduct.type]p10:
     //   If the parameter-declaration corresponding to Pi is a function
@@ -880,11 +895,10 @@ DeduceTemplateArguments(Sema &S,
     //   comparison deduces template arguments for subsequent positions in the
     //   template parameter packs expanded by the function parameter pack.
 
-    QualType Pattern = Expansion->getPattern();
-    PackDeductionScope PackScope(S, TemplateParams, Deduced, Info, Pattern);
+    PackDeductionScope PackScope(S, TemplateParams, Deduced, Info, FullPattern);
 
     bool HasAnyArguments = false;
-    for (; ArgIdx < NumArgs; ++ArgIdx) {
+    for (; ArgIdx < ArgEnd; ++ArgIdx) {
       HasAnyArguments = true;
 
       // Deduce template arguments from the pattern.
@@ -895,6 +909,15 @@ DeduceTemplateArguments(Sema &S,
         return Result;
 
       PackScope.nextPackElement();
+
+      // Move to next pattern.
+      if (N) {
+        --N;
+        ++ParamIdx;
+        assert(ParamIdx != NumParams);
+        Expansion = cast<PackExpansionType>(Params[ParamIdx]);
+        Pattern = Expansion->getPattern();
+      }
     }
 
     // Build argument packs for each of the parameter packs expanded by this
@@ -1884,13 +1907,14 @@ DeduceTemplateArguments(Sema &S, TemplateParameterList *TemplateParams,
                         TemplateDeductionInfo &Info,
                         SmallVectorImpl<DeducedTemplateArgument> &Deduced,
                         bool NumberOfArgumentsMustMatch) {
+#if 0 // This rule is deleted for the new pack expansion rule.
   // C++0x [temp.deduct.type]p9:
   //   If the template argument list of P contains a pack expansion that is not
   //   the last template argument, the entire template argument list is a
   //   non-deduced context.
   if (hasPackExpansionBeforeEnd(Params, NumParams))
     return Sema::TDK_Success;
-
+#endif
   // C++0x [temp.deduct.type]p9:
   //   If P has a form that contains <T> or <i>, then each argument Pi of the
   //   respective template argument list P is compared with the corresponding
@@ -1903,8 +1927,9 @@ DeduceTemplateArguments(Sema &S, TemplateParameterList *TemplateParams,
 
       // Check whether we have enough arguments.
       if (!hasTemplateArgumentForDeduction(Args, ArgIdx, NumArgs))
-        return NumberOfArgumentsMustMatch ? Sema::TDK_TooFewArguments
-                                          : Sema::TDK_Success;
+        return NumberOfArgumentsMustMatch
+                   ? Sema::TDK_MiscellaneousDeductionFailure
+                   : Sema::TDK_Success;
 
       if (Args[ArgIdx].isPackExpansion()) {
         // FIXME: We follow the logic of C++0x [temp.deduct.type]p22 here,
@@ -1931,20 +1956,47 @@ DeduceTemplateArguments(Sema &S, TemplateParameterList *TemplateParams,
     //   each remaining argument in the template argument list of A. Each
     //   comparison deduces template arguments for subsequent positions in the
     //   template parameter packs expanded by Pi.
+
+    // Expands the argument pack first.
+    hasTemplateArgumentForDeduction(Args, ArgIdx, NumArgs);
+
+    Optional<unsigned> NumExpansions = Params[ParamIdx].getNumExpansions();
     TemplateArgument Pattern = Params[ParamIdx].getPackExpansionPattern();
+    TemplateArgument FullPattern = Pattern;
+    unsigned N = 0;
+    unsigned ArgEnd = NumArgs;
+    if (NumExpansions) {
+      N = *NumExpansions;
+      unsigned SentinelIdx = ParamIdx + N;
+      TemplateArgument Sentinel = Params[SentinelIdx];
+      if (Sentinel.getNumExpansions() || SentinelIdx + 1 < NumParams) {
+        ArgEnd = ArgIdx + N;
+        if (NumArgs < ArgEnd)
+          return NumberOfArgumentsMustMatch
+                     ? Sema::TDK_MiscellaneousDeductionFailure
+                     : Sema::TDK_Success;
+      } else
+        FullPattern = Sentinel.getPackExpansionPattern();
+    } else if (ParamIdx + 1 < NumParams) {
+      // C++0x [temp.deduct.type]p5:
+      //   The non-deduced contexts are:
+      //     - A function parameter pack that does not occur at the end of the
+      //       parameter-declaration-clause.
+      continue;
+    }
 
     // FIXME: If there are no remaining arguments, we can bail out early
     // and set any deduced parameter packs to an empty argument pack.
     // The latter part of this is a (minor) correctness issue.
 
     // Prepare to deduce the packs within the pattern.
-    PackDeductionScope PackScope(S, TemplateParams, Deduced, Info, Pattern);
+    PackDeductionScope PackScope(S, TemplateParams, Deduced, Info, FullPattern);
 
     // Keep track of the deduced template arguments for each parameter pack
     // expanded by this pack expansion (the outer index) and for each
     // template argument (the inner SmallVectors).
     bool HasAnyArguments = false;
-    for (; hasTemplateArgumentForDeduction(Args, ArgIdx, NumArgs); ++ArgIdx) {
+    for (; hasTemplateArgumentForDeduction(Args, ArgIdx, ArgEnd); ++ArgIdx) {
       HasAnyArguments = true;
 
       // Deduce template arguments from the pattern.
@@ -1954,6 +2006,14 @@ DeduceTemplateArguments(Sema &S, TemplateParameterList *TemplateParams,
         return Result;
 
       PackScope.nextPackElement();
+
+      // Move to next pattern.
+      if (N) {
+        --N;
+        ++ParamIdx;
+        assert(ParamIdx != NumParams);
+        Pattern = Params[ParamIdx].getPackExpansionPattern();
+      }
     }
 
     // Build argument packs for each of the parameter packs expanded by this
@@ -3620,7 +3680,7 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
       const PackExpansionType *Sentinel =
           cast<PackExpansionType>(ParamTypes[SentinelIdx]);
       if (Sentinel->getNumExpansions() || SentinelIdx + 1 < NumParamTypes)
-        ArgEnd = std::min(ArgIdx + N, ArgEnd);
+        ArgEnd = ArgIdx + N;
       else {
         FullPattern[0] = Sentinel->getPattern();
         FullPattern[1] = ParamDecls[SentinelIdx]->getDeclName();
@@ -3714,10 +3774,6 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
     // pack expansion.
     if (auto Result = PackScope.finish(HasAnyArguments))
       return Result;
-
-    // After we've matching against a parameter pack, we're done.
-    if (ArgIdx == Args.size())
-      break;
   }
 
   return FinishTemplateArgumentDeduction(FunctionTemplate, Deduced,
@@ -5065,7 +5121,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
       = cast<TemplateSpecializationType>(T);
     MarkUsedTemplateParameters(Ctx, Spec->getTemplateName(), OnlyDeduced,
                                Depth, Used);
-
+#if 0 // This rule is deleted for the new pack expansion rule.
     // C++0x [temp.deduct.type]p9:
     //   If the template argument list of P contains a pack expansion that is
     //   not the last template argument, the entire template argument list is a
@@ -5073,7 +5129,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
     if (OnlyDeduced &&
         hasPackExpansionBeforeEnd(Spec->getArgs(), Spec->getNumArgs()))
       break;
-
+#endif
     for (unsigned I = 0, N = Spec->getNumArgs(); I != N; ++I)
       MarkUsedTemplateParameters(Ctx, Spec->getArg(I), OnlyDeduced, Depth,
                                  Used);

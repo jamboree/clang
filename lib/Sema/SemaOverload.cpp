@@ -8637,7 +8637,7 @@ unsigned Sema::DesignateArguments(FunctionDecl *Function, unsigned NumParams,
       HasDesig = true;
     }
     if (Index >= MaxArgs) {
-      // Argument index out-of-bound
+      // Argument index out-of-bounds
       return Sink(ovl_fail_argument_out_of_bounds, {Arg, Index});
     }
     if (MappedArgs[Index]) {

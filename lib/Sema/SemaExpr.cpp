@@ -6191,12 +6191,10 @@ bool Sema::CheckDuplicateDesignators(MultiExprArg Args) {
   llvm::DenseMap<DeclarationName, DesignatedInitExpr *> Desigs;
   for (unsigned I = 0, E = Args.size(); I != E; ++I) {
     if (auto DIE = dyn_cast<DesignatedInitExpr>(Args[I])) {
-      auto name = DIE->getDesignator(0)->getFieldName();
-      auto Prev = Desigs[name];
-      Desigs[name] = DIE;
-      if (Prev) {
+      auto Name = DIE->getDesignator(0)->getFieldName();
+      if (auto Prev = std::exchange(Desigs[Name], DIE)) {
         HasDuplicates = true;
-        Diag(DIE->getLocStart(), diag::err_duplicate_designators) << name;
+        Diag(DIE->getLocStart(), diag::err_duplicate_designators) << Name;
         Diag(Prev->getLocStart(), diag::note_previous_designator);
       }
     }

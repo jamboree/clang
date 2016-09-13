@@ -3498,7 +3498,8 @@ static void checkNullabilityConsistency(TypeProcessingState &state,
 
 static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
                                                 QualType declSpecType,
-                                                TypeSourceInfo *TInfo) {
+                                                TypeSourceInfo *TInfo,
+                                                bool AllowDesignator) {
   // The TypeSourceInfo that this function returns will not be a null type.
   // If there is an error, this function will fill in a dummy type as fallback.
   QualType T = declSpecType;
@@ -4560,6 +4561,10 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
     }
   }
 
+  if (AllowDesignator && D.isDesignator())
+    T = S.BuildDesignatingType(T, S.getPossiblyTemplatedName(D.getIdentifier()),
+                               D.getIdentifierLoc());
+
   assert(!T.isNull() && "T must not be null at the end of this function");
   if (D.isInvalidType())
     return Context.getTrivialTypeSourceInfo(T);
@@ -4584,7 +4589,10 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S) {
   if (D.isPrototypeContext() && getLangOpts().ObjCAutoRefCount)
     inferARCWriteback(state, T);
 
-  return GetFullTypeForDeclarator(state, T, ReturnTypeInfo);
+  bool AllowDesignator =
+      S && !(S->getFlags() & Scope::FunctionDeclarationScope);
+
+  return GetFullTypeForDeclarator(state, T, ReturnTypeInfo, AllowDesignator);
 }
 
 static void transferARCOwnershipToDeclSpec(Sema &S,
@@ -4701,7 +4709,7 @@ TypeSourceInfo *Sema::GetTypeForDeclaratorCast(Declarator &D, QualType FromTy) {
       transferARCOwnership(state, declSpecTy, ownership);
   }
 
-  return GetFullTypeForDeclarator(state, declSpecTy, ReturnTypeInfo);
+  return GetFullTypeForDeclarator(state, declSpecTy, ReturnTypeInfo, false);
 }
 
 /// Map an AttributedType::Kind to an AttributeList::Kind.
@@ -4981,11 +4989,13 @@ namespace {
 
   class DeclaratorLocFiller : public TypeLocVisitor<DeclaratorLocFiller> {
     ASTContext &Context;
+    const Declarator &D;
     const DeclaratorChunk &Chunk;
 
   public:
-    DeclaratorLocFiller(ASTContext &Context, const DeclaratorChunk &Chunk)
-      : Context(Context), Chunk(Chunk) {}
+    DeclaratorLocFiller(ASTContext &Context, const Declarator &D,
+                        const DeclaratorChunk &Chunk)
+        : Context(Context), D(D), Chunk(Chunk) {}
 
     void VisitQualifiedTypeLoc(QualifiedTypeLoc TL) {
       llvm_unreachable("qualified type locs not expected here!");
@@ -5097,6 +5107,10 @@ namespace {
       assert(Chunk.Kind == DeclaratorChunk::Pipe);
       TL.setKWLoc(Chunk.Loc);
     }
+    void VisitDesignatingTypeLoc(DesignatingTypeLoc TL) {
+      assert(D.isDesignator());
+      TL.setDotLoc(D.getPeriodLoc());
+    }
 
     void VisitTypeLoc(TypeLoc TL) {
       llvm_unreachable("unsupported TypeLoc kind in declarator!");
@@ -5166,7 +5180,7 @@ Sema::GetTypeSourceInfoForDeclarator(Declarator &D, QualType T,
     while (AdjustedTypeLoc TL = CurrTL.getAs<AdjustedTypeLoc>())
       CurrTL = TL.getNextTypeLoc().getUnqualifiedLoc();
 
-    DeclaratorLocFiller(Context, D.getTypeObject(i)).Visit(CurrTL);
+    DeclaratorLocFiller(Context, D, D.getTypeObject(i)).Visit(CurrTL);
     CurrTL = CurrTL.getNextTypeLoc().getUnqualifiedLoc();
   }
 
@@ -5204,10 +5218,12 @@ void LocInfoType::getAsStringInternal(std::string &Str,
 }
 
 TypeResult Sema::ActOnTypeName(Scope *S, Declarator &D) {
-  // C99 6.7.6: Type names have no identifier.  This is already validated by
-  // the parser.
-  assert(D.getIdentifier() == nullptr &&
-         "Type name should have no identifier!");
+  if (!D.isDesignator()) {
+    // C99 6.7.6: Type names have no identifier.  This is already validated by
+    // the parser.
+    assert(D.getIdentifier() == nullptr &&
+           "Type name should have no identifier!");
+  }
 
   TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
   QualType T = TInfo->getType();
