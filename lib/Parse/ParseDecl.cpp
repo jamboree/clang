@@ -5269,7 +5269,7 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
     if (Tok.is(tok::period)) {
       if (D.getContext() == Declarator::PrototypeContext ||
           D.getContext() == Declarator::LambdaExprParameterContext ||
-          D.diagnoseIdentifier()) {
+          D.mayHaveDesignatorInType()) {
         SourceLocation PeriodLoc = ConsumeToken();
         if (!Tok.is(tok::identifier)) {
           // We have a designator introducer but no following unqualified-id.

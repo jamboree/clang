@@ -1916,6 +1916,40 @@ public:
     llvm_unreachable("unknown context kind!");
   }
 
+  /// mayHaveDesignatorInType - Return true if the designator is allowed to be
+  /// part of the type (i.e. DesignatingType).
+  bool mayHaveDesignatorInType() const {
+    switch (Context) {
+    case FileContext:
+    case KNRTypeListContext:
+    case MemberContext:
+    case BlockContext:
+    case ForContext:
+    case InitStmtContext:
+    case ConditionContext:
+    case PrototypeContext:
+    case LambdaExprParameterContext:
+    case TemplateParamContext:
+    case CXXCatchContext:
+    case ObjCCatchContext:
+    case TypeNameContext:
+    case ConversionIdContext:
+    case ObjCParameterContext:
+    case ObjCResultContext:
+    case BlockLiteralContext:
+    case CXXNewContext:
+    case LambdaExprContext:
+    case TrailingReturnContext:
+      return false;
+
+    case AliasDeclContext:
+    case AliasTemplateContext:
+    case TemplateTypeArgContext:
+      return true;
+    }
+    llvm_unreachable("unknown context kind!");
+  }
+
   /// mayBeFollowedByCXXDirectInit - Return true if the declarator can be
   /// followed by a C++ direct initializer, e.g. "int x(1);".
   bool mayBeFollowedByCXXDirectInit() const {
