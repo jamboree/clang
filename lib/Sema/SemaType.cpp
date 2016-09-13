@@ -5110,6 +5110,7 @@ namespace {
     void VisitDesignatingTypeLoc(DesignatingTypeLoc TL) {
       assert(D.isDesignator());
       TL.setDotLoc(D.getPeriodLoc());
+      TL.setNameLoc(D.getIdentifierLoc());
     }
 
     void VisitTypeLoc(TypeLoc TL) {
