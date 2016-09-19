@@ -10839,9 +10839,6 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
 
   DiagnoseFunctionSpecifiers(DS);
 
-  TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
-  QualType parmDeclType = TInfo->getType();
-
   if (getLangOpts().CPlusPlus) {
     // Check that there are no default arguments inside the type of this
     // parameter.
@@ -10893,10 +10890,14 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
         // Recover by removing the name
         Name = {};
         D.SetIdentifier(nullptr, D.getIdentifierLoc());
+        D.setDotLoc(SourceLocation());
         D.setInvalidType(true);
       }
     }
   }
+
+  TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
+  QualType parmDeclType = TInfo->getType();
 
   // Temporarily put parameter variables in the translation unit, not
   // the enclosing context.  This prevents them from accidentally
@@ -10916,11 +10917,11 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   New->setScopeInfo(S->getFunctionPrototypeDepth() - 1,
                     S->getNextFunctionPrototypeIndex());
 
-  if (D.isDesignator()) {
+  if (D.hasDot()) {
     if (New->isParameterPack() && !D.isEllipsisPostfix())
-      Diag(D.getPeriodLoc(), diag::err_param_designator_on_parameter_pack);
+      Diag(D.getDotLoc(), diag::err_param_designator_on_parameter_pack);
     else
-      New->setDesignatable(D.isDesignator());
+      New->setDesignatable(true);
   }
 
   // Add the parameter declaration into this scope.

@@ -1733,7 +1733,26 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
       
       return Sema::TDK_NonDeducedMismatch;
     }
-      
+
+    //     T .D
+    case Type::Designating: {
+      const DesignatingType *DesigParam = cast<DesignatingType>(Param);
+      DeclarationName DesigName;
+      if (const DesignatingType *DesigArg = Arg->getAs<DesignatingType>()) {
+        DesigName = DesigArg->getDesigName();
+        Arg = DesigArg->getMasterType();
+      }
+
+      if (Sema::TemplateDeductionResult Result = DeduceTemplateArguments(
+              S, TemplateParams, DesigParam->getDesigName(), DesigName, Info,
+              Deduced, false))
+        return Result;
+
+      return DeduceTemplateArgumentsByTypeMatch(S, TemplateParams,
+                                                DesigParam->getMasterType(),
+                                                Arg, Info, Deduced, TDF);
+    }
+
     case Type::TypeOfExpr:
     case Type::TypeOf:
     case Type::DependentName:
@@ -5220,6 +5239,16 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
     MarkUsedTemplateParameters(Ctx,
                                cast<AutoType>(T)->getDeducedType(),
                                OnlyDeduced, Depth, Used);
+    break;
+
+  case Type::Designating: {
+    const DesignatingType *Desig = cast<DesignatingType>(T);
+    MarkUsedTemplateParameters(Ctx, Desig->getMasterType(), OnlyDeduced, Depth,
+                               Used);
+    MarkUsedTemplateParameters(Ctx, Desig->getDesigName(), OnlyDeduced, Depth,
+                               Used);
+    break;
+  }
 
   // None of these types have any template parameters in them.
   case Type::Builtin:

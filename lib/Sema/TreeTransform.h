@@ -6014,24 +6014,24 @@ TreeTransform<Derived>::TransformDesignatingType(TypeLocBuilder &TLB,
   if (MasterType.isNull())
     return QualType();
 
-  DeclarationNameInfo NameInfo(TL.getNameInfo());
-  NameInfo = getDerived().TransformDeclarationNameInfo(NameInfo);
-  if (!NameInfo.getName())
+  DeclarationName Name =
+      getDerived().TransformDeclarationNameInfo(TL.getNameInfo()).getName();
+  if (!Name)
     return MasterType;
 
   QualType Result = TL.getType();
   if (getDerived().AlwaysRebuild() ||
       MasterType != TL.getMasterLoc().getType() ||
-      NameInfo.getName() != TL.getTypePtr()->getDesigName()) {
-    Result = getDerived().RebuildDesignatingType(MasterType, NameInfo,
-                                                 TL.getDotLoc());
+      Name != TL.getTypePtr()->getDesigName()) {
+    Result =
+        getDerived().RebuildDesignatingType(MasterType, Name, TL.getDotLoc());
     if (Result.isNull())
       return QualType();
   }
 
   DesignatingTypeLoc NewT = TLB.push<DesignatingTypeLoc>(Result);
   NewT.setDotLoc(TL.getDotLoc());
-  NewT.setNameLoc(NameInfo.getLoc());
+  NewT.setNameLoc(TL.getNameLoc());
   return Result;
 }
 

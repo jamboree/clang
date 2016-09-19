@@ -5280,8 +5280,7 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
           goto PastIdentifier;
         }
 
-        D.setPeriodLoc(PeriodLoc);
-        D.setDesignator(true);
+        D.setDotLoc(PeriodLoc);
       }
     }
 
@@ -5424,6 +5423,7 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
 
   // Parse posfix ellipsis for unexpanded templated name.
   if (Tok.is(tok::ellipsis) && D.hasName() && !D.hasEllipsis() &&
+      !D.mayHaveDesignatorInType() &&
       Actions.getPossiblyTemplatedName(D.getIdentifier())
           .containsUnexpandedParameterPack()) {
     SourceLocation EllipsisLoc = ConsumeToken();

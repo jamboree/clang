@@ -126,7 +126,7 @@ class ASTContext : public RefCountedBase<ASTContext> {
   mutable llvm::ContextualFoldingSet<DependentTemplateSpecializationType,
                                      ASTContext&>
     DependentTemplateSpecializationTypes;
-  llvm::FoldingSet<PackExpansionType> PackExpansionTypes;
+  mutable llvm::FoldingSet<PackExpansionType> PackExpansionTypes;
   mutable llvm::FoldingSet<DesignatingType> DesignatingTypes;
   mutable llvm::FoldingSet<ObjCObjectTypeImpl> ObjCObjectTypes;
   mutable llvm::FoldingSet<ObjCObjectPointerType> ObjCObjectPointerTypes;
@@ -1276,7 +1276,7 @@ public:
       const IdentifierInfo *Name, ArrayRef<TemplateArgument> Args) const;
 
   QualType getPackExpansionType(QualType Pattern,
-                                Optional<unsigned> NumExpansions);
+                                Optional<unsigned> NumExpansions) const;
 
   QualType getDesignatingType(QualType T, DeclarationName DesigName) const;
 

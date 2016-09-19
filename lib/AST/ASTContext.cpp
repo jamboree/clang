@@ -1545,6 +1545,9 @@ TypeInfo ASTContext::getTypeInfoImpl(const Type *T) const {
 #include "clang/AST/TypeNodes.def"
     llvm_unreachable("Should not see dependent types");
 
+  case Type::Designating:
+    llvm_unreachable("Should not see designating type");
+
   case Type::FunctionNoProto:
   case Type::FunctionProto:
     // GCC extension: alignof(function) = 32 bits
@@ -2748,6 +2751,13 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
                                   vat->getBracketsRange());
     break;
   }
+
+  case Type::Designating: {
+    const DesignatingType *des = cast<DesignatingType>(ty);
+    result = getDesignatingType(
+        getVariableArrayDecayedType(des->getMasterType()), des->getDesigName());
+    break;
+  }
   }
 
   // Apply the top-level qualifiers from the original.
@@ -3649,8 +3659,9 @@ ASTContext::getDependentTemplateSpecializationType(
   return QualType(T, 0);
 }
 
-QualType ASTContext::getPackExpansionType(QualType Pattern,
-                                          Optional<unsigned> NumExpansions) {
+QualType
+ASTContext::getPackExpansionType(QualType Pattern,
+                                 Optional<unsigned> NumExpansions) const {
   llvm::FoldingSetNodeID ID;
   PackExpansionType::Profile(ID, Pattern, NumExpansions);
 
@@ -4595,8 +4606,13 @@ const ArrayType *ASTContext::getAsArrayType(QualType T) const {
 }
 
 QualType ASTContext::getAdjustedParameterType(QualType T) const {
-  if (T->isArrayType() || T->isFunctionType())
-    return getDecayedType(T);
+  const PackExpansionType *Expansion = dyn_cast<PackExpansionType>(T);
+  QualType SubT = Expansion ? Expansion->getPattern() : T;
+  if (SubT->isArrayType() || SubT->isFunctionType()) {
+    T = getDecayedType(SubT);
+    if (Expansion)
+      T = getPackExpansionType(T, Expansion->getNumExpansions());
+  }
   return T;
 }
 
@@ -5993,6 +6009,7 @@ void ASTContext::getObjCEncodingForTypeImpl(QualType T, std::string& S,
     return;
 
   case Type::Pipe:
+  case Type::Designating:
 #define ABSTRACT_TYPE(KIND, BASE)
 #define TYPE(KIND, BASE)
 #define DEPENDENT_TYPE(KIND, BASE) \
@@ -7814,6 +7831,7 @@ QualType ASTContext::mergeTypes(QualType LHS, QualType RHS,
   case Type::LValueReference:
   case Type::RValueReference:
   case Type::MemberPointer:
+  case Type::Designating:
     llvm_unreachable("C++ should never be in mergeTypes");
 
   case Type::ObjCInterface:

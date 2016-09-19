@@ -4561,7 +4561,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
     }
   }
 
-  if (AllowDesignator && D.isDesignator())
+  if (AllowDesignator && D.hasDot())
     T = S.BuildDesignatingType(T, S.getPossiblyTemplatedName(D.getIdentifier()),
                                D.getIdentifierLoc());
 
@@ -5108,8 +5108,8 @@ namespace {
       TL.setKWLoc(Chunk.Loc);
     }
     void VisitDesignatingTypeLoc(DesignatingTypeLoc TL) {
-      assert(D.isDesignator());
-      TL.setDotLoc(D.getPeriodLoc());
+      assert(D.hasDot());
+      TL.setDotLoc(D.getDotLoc());
       TL.setNameLoc(D.getIdentifierLoc());
     }
 
@@ -5219,7 +5219,7 @@ void LocInfoType::getAsStringInternal(std::string &Str,
 }
 
 TypeResult Sema::ActOnTypeName(Scope *S, Declarator &D) {
-  if (!D.isDesignator()) {
+  if (!D.hasDot()) {
     // C99 6.7.6: Type names have no identifier.  This is already validated by
     // the parser.
     assert(D.getIdentifier() == nullptr &&

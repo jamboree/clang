@@ -1063,7 +1063,10 @@ DEF_TRAVERSE_TYPE(DependentTemplateSpecializationType, {
 
 DEF_TRAVERSE_TYPE(PackExpansionType, { TRY_TO(TraverseType(T->getPattern())); })
 
-DEF_TRAVERSE_TYPE(DesignatingType, { TRY_TO(TraverseType(T->getMasterType())); })
+DEF_TRAVERSE_TYPE(DesignatingType, {
+  TRY_TO(TraverseType(T->getMasterType()));
+  TRY_TO(TraverseDeclarationName(T->getDesigName()));
+})
 
 DEF_TRAVERSE_TYPE(ObjCInterfaceType, {})
 
