@@ -1961,6 +1961,8 @@ bool Type::isIncompleteType(NamedDecl **Def) const {
       *Def = Interface;
     return !Interface->hasDefinition();
   }
+  case Designating:
+    return true;
   }
 }
 

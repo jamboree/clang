@@ -10899,6 +10899,16 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
   QualType parmDeclType = TInfo->getType();
 
+  if (S->isFunctionDeclarationScope() && parmDeclType->isDesignatingType()) {
+    Diag(D.getIdentifierLoc(), diag::err_var_or_ret_designating_type)
+        << 0 << parmDeclType;
+
+    // Recover by using the non-designating type
+    parmDeclType = parmDeclType->getAs<DesignatingType>()->getMasterType();
+    TInfo = Context.getTrivialTypeSourceInfo(parmDeclType);
+    D.setInvalidType(true);
+  }
+
   // Temporarily put parameter variables in the translation unit, not
   // the enclosing context.  This prevents them from accidentally
   // looking like class members in C++.

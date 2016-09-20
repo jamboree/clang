@@ -3140,7 +3140,6 @@ def ext_param_promoted_not_compatible_with_prototype : ExtWarn<
   "with parameter type}0,1 declared in a previous prototype">,
   InGroup<KNRPromotedParameter>;
 
-
 // C++ Overloading Semantic Analysis.
 def err_ovl_diff_return_type : Error<
   "functions that differ only in their return type cannot be overloaded">;
@@ -5112,6 +5111,10 @@ def err_atomic_specifier_bad_type : Error<
   "%1 %select{||||||which is not trivially copyable}0">;
 def err_designator_on_designating_type : Error<
   "cannot add designator on type %0 which already has a designator">;
+def err_var_or_ret_designating_type : Error<
+  "%select{variable has|function cannot return}0 designating type %1">;
+def err_parm_types_have_same_designator : Error<
+  "%ordinal0 and %ordinal1 parameters have the same designator %2 in type">;
 
 // Expressions.
 def ext_sizeof_alignof_function_type : Extension<

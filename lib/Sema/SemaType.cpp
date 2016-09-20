@@ -2348,6 +2348,11 @@ bool Sema::CheckFunctionReturnType(QualType T, SourceLocation Loc) {
     return true;
   }
 
+  if (T->isDesignatingType()) {
+    Diag(Loc, diag::err_var_or_ret_designating_type) << 1 << T;
+    return true;
+  }
+
   // Functions cannot return half FP.
   if (T->isHalfType() && !getLangOpts().HalfArgsAndReturns) {
     Diag(Loc, diag::err_parameters_retval_cannot_have_fp16_type) << 1 <<
@@ -2440,14 +2445,28 @@ QualType Sema::BuildFunctionType(QualType T,
   bool Invalid = false;
 
   Invalid |= CheckFunctionReturnType(T, Loc);
-
+  llvm::SmallDenseMap<const IdentifierInfo *, unsigned, 4> Desigs;
   for (unsigned Idx = 0, Cnt = ParamTypes.size(); Idx < Cnt; ++Idx) {
     // FIXME: Loc is too inprecise here, should use proper locations for args.
     QualType ParamType = Context.getAdjustedParameterType(ParamTypes[Idx]);
-    if (ParamType->isVoidType()) {
+    QualType NonDesigType = ParamType;
+    if (const DesignatingType *Desig = ParamType->getAs<DesignatingType>()) {
+      NonDesigType = Desig->getMasterType();
+      if (const IdentifierInfo *Id =
+              Desig->getDesigName().getAsIdentifierInfo()) {
+        unsigned &PrevIdx = Desigs[Id];
+        if (PrevIdx) {
+          Diag(Loc, diag::err_parm_types_have_same_designator)
+              << (Idx + 1) << PrevIdx << Id;
+          Invalid = true;
+        }
+        PrevIdx = Idx + 1;
+      }
+    }
+    if (NonDesigType->isVoidType()) {
       Diag(Loc, diag::err_param_with_void_type);
       Invalid = true;
-    } else if (ParamType->isHalfType() && !getLangOpts().HalfArgsAndReturns) {
+    } else if (NonDesigType->isHalfType() && !getLangOpts().HalfArgsAndReturns) {
       // Disallow half FP arguments.
       Diag(Loc, diag::err_parameters_retval_cannot_have_fp16_type) << 0 <<
         FixItHint::CreateInsertion(Loc, "*");
@@ -4024,6 +4043,12 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
         D.setInvalidType(true);
       }
 
+      if (T->isDesignatingType()) {
+        S.Diag(DeclType.Loc, diag::err_var_or_ret_designating_type) << 1 << T;
+        T = T->getAs<DesignatingType>()->getMasterType();
+        D.setInvalidType(true);
+      }
+
       // Do not allow returning half FP value.
       // FIXME: This really should be in BuildFunctionType.
       if (T->isHalfType()) {
@@ -4200,11 +4225,31 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
         SmallVector<FunctionProtoType::ExtParameterInfo, 16>
           ExtParameterInfos(FTI.NumParams);
         bool HasAnyInterestingExtParameterInfos = false;
+        llvm::SmallDenseMap<const IdentifierInfo *, unsigned, 4> Desigs;
 
         for (unsigned i = 0, e = FTI.NumParams; i != e; ++i) {
           ParmVarDecl *Param = cast<ParmVarDecl>(FTI.Params[i].Param);
           QualType ParamTy = Param->getType();
           assert(!ParamTy.isNull() && "Couldn't parse type?");
+
+          const DesignatingType *Desig = ParamTy->getAs<DesignatingType>();
+          if (Desig) {
+            ParamTy = Desig->getMasterType();
+            if (const IdentifierInfo *Id =
+                    Desig->getDesigName().getAsIdentifierInfo()) {
+              unsigned &PrevIdx = Desigs[Id];
+              if (PrevIdx) {
+                S.Diag(DeclType.Loc,
+                       diag::err_parm_types_have_same_designator)
+                    << (i + 1) << PrevIdx << Id;
+                Param->setType(ParamTy);
+                Desig = nullptr;
+              }
+              PrevIdx = i + 1;
+            }
+          }
+
+          QualType OriginTy = ParamTy;
 
           // Look for 'void'.  void is allowed only as a single parameter to a
           // function with no other parameters (C99 6.7.5.3p10).  We record
@@ -4268,7 +4313,13 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
             HasAnyInterestingExtParameterInfos = true;
           }
 
-          ParamTys.push_back(ParamTy);
+          if (Desig && OriginTy != ParamTy) {
+            ParamTy =
+                Context.getDesignatingType(ParamTy, Desig->getDesigName());
+            Param->setType(ParamTy);
+          }
+
+          ParamTys.push_back(Param->getType());
         }
 
         if (HasAnyInterestingExtParameterInfos) {

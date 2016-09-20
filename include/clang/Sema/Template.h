@@ -222,13 +222,6 @@ namespace clang {
     /// relevant to this particular scope).
     LocalInstantiationScope *Outer;
 
-    /// \brief Whether we have already exited this scope.
-    bool Exited;
-
-    /// \brief Whether to combine this scope with the outer scope, such that
-    /// lookup will search our outer scope.
-    bool CombineWithOuterScope;
-    
     /// \brief If non-NULL, the template parameter pack that has been
     /// partially substituted per C++0x [temp.arg.explicit]p9.
     NamedDecl *PartiallySubstitutedPack;
@@ -242,6 +235,15 @@ namespace clang {
     /// ArgsInPartiallySubstitutedPack.
     unsigned NumArgsInPartiallySubstitutedPack;
 
+    /// \brief Whether we have already exited this scope.
+    bool Exited;
+
+    /// \brief Whether to combine this scope with the outer scope, such that
+    /// lookup will search our outer scope.
+    bool CombineWithOuterScope;
+
+    bool FunctionDeclarationScope;
+
     // This class is non-copyable
     LocalInstantiationScope(
       const LocalInstantiationScope &) = delete;
@@ -249,11 +251,13 @@ namespace clang {
 
   public:
     LocalInstantiationScope(Sema &SemaRef, bool CombineWithOuterScope = false)
-      : SemaRef(SemaRef), Outer(SemaRef.CurrentInstantiationScope),
-        Exited(false), CombineWithOuterScope(CombineWithOuterScope),
-        PartiallySubstitutedPack(nullptr)
-    {
+        : SemaRef(SemaRef), Outer(SemaRef.CurrentInstantiationScope),
+          PartiallySubstitutedPack(nullptr), Exited(false),
+          CombineWithOuterScope(CombineWithOuterScope),
+          FunctionDeclarationScope(false) {
       SemaRef.CurrentInstantiationScope = this;
+      if (CombineWithOuterScope && Outer)
+        FunctionDeclarationScope = Outer->FunctionDeclarationScope;
     }
 
     ~LocalInstantiationScope() {
@@ -376,6 +380,11 @@ namespace clang {
     ParmVarDecl **getDesignatableParmEntry(const IdentifierInfo *Id) {
       return &DesignatableParms[Id];
     }
+
+    void setFunctionDeclarationScope(bool Flag = true) {
+      FunctionDeclarationScope = Flag;
+    }
+    bool isFunctionDeclarationScope() const { return FunctionDeclarationScope; }
   };
 
   class TemplateDeclInstantiator

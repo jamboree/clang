@@ -4895,6 +4895,8 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
       // Determine whether we should expand the parameter packs.
       bool ShouldExpand = false;
       Sema::RetainExpansionMode RetainExpansion = Sema::REM_None;
+      Optional<unsigned> OrigNumExpansions = Expansion->getNumExpansions();
+      NumExpansions = OrigNumExpansions;
       if (getDerived().TryExpandParameterPacks(Loc, SourceRange(),
                                                Unexpanded,
                                                ShouldExpand,
@@ -4902,7 +4904,7 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
                                                NumExpansions)) {
         return true;
       }
-
+      unsigned N = OrigNumExpansions.getValueOr(0);
       if (ShouldExpand) {
         // Expand the function parameter pack into multiple, separate
         // parameters.
@@ -4925,25 +4927,42 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
           OutParamTypes.push_back(NewType);
           if (PVars)
             PVars->push_back(nullptr);
+
+          // Move to next pattern.
+          if (N) {
+            --N;
+            ++i;
+            assert(i != NumParams);
+            OldType = ParamTypes[i];
+            Expansion = cast<PackExpansionType>(OldType);
+            Pattern = Expansion->getPattern();
+          }
+        }
+
+        // If we're supposed to retain a pack expansion, do so by temporarily
+        // forgetting the partially-substituted parameter pack.
+        if (RetainExpansion) {
+          QualType NewType;
+          if (RetainExpansion == Sema::REM_NoSubstitute) {
+            ForgetPartiallySubstitutedPackRAII Forget(getDerived());
+            NewType = getDerived().TransformType(Pattern);
+          } else {
+            Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(getSema(), -1);
+            NewType = getDerived().TransformType(Pattern);
+          }
+
+          if (NewType.isNull())
+            return true;
+
+          if (ParamInfos)
+            PInfos.set(OutParamTypes.size(), ParamInfos[i]);
+          OutParamTypes.push_back(NewType);
+          if (PVars)
+            PVars->push_back(nullptr);
         }
 
         // We're done with the pack expansion.
         continue;
-      }
-
-      // If we're supposed to retain a pack expansion, do so by temporarily
-      // forgetting the partially-substituted parameter pack.
-      if (RetainExpansion) {
-        ForgetPartiallySubstitutedPackRAII Forget(getDerived());
-        QualType NewType = getDerived().TransformType(Pattern);
-        if (NewType.isNull())
-          return true;
-
-        if (ParamInfos)
-          PInfos.set(OutParamTypes.size(), ParamInfos[i]);
-        OutParamTypes.push_back(NewType);
-        if (PVars)
-          PVars->push_back(nullptr);
       }
 
       // We'll substitute the parameter now without expanding the pack

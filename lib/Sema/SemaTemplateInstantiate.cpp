@@ -1751,13 +1751,20 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
     return nullptr;
   }
 
+  if (CurrentInstantiationScope->isFunctionDeclarationScope() &&
+      NewDI->getType()->isDesignatingType()) {
+    Diag(OldParm->getLocation(), diag::err_var_or_ret_designating_type)
+        << 0 << NewDI->getType();
+    return nullptr;
+  }
+
   DeclarationNameInfo NameInfo =
       SubstDeclarationNameInfo(OldParm->getNameInfo(), TemplateArgs);
 
   // Diagnose duplicate designatable parameter.
   ParmVarDecl **DesigParmEntry = nullptr;
   if (OldParm->isDesignatable()) {
-    if (IdentifierInfo *Id = NameInfo.getName().getAsIdentifierInfo()) {
+    if (const IdentifierInfo *Id = NameInfo.getName().getAsIdentifierInfo()) {
       DesigParmEntry = CurrentInstantiationScope->getDesignatableParmEntry(Id);
       if (ParmVarDecl *ConflictParm = *DesigParmEntry) {
         Diag(OldParm->getLocation(), diag::err_param_redefinition) << Id;

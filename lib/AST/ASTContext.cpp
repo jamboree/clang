@@ -4608,8 +4608,13 @@ const ArrayType *ASTContext::getAsArrayType(QualType T) const {
 QualType ASTContext::getAdjustedParameterType(QualType T) const {
   const PackExpansionType *Expansion = dyn_cast<PackExpansionType>(T);
   QualType SubT = Expansion ? Expansion->getPattern() : T;
+  const DesignatingType *Desig = SubT->getAs<DesignatingType>();
+  if (Desig)
+    SubT = Desig->getMasterType();
   if (SubT->isArrayType() || SubT->isFunctionType()) {
     T = getDecayedType(SubT);
+    if (Desig)
+      T = getDesignatingType(T, Desig->getDesigName());
     if (Expansion)
       T = getPackExpansionType(T, Expansion->getNumExpansions());
   }

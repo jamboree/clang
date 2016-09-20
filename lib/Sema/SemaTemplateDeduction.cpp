@@ -3480,6 +3480,7 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
   // The types of the parameters from which we will perform template argument
   // deduction.
   LocalInstantiationScope InstScope(*this);
+  InstScope.setFunctionDeclarationScope();
   TemplateParameterList *TemplateParams
     = FunctionTemplate->getTemplateParameters();
   SmallVector<DeducedTemplateArgument, 4> Deduced;
@@ -3865,6 +3866,7 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
 
   // Substitute any explicit template arguments.
   LocalInstantiationScope InstScope(*this);
+  InstScope.setFunctionDeclarationScope();
   SmallVector<DeducedTemplateArgument, 4> Deduced;
   unsigned NumExplicitlySpecified = 0;
   SmallVector<QualType, 4> ParamTypes;
