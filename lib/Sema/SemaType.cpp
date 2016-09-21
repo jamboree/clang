@@ -4641,7 +4641,10 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S) {
     inferARCWriteback(state, T);
 
   bool AllowDesignator =
-      S && !(S->getFlags() & Scope::FunctionDeclarationScope);
+      S &&
+      !(S->isFunctionDeclarationScope() &&
+        (D.getContext() == Declarator::PrototypeContext ||
+         D.getContext() == Declarator::LambdaExprParameterContext));
 
   return GetFullTypeForDeclarator(state, T, ReturnTypeInfo, AllowDesignator);
 }

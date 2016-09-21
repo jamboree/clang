@@ -4222,15 +4222,28 @@ CanQualType ASTContext::getCanonicalParamType(QualType T) const {
   // qualifiers.
   T = getCanonicalType(T);
   T = getVariableArrayDecayedType(T);
+
   const Type *Ty = T.getTypePtr();
+  const PackExpansionType *Expansion = dyn_cast<PackExpansionType>(Ty);
+  if (Expansion)
+    Ty = Expansion->getPattern().getTypePtr();
+  const DesignatingType *Desig = Ty->getAs<DesignatingType>();
+  if (Desig)
+    Ty = Desig->getMasterType().getTypePtr();
+
   QualType Result;
   if (isa<ArrayType>(Ty)) {
-    Result = getArrayDecayedType(QualType(Ty,0));
+    Result = getArrayDecayedType(QualType(Ty, 0));
   } else if (isa<FunctionType>(Ty)) {
     Result = getPointerType(QualType(Ty, 0));
   } else {
     Result = QualType(Ty, 0);
   }
+
+  if (Desig && Result != Desig->getMasterType())
+    Result = getDesignatingType(Result, Desig->getDesigName());
+  if (Expansion && Result != Expansion->getPattern())
+    Result = getPackExpansionType(Result, Expansion->getNumExpansions());
 
   return CanQualType::CreateUnsafe(Result);
 }

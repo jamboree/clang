@@ -939,6 +939,32 @@ void CastOperation::CheckStaticCast() {
   }
 }
 
+static bool CheckCompatibleFunctionProtoType(const FunctionProtoType *L,
+                                             const FunctionProtoType *R) {
+  if (L->getNumParams() != R->getNumParams())
+    return false;
+
+  QualType RetL = L->getReturnType();
+  QualType RetR = R->getReturnType();
+  if (RetL != RetR)
+    return false;
+
+  for (unsigned I = 0, N = L->getNumParams(); I != N; ++I) {
+    QualType ParmL = L->getParamType(I);
+    QualType ParmR = R->getParamType(I);
+
+    if (const DesignatingType *Desig = ParmL->getAs<DesignatingType>())
+      ParmL = Desig->getMasterType();
+    if (const DesignatingType *Desig = ParmR->getAs<DesignatingType>())
+      ParmR = Desig->getMasterType();
+
+    // Self.Context.typesAreCompatible()
+    if (ParmL != ParmR)
+      return false;
+  }
+  return true;
+}
+
 /// TryStaticCast - Check if a static cast can be performed, and do so if
 /// possible. If @p CStyle, ignore access restrictions on hierarchy casting
 /// and casting away constness.
@@ -1103,6 +1129,20 @@ static TryCastResult TryStaticCast(Sema &Self, ExprResult &SrcExpr,
         // allow c-style cast of void * to block pointers.
         Kind = CK_AnyPointerToBlockPointerCast;
         return TC_Success;
+      }
+    } else if (SrcPointee->isFunctionProtoType()) {
+      if (const PointerType *DestPointer = DestType->getAs<PointerType>()) {
+        QualType DestPointee = DestPointer->getPointeeType();
+        if (DestPointee->isFunctionProtoType()) {
+          if (CheckCompatibleFunctionProtoType(
+                  Self.Context.getCanonicalType(SrcPointee)
+                      ->getAs<FunctionProtoType>(),
+                  Self.Context.getCanonicalType(DestPointee)
+                      ->getAs<FunctionProtoType>())) {
+            Kind = CK_NoOp;
+            return TC_Success;
+          }
+        }
       }
     }
   }

@@ -2736,7 +2736,8 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result, QualType Ty) {
       continue;
 
     case Type::Designating:
-      llvm_unreachable("DesignatingType shouldn't be here");
+      T = cast<DesignatingType>(T)->getMasterType().getTypePtr();
+      continue;
     }
 
     if (Queue.empty())

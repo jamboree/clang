@@ -5342,6 +5342,13 @@ inline bool QualType::isCanonicalAsParam() const {
   if (hasLocalQualifiers()) return false;
 
   const Type *T = getTypePtr();
+  if (const DesignatingType *Desig = T->getAs<DesignatingType>()) {
+    QualType Param = Desig->getMasterType();
+    if (!Param.isCanonical() || Param.hasLocalQualifiers())
+      return false;
+    T = Param.getTypePtr();
+  }
+
   if (T->isVariablyModifiedType() && T->hasSizedVLAType())
     return false;
 
