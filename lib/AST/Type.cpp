@@ -2809,6 +2809,14 @@ bool FunctionProtoType::isTemplateVariadic() const {
   return false;
 }
 
+bool FunctionProtoType::hasDesignators() const {
+  for (unsigned ArgIdx = getNumParams(); ArgIdx; --ArgIdx)
+    if (getParamType(ArgIdx - 1)->isDesignatingType())
+      return true;
+
+  return false;
+}
+
 void FunctionProtoType::Profile(llvm::FoldingSetNodeID &ID, QualType Result,
                                 const QualType *ArgTys, unsigned NumParams,
                                 const ExtProtoInfo &epi,

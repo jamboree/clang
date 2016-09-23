@@ -3376,6 +3376,10 @@ public:
   /// function.
   bool isTemplateVariadic() const;
 
+  /// Determines whether this function prototype contains designating types
+  /// in its parameters.
+  bool hasDesignators() const;
+
   bool hasTrailingReturn() const { return HasTrailingReturn; }
 
   unsigned getTypeQuals() const { return FunctionType::getTypeQuals(); }

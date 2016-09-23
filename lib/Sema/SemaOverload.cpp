@@ -2220,6 +2220,17 @@ bool Sema::IsPointerConversion(Expr *From, QualType FromType, QualType ToType,
     return true;
   }
 
+  if (FromPointeeType->isFunctionProtoType()) {
+    if (const FunctionProtoType *ToProto =
+            ToPointeeType->getAs<FunctionProtoType>()) {
+      if (!ToProto->hasDesignators() &&
+          areCompatibleFunctionProtoTypes(ToPointeeType, FromPointeeType)) {
+        ConvertedType = ToType;
+        return true;
+      }
+    }
+  }
+
   // When we're overloading in C, we allow a special kind of pointer
   // conversion for compatible-but-not-identical pointee types.
   if (!getLangOpts().CPlusPlus &&
@@ -2798,6 +2809,11 @@ bool Sema::CheckPointerConversion(Expr *From, QualType ToType,
         Diag(From->getExprLoc(), diag::ext_ms_impcast_fn_obj)
             << From->getSourceRange();
       }
+
+      // Cast that discards the designators in paremeter types.
+      if (FromPointeeType->isFunctionProtoType() &&
+          ToPointeeType->isFunctionProtoType())
+        Kind = CK_NoOp;
     }
   } else if (const ObjCObjectPointerType *ToPtrType =
                ToType->getAs<ObjCObjectPointerType>()) {

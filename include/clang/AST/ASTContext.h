@@ -1987,6 +1987,9 @@ public:
   /// pointers, and arrays decay one level into pointers.
   CanQualType getCanonicalParamType(QualType T) const;
 
+  CanQualType getCanonicalNonDesignatingFunctionProtoType(
+      const FunctionProtoType *Proto) const;
+
   /// \brief Determine whether the given types \p T1 and \p T2 are equivalent.
   bool hasSameType(QualType T1, QualType T2) const {
     return getCanonicalType(T1) == getCanonicalType(T2);

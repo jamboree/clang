@@ -4240,11 +4240,37 @@ CanQualType ASTContext::getCanonicalParamType(QualType T) const {
     Result = QualType(Ty, 0);
   }
 
-  if (Desig && Result != Desig->getMasterType())
+  if (Desig)
     Result = getDesignatingType(Result, Desig->getDesigName());
-  if (Expansion && Result != Expansion->getPattern())
+  if (Expansion)
     Result = getPackExpansionType(Result, Expansion->getNumExpansions());
 
+  return CanQualType::CreateUnsafe(Result);
+}
+
+CanQualType ASTContext::getCanonicalNonDesignatingFunctionProtoType(
+    const FunctionProtoType *Proto) const {
+  SmallVector<QualType, 16> CanonicalArgs;
+  CanonicalArgs.reserve(Proto->getNumParams());
+  bool AnyDesig = false;
+  for (QualType T : Proto->param_types()) {
+    if (const DesignatingType *Desig = T->getAs<DesignatingType>()) {
+      T = Desig->getMasterType();
+      AnyDesig = true;
+    }
+    CanonicalArgs.push_back(getCanonicalParamType(T));
+  }
+  if (!AnyDesig)
+    return getCanonicalType(QualType(Proto, 0));
+  //Proto->getCanonicalTypeUnqualified()
+  FunctionProtoType::ExtProtoInfo CanonicalEPI = Proto->getExtProtoInfo();
+  CanonicalEPI.HasTrailingReturn = false;
+  CanonicalEPI.ExceptionSpec = FunctionProtoType::ExceptionSpecInfo();
+
+  // Adjust the canonical function result type.
+  CanQualType CanResultTy =
+      getCanonicalFunctionResultType(Proto->getReturnType());
+  QualType Result = getFunctionType(CanResultTy, CanonicalArgs, CanonicalEPI);
   return CanQualType::CreateUnsafe(Result);
 }
 

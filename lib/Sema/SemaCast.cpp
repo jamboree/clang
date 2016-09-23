@@ -939,32 +939,6 @@ void CastOperation::CheckStaticCast() {
   }
 }
 
-static bool CheckCompatibleFunctionProtoType(const FunctionProtoType *L,
-                                             const FunctionProtoType *R) {
-  if (L->getNumParams() != R->getNumParams())
-    return false;
-
-  QualType RetL = L->getReturnType();
-  QualType RetR = R->getReturnType();
-  if (RetL != RetR)
-    return false;
-
-  for (unsigned I = 0, N = L->getNumParams(); I != N; ++I) {
-    QualType ParmL = L->getParamType(I);
-    QualType ParmR = R->getParamType(I);
-
-    if (const DesignatingType *Desig = ParmL->getAs<DesignatingType>())
-      ParmL = Desig->getMasterType();
-    if (const DesignatingType *Desig = ParmR->getAs<DesignatingType>())
-      ParmR = Desig->getMasterType();
-
-    // Self.Context.typesAreCompatible()
-    if (ParmL != ParmR)
-      return false;
-  }
-  return true;
-}
-
 /// TryStaticCast - Check if a static cast can be performed, and do so if
 /// possible. If @p CStyle, ignore access restrictions on hierarchy casting
 /// and casting away constness.
@@ -1003,6 +977,19 @@ static TryCastResult TryStaticCast(Sema &Self, ExprResult &SrcExpr,
   if (tcr != TC_NotApplicable)
     return tcr;
 
+  //if (const ReferenceType *DestReference = DestType->getAs<ReferenceType>()) {
+  //  QualType DestPointee = DestReference->getPointeeType();
+  //  if (DestPointee->isFunctionProtoType()) {
+  //    Expr *Src = SrcExpr.get();
+  //    QualType SrcType = Src->getType();
+  //    if (SrcType->isFunctionProtoType() &&
+  //        Self.areCompatibleFunctionProtoTypes(SrcType, DestPointee)) {
+  //      Kind = CK_NoOp;
+  //      return TC_Success;
+  //    }
+  //  }
+  //}
+
   // C++11 [expr.static.cast]p3: 
   //   A glvalue of type "cv1 T1" can be cast to type "rvalue reference to cv2
   //   T2" if "cv2 T2" is reference-compatible with "cv1 T1".
@@ -1010,6 +997,23 @@ static TryCastResult TryStaticCast(Sema &Self, ExprResult &SrcExpr,
                               BasePath, msg);
   if (tcr != TC_NotApplicable)
     return tcr;
+
+  //if (const PointerType *DestPointer = DestType->getAs<PointerType>()) {
+  //  QualType DestPointee = DestPointer->getPointeeType();
+  //  if (const FunctionProtoType *Proto =
+  //          DestPointee->getAs<FunctionProtoType>()) {
+  //    DestType = Self.Context.getPointerType(
+  //        Self.Context.getCanonicalNonDesignatingFunctionProtoType(Proto));
+  //  }
+  //}
+  //if (const ReferenceType *DestReference = DestType->getAs<ReferenceType>()) {
+  //  QualType DestPointee = DestReference->getPointeeType();
+  //  if (const FunctionProtoType *Proto =
+  //          DestPointee->getAs<FunctionProtoType>()) {
+  //    DestType = Self.Context.getLValueReferenceType(
+  //        Self.Context.getCanonicalNonDesignatingFunctionProtoType(Proto));
+  //  }
+  //}
 
   // C++ 5.2.9p2: An expression e can be explicitly converted to a type T
   //   [...] if the declaration "T t(e);" is well-formed, [...].
@@ -1134,11 +1138,7 @@ static TryCastResult TryStaticCast(Sema &Self, ExprResult &SrcExpr,
       if (const PointerType *DestPointer = DestType->getAs<PointerType>()) {
         QualType DestPointee = DestPointer->getPointeeType();
         if (DestPointee->isFunctionProtoType()) {
-          if (CheckCompatibleFunctionProtoType(
-                  Self.Context.getCanonicalType(SrcPointee)
-                      ->getAs<FunctionProtoType>(),
-                  Self.Context.getCanonicalType(DestPointee)
-                      ->getAs<FunctionProtoType>())) {
+          if (Self.areCompatibleFunctionProtoTypes(SrcPointee, DestPointee)) {
             Kind = CK_NoOp;
             return TC_Success;
           }
@@ -1745,6 +1745,38 @@ void Sema::CheckCompatibleReinterpretCast(QualType SrcType, QualType DestType,
   }
 
   Diag(Range.getBegin(), DiagID) << SrcType << DestType << Range;
+}
+
+bool Sema::areCompatibleFunctionProtoTypes(QualType TypeL, QualType TypeR) {
+  const FunctionProtoType *L =
+      Context.getCanonicalType(TypeL)->getAs<FunctionProtoType>();
+  const FunctionProtoType *R =
+      Context.getCanonicalType(TypeR)->getAs<FunctionProtoType>();
+
+  if (!L || !R)
+    return false;
+  if (L->getNumParams() != R->getNumParams())
+    return false;
+
+  QualType RetL = L->getReturnType();
+  QualType RetR = R->getReturnType();
+  if (RetL != RetR)
+    return false;
+
+  for (unsigned I = 0, N = L->getNumParams(); I != N; ++I) {
+    QualType ParmL = L->getParamType(I);
+    QualType ParmR = R->getParamType(I);
+
+    if (const DesignatingType *Desig = ParmL->getAs<DesignatingType>())
+      ParmL = Desig->getMasterType();
+    if (const DesignatingType *Desig = ParmR->getAs<DesignatingType>())
+      ParmR = Desig->getMasterType();
+
+    // Self.Context.typesAreCompatible()
+    if (ParmL != ParmR)
+      return false;
+  }
+  return true;
 }
 
 static void DiagnoseCastOfObjCSEL(Sema &Self, const ExprResult &SrcExpr,
