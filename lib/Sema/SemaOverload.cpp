@@ -10638,8 +10638,18 @@ public:
 private:
   bool candidateHasExactlyCorrectType(const FunctionDecl *FD) {
     QualType Discard;
-    return Context.hasSameUnqualifiedType(TargetFunctionType, FD->getType()) ||
-           S.IsNoReturnConversion(FD->getType(), TargetFunctionType, Discard);
+    QualType FT = FD->getType();
+    if (Context.hasSameUnqualifiedType(TargetFunctionType, FT) ||
+        S.IsNoReturnConversion(FT, TargetFunctionType, Discard))
+      return true;
+
+    FT = Context.getCanonicalDesigFunctionType(FD);
+    if (FT.isNull())
+      return false;
+
+    // Try again with designating version.
+    return Context.hasSameUnqualifiedType(TargetFunctionType, FT) ||
+           S.IsNoReturnConversion(FT, TargetFunctionType, Discard);
   }
 
   /// \return true if A is considered a better overload candidate for the

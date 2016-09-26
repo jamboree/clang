@@ -977,19 +977,6 @@ static TryCastResult TryStaticCast(Sema &Self, ExprResult &SrcExpr,
   if (tcr != TC_NotApplicable)
     return tcr;
 
-  //if (const ReferenceType *DestReference = DestType->getAs<ReferenceType>()) {
-  //  QualType DestPointee = DestReference->getPointeeType();
-  //  if (DestPointee->isFunctionProtoType()) {
-  //    Expr *Src = SrcExpr.get();
-  //    QualType SrcType = Src->getType();
-  //    if (SrcType->isFunctionProtoType() &&
-  //        Self.areCompatibleFunctionProtoTypes(SrcType, DestPointee)) {
-  //      Kind = CK_NoOp;
-  //      return TC_Success;
-  //    }
-  //  }
-  //}
-
   // C++11 [expr.static.cast]p3: 
   //   A glvalue of type "cv1 T1" can be cast to type "rvalue reference to cv2
   //   T2" if "cv2 T2" is reference-compatible with "cv1 T1".
@@ -997,23 +984,6 @@ static TryCastResult TryStaticCast(Sema &Self, ExprResult &SrcExpr,
                               BasePath, msg);
   if (tcr != TC_NotApplicable)
     return tcr;
-
-  //if (const PointerType *DestPointer = DestType->getAs<PointerType>()) {
-  //  QualType DestPointee = DestPointer->getPointeeType();
-  //  if (const FunctionProtoType *Proto =
-  //          DestPointee->getAs<FunctionProtoType>()) {
-  //    DestType = Self.Context.getPointerType(
-  //        Self.Context.getCanonicalNonDesignatingFunctionProtoType(Proto));
-  //  }
-  //}
-  //if (const ReferenceType *DestReference = DestType->getAs<ReferenceType>()) {
-  //  QualType DestPointee = DestReference->getPointeeType();
-  //  if (const FunctionProtoType *Proto =
-  //          DestPointee->getAs<FunctionProtoType>()) {
-  //    DestType = Self.Context.getLValueReferenceType(
-  //        Self.Context.getCanonicalNonDesignatingFunctionProtoType(Proto));
-  //  }
-  //}
 
   // C++ 5.2.9p2: An expression e can be explicitly converted to a type T
   //   [...] if the declaration "T t(e);" is well-formed, [...].

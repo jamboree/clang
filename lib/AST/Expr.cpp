@@ -3559,6 +3559,7 @@ DesignatedInitExpr::DesignatedInitExpr(const ASTContext &C, QualType Ty,
     if (this->Designators[I].isFieldDesignator()) {
       DeclarationName Name = this->Designators[I].getFieldName();
       if (Name.isTemplatedName()) {
+        ExprBits.TypeDependent = true;
         ExprBits.InstantiationDependent = true;
         if (Name.containsUnexpandedParameterPack())
           ExprBits.ContainsUnexpandedParameterPack = true;

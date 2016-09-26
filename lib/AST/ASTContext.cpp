@@ -4248,28 +4248,40 @@ CanQualType ASTContext::getCanonicalParamType(QualType T) const {
   return CanQualType::CreateUnsafe(Result);
 }
 
-CanQualType ASTContext::getCanonicalNonDesignatingFunctionProtoType(
-    const FunctionProtoType *Proto) const {
+CanQualType
+ASTContext::getCanonicalDesigFunctionType(const FunctionDecl *FD) const {
+  const FunctionProtoType *Proto = FD->getType()->getAs<FunctionProtoType>();
+  if (!Proto)
+    return CanQualType();
+
+  return getCanonicalDesigFunctionType(Proto->getReturnType(), FD->parameters(),
+                                       Proto->getExtProtoInfo());
+}
+
+CanQualType ASTContext::getCanonicalDesigFunctionType(
+    QualType ResultTy, ArrayRef<ParmVarDecl *> ArgArray,
+    const FunctionProtoType::ExtProtoInfo &EPI) const {
   SmallVector<QualType, 16> CanonicalArgs;
-  CanonicalArgs.reserve(Proto->getNumParams());
+  CanonicalArgs.reserve(ArgArray.size());
   bool AnyDesig = false;
-  for (QualType T : Proto->param_types()) {
-    if (const DesignatingType *Desig = T->getAs<DesignatingType>()) {
-      T = Desig->getMasterType();
+
+  for (const ParmVarDecl *Parm : ArgArray) {
+    QualType T = getCanonicalParamType(Parm->getType());
+    if (Parm->isDesignatable()) {
+      T = getDesignatingType(T, Parm->getDeclName());
       AnyDesig = true;
     }
-    CanonicalArgs.push_back(getCanonicalParamType(T));
+    CanonicalArgs.push_back(T);
   }
   if (!AnyDesig)
-    return getCanonicalType(QualType(Proto, 0));
-  //Proto->getCanonicalTypeUnqualified()
-  FunctionProtoType::ExtProtoInfo CanonicalEPI = Proto->getExtProtoInfo();
+    return CanQualType();
+
+  FunctionProtoType::ExtProtoInfo CanonicalEPI = EPI;
   CanonicalEPI.HasTrailingReturn = false;
   CanonicalEPI.ExceptionSpec = FunctionProtoType::ExceptionSpecInfo();
 
   // Adjust the canonical function result type.
-  CanQualType CanResultTy =
-      getCanonicalFunctionResultType(Proto->getReturnType());
+  CanQualType CanResultTy = getCanonicalFunctionResultType(ResultTy);
   QualType Result = getFunctionType(CanResultTy, CanonicalArgs, CanonicalEPI);
   return CanQualType::CreateUnsafe(Result);
 }

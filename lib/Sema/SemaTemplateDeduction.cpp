@@ -3870,13 +3870,18 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
   SmallVector<DeducedTemplateArgument, 4> Deduced;
   unsigned NumExplicitlySpecified = 0;
   SmallVector<QualType, 4> ParamTypes;
+  SmallVector<ParmVarDecl *, 4> OutParams;
+  ArrayRef<ParmVarDecl *> ParamDecls = Function->parameters();
   if (ExplicitTemplateArgs) {
     if (TemplateDeductionResult Result = SubstituteExplicitTemplateArguments(
             FunctionTemplate, *ExplicitTemplateArgs, Deduced, ParamTypes,
-            nullptr, &FunctionType, Info))
+            &OutParams, &FunctionType, Info))
       return Result;
 
     NumExplicitlySpecified = Deduced.size();
+
+    if (!OutParams.empty())
+      ParamDecls = OutParams;
   }
 
   // Unevaluated SFINAE context.
@@ -3892,6 +3897,16 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
       Function->getReturnType()->getContainedAutoType()) {
     FunctionType = SubstAutoType(FunctionType, Context.DependentTy);
     HasDeducedReturnType = true;
+  }
+
+  if (InOverloadResolution) {
+    if (const FunctionProtoType *Proto =
+            FunctionType->getAs<FunctionProtoType>()) {
+      QualType DesigFunctionType = Context.getCanonicalDesigFunctionType(
+          Proto->getReturnType(), ParamDecls, Proto->getExtProtoInfo());
+      if (!DesigFunctionType.isNull())
+        FunctionType = DesigFunctionType;
+    }
   }
 
   if (!ArgFunctionType.isNull()) {
@@ -3922,12 +3937,20 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
   // specialization with respect to arguments of compatible pointer to function
   // types, template argument deduction fails.
   if (!ArgFunctionType.isNull()) {
-    if (InOverloadResolution && !isSameOrCompatibleFunctionType(
-                           Context.getCanonicalType(Specialization->getType()),
-                           Context.getCanonicalType(ArgFunctionType)))
-      return TDK_MiscellaneousDeductionFailure;
-    else if(!InOverloadResolution &&
-            !Context.hasSameType(Specialization->getType(), ArgFunctionType))
+    if (InOverloadResolution) {
+      CanQualType CanFunctionType =
+          Context.getCanonicalType(Specialization->getType());
+      CanQualType CanArgFunctionType =
+          Context.getCanonicalType(ArgFunctionType);
+      if (!isSameOrCompatibleFunctionType(CanFunctionType, CanArgFunctionType))
+        return TDK_MiscellaneousDeductionFailure;
+
+      // Try again with designating version.
+      CanFunctionType = Context.getCanonicalDesigFunctionType(Specialization);
+      if (!FunctionType.isNull() &&
+          !isSameOrCompatibleFunctionType(CanFunctionType, CanArgFunctionType))
+        return TDK_MiscellaneousDeductionFailure;
+    } else if (!Context.hasSameType(Specialization->getType(), ArgFunctionType))
       return TDK_MiscellaneousDeductionFailure;
   }
 
