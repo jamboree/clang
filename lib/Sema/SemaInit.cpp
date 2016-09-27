@@ -3701,11 +3701,35 @@ ResolveOverloadedFunctionForReferenceBinding(Sema &S,
                                                &HadMultipleCandidates)) {
       Sequence.AddAddressOverloadResolutionStep(Fn, Found,
                                                 HadMultipleCandidates);
+
       SourceType = Fn->getType();
+
+      // Adjust the function prototype for designators.
+      QualType UnqualToFunction =
+          S.ExtractUnqualifiedFunctionType(UnqualifiedTargetType);
+      if (const FunctionProtoType *Proto =
+              UnqualToFunction->getAs<FunctionProtoType>()) {
+        if (Proto->hasDesignators())
+          SourceType = S.Context.getCanonicalDesigFunctionType(Fn);
+      }
+
       UnqualifiedSourceType = SourceType.getUnqualifiedType();
     } else if (!UnqualifiedTargetType->isRecordType()) {
       Sequence.SetFailed(InitializationSequence::FK_AddressOfOverloadFailed);
       return true;
+    }
+  } else if (auto *DRE = dyn_cast<DeclRefExpr>(Initializer)) {
+    if (auto *FD = dyn_cast<FunctionDecl>(DRE->getDecl())) {
+      // Adjust the function prototype for designators.
+      QualType UnqualToFunction =
+          S.ExtractUnqualifiedFunctionType(UnqualifiedTargetType);
+      if (const FunctionProtoType *Proto =
+              UnqualToFunction->getAs<FunctionProtoType>()) {
+        if (Proto->hasDesignators()) {
+          SourceType = S.Context.getCanonicalDesigFunctionType(FD);
+          UnqualifiedSourceType = SourceType.getUnqualifiedType();
+        }
+      }
     }
   }
   return false;

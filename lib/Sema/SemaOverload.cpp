@@ -1548,17 +1548,22 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
       FromType = Fn->getType();
       SCS.setFromType(FromType);
 
+      QualType UnqualToFunction = S.ExtractUnqualifiedFunctionType(ToType);
+      if (const FunctionProtoType *Proto =
+              UnqualToFunction->getAs<FunctionProtoType>()) {
+        if (Proto->hasDesignators())
+          FromType = S.Context.getCanonicalDesigFunctionType(Fn);
+      }
+
       // we can sometimes resolve &foo<int> regardless of ToType, so check
       // if the type matches (identity) or we are converting to bool
-      if (!S.Context.hasSameUnqualifiedType(
-                      S.ExtractUnqualifiedFunctionType(ToType), FromType)) {
+      if (!S.Context.hasSameUnqualifiedType(UnqualToFunction, FromType)) {
         QualType resultTy;
         // if the function type matches except for [[noreturn]], it's ok
-        if (!S.IsNoReturnConversion(FromType,
-              S.ExtractUnqualifiedFunctionType(ToType), resultTy))
-          // otherwise, only a boolean conversion is standard   
-          if (!ToType->isBooleanType()) 
-            return false; 
+        if (!S.IsNoReturnConversion(FromType, UnqualToFunction, resultTy))
+          // otherwise, only a boolean conversion is standard
+          if (!ToType->isBooleanType())
+            return false;
       }
 
       // Check if the "from" expression is taking the address of an overloaded
@@ -1583,9 +1588,9 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
       }
 
       // Check that we've computed the proper type after overload resolution.
-      assert(S.Context.hasSameType(
-        FromType,
-        S.FixOverloadedFunctionReference(From, AccessPair, Fn)->getType()));
+      //assert(S.Context.hasSameType(
+      //  FromType,
+      //  S.FixOverloadedFunctionReference(From, AccessPair, Fn)->getType()));
     } else {
       return false;
     }
@@ -1638,9 +1643,18 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
     SCS.First = ICK_Function_To_Pointer;
 
     if (auto *DRE = dyn_cast<DeclRefExpr>(From->IgnoreParenCasts()))
-      if (auto *FD = dyn_cast<FunctionDecl>(DRE->getDecl()))
+      if (auto *FD = dyn_cast<FunctionDecl>(DRE->getDecl())) {
         if (!S.checkAddressOfFunctionIsAvailable(FD))
           return false;
+
+        // Adjust the function prototype for designators.
+        QualType UnqualToFunction = S.ExtractUnqualifiedFunctionType(ToType);
+        if (const FunctionProtoType *Proto =
+                UnqualToFunction->getAs<FunctionProtoType>()) {
+          if (Proto->hasDesignators())
+            FromType = S.Context.getCanonicalDesigFunctionType(FD);
+        }
+      }
 
     // An lvalue of function type T can be converted to an rvalue of
     // type "pointer to T." The result is a pointer to the
