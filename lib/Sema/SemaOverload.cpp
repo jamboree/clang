@@ -1548,6 +1548,7 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
       FromType = Fn->getType();
       SCS.setFromType(FromType);
 
+      // Adjust the function prototype for designators.
       QualType UnqualToFunction = S.ExtractUnqualifiedFunctionType(ToType);
       if (const FunctionProtoType *Proto =
               UnqualToFunction->getAs<FunctionProtoType>()) {
@@ -1586,11 +1587,11 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
                "Non-address-of operator for overloaded function expression");
         FromType = S.Context.getPointerType(FromType);
       }
-
+      
       // Check that we've computed the proper type after overload resolution.
-      //assert(S.Context.hasSameType(
-      //  FromType,
-      //  S.FixOverloadedFunctionReference(From, AccessPair, Fn)->getType()));
+      assert(S.Context.hasSameType(
+        FromType,
+        S.FixOverloadedFunctionReference(From, AccessPair, Fn)->getType()));
     } else {
       return false;
     }

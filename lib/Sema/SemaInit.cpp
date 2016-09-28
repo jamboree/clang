@@ -3718,7 +3718,8 @@ ResolveOverloadedFunctionForReferenceBinding(Sema &S,
       Sequence.SetFailed(InitializationSequence::FK_AddressOfOverloadFailed);
       return true;
     }
-  } else if (auto *DRE = dyn_cast<DeclRefExpr>(Initializer)) {
+  } else if (auto *DRE =
+                 dyn_cast<DeclRefExpr>(Initializer->IgnoreParenCasts())) {
     if (auto *FD = dyn_cast<FunctionDecl>(DRE->getDecl())) {
       // Adjust the function prototype for designators.
       QualType UnqualToFunction =
