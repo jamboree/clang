@@ -3690,48 +3690,40 @@ ResolveOverloadedFunctionForReferenceBinding(Sema &S,
                                              QualType &UnqualifiedSourceType,
                                              QualType UnqualifiedTargetType,
                                              InitializationSequence &Sequence) {
+  FunctionDecl *Fn = nullptr;
   if (S.Context.getCanonicalType(UnqualifiedSourceType) ==
-        S.Context.OverloadTy) {
+      S.Context.OverloadTy) {
     DeclAccessPair Found;
     bool HadMultipleCandidates = false;
-    if (FunctionDecl *Fn
-        = S.ResolveAddressOfOverloadedFunction(Initializer,
-                                               UnqualifiedTargetType,
-                                               false, Found,
-                                               &HadMultipleCandidates)) {
+    if (Fn = S.ResolveAddressOfOverloadedFunction(
+            Initializer, UnqualifiedTargetType, false, Found,
+            &HadMultipleCandidates)) {
       Sequence.AddAddressOverloadResolutionStep(Fn, Found,
                                                 HadMultipleCandidates);
 
       SourceType = Fn->getType();
-
-      // Adjust the function prototype for designators.
-      QualType UnqualToFunction =
-          S.ExtractUnqualifiedFunctionType(UnqualifiedTargetType);
-      if (const FunctionProtoType *Proto =
-              UnqualToFunction->getAs<FunctionProtoType>()) {
-        if (Proto->hasDesignators())
-          SourceType = S.Context.getCanonicalDesigFunctionType(Fn);
-      }
-
-      UnqualifiedSourceType = SourceType.getUnqualifiedType();
     } else if (!UnqualifiedTargetType->isRecordType()) {
       Sequence.SetFailed(InitializationSequence::FK_AddressOfOverloadFailed);
       return true;
     }
-  } else if (auto *DRE =
-                 dyn_cast<DeclRefExpr>(Initializer->IgnoreParenCasts())) {
-    if (auto *FD = dyn_cast<FunctionDecl>(DRE->getDecl())) {
-      // Adjust the function prototype for designators.
-      QualType UnqualToFunction =
-          S.ExtractUnqualifiedFunctionType(UnqualifiedTargetType);
-      if (const FunctionProtoType *Proto =
-              UnqualToFunction->getAs<FunctionProtoType>()) {
-        if (Proto->hasDesignators()) {
-          SourceType = S.Context.getCanonicalDesigFunctionType(FD);
-          UnqualifiedSourceType = SourceType.getUnqualifiedType();
-        }
+  } else if (auto *DRE = dyn_cast<DeclRefExpr>(Initializer->IgnoreParenCasts()))
+    Fn = dyn_cast<FunctionDecl>(DRE->getDecl());
+
+  if (Fn) {
+    // Adjust the function prototype for designators.
+    QualType UnqualToFunction =
+        S.ExtractUnqualifiedFunctionType(UnqualifiedTargetType);
+    if (const FunctionProtoType *Proto =
+            UnqualToFunction->getAs<FunctionProtoType>()) {
+      if (Proto->hasDesignators()) {
+        QualType DesigFunctionType =
+            S.Context.getCanonicalDesigFunctionType(Fn);
+        if (DesigFunctionType.isNull())
+          return true;
+        SourceType = DesigFunctionType;
       }
     }
+    UnqualifiedSourceType = SourceType.getUnqualifiedType();
   }
   return false;
 }

@@ -4568,6 +4568,9 @@ def warn_typecheck_function_qualifiers_unspecified : Warning<
 def warn_typecheck_reference_qualifiers : Warning<
   "'%0' qualifier on reference type %1 has no effect">,
   InGroup<IgnoredQualifiers>;
+def warn_typecheck_designating_type_qualifiers : Warning<
+  "'%0' qualifier on designating type %1 has no effect">,
+  InGroup<IgnoredQualifiers>;
 def err_typecheck_invalid_restrict_not_pointer : Error<
   "restrict requires a pointer or reference (%0 is invalid)">;
 def err_typecheck_invalid_restrict_not_pointer_noarg : Error<
@@ -5098,6 +5101,8 @@ def err_illegal_decl_mempointer_in_nonclass : Error<
 def err_mempointer_in_nonclass_type : Error<
   "member pointer refers into non-class type %0">;
 def err_reference_to_void : Error<"cannot form a reference to 'void'">;
+def err_pointer_or_reference_to_designating_type : Error<
+  "cannot form a %select{pointer|reference}0 to designating type %1">;
 def err_nonfunction_block_type : Error<
   "block pointer to non-function type is invalid">;
 def err_return_block_has_expr : Error<"void block should not return a value">;

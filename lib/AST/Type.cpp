@@ -405,6 +405,12 @@ bool Type::isComplexIntegerType() const {
   return getAsComplexIntegerType();
 }
 
+bool Type::isStrictlyDesignatingType() const {
+  if (const DesignatingType *Desig = getAs<DesignatingType>())
+    return Desig->getDesigName().getAsIdentifierInfo() != nullptr;
+  return false;
+}
+
 const ComplexType *Type::getAsComplexIntegerType() const {
   if (const ComplexType *Complex = getAs<ComplexType>())
     if (Complex->getElementType()->isIntegerType())

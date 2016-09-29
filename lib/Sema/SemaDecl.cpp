@@ -6946,7 +6946,7 @@ void Sema::CheckVariableDeclarationType(VarDecl *NewVD) {
     NewVD->setTypeSourceInfo(FixedTInfo);
   }
 
-  if (T->isVoidType()) {
+  if (T->isVoidType() || T->isDesignatingType()) {
     // C++98 [dcl.stc]p5: The extern specifier can be applied only to the names
     //                    of objects and functions.
     if (NewVD->isThisDeclarationADefinition() || getLangOpts().CPlusPlus) {
@@ -10899,7 +10899,8 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
   QualType parmDeclType = TInfo->getType();
 
-  if (S->isFunctionDeclarationScope() && parmDeclType->isDesignatingType()) {
+  if (S->isFunctionDeclarationScope() &&
+      parmDeclType->isDesignatingType()) {
     Diag(D.getIdentifierLoc(), diag::err_var_or_ret_designating_type)
         << 0 << parmDeclType;
 
@@ -13595,7 +13596,7 @@ FieldDecl *Sema::CheckFieldDecl(DeclarationName Name, QualType T,
   }
 
   QualType EltTy = Context.getBaseElementType(T);
-  if (!EltTy->isDependentType()) {
+  if (!EltTy->isDependentType() || EltTy->isDesignatingType()) {
     if (RequireCompleteType(Loc, EltTy, diag::err_field_incomplete)) {
       // Fields of incomplete type force their record to be invalid.
       Record->setInvalidDecl();

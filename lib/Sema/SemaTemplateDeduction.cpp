@@ -3941,14 +3941,8 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
       CanQualType CanFunctionType =
           Context.getCanonicalType(Specialization->getType());
       CanQualType CanArgFunctionType =
-          Context.getCanonicalType(ArgFunctionType);
+          Context.getCanonicalNonDesigFunctionType(ArgFunctionType);
       if (!isSameOrCompatibleFunctionType(CanFunctionType, CanArgFunctionType))
-        return TDK_MiscellaneousDeductionFailure;
-
-      // Try again with designating version.
-      CanFunctionType = Context.getCanonicalDesigFunctionType(Specialization);
-      if (!FunctionType.isNull() &&
-          !isSameOrCompatibleFunctionType(CanFunctionType, CanArgFunctionType))
         return TDK_MiscellaneousDeductionFailure;
     } else if (!Context.hasSameType(Specialization->getType(), ArgFunctionType))
       return TDK_MiscellaneousDeductionFailure;

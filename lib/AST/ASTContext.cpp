@@ -4286,6 +4286,36 @@ CanQualType ASTContext::getCanonicalDesigFunctionType(
   return CanQualType::CreateUnsafe(Result);
 }
 
+CanQualType ASTContext::getCanonicalNonDesigFunctionType(QualType T) const {
+  const FunctionProtoType *Proto = T->getAs<FunctionProtoType>();
+  if (!Proto)
+    return getCanonicalType(T);
+
+  SmallVector<QualType, 16> CanonicalArgs;
+  CanonicalArgs.reserve(Proto->getNumParams());
+  bool AnyDesig = false;
+
+  for (QualType Parm : Proto->param_types()) {
+    if (const DesignatingType *Desig = Parm->getAs<DesignatingType>()) {
+      Parm = Desig->getMasterType();
+      AnyDesig = true;
+    }
+    CanonicalArgs.push_back(getCanonicalParamType(Parm));
+  }
+  if (!AnyDesig)
+    return getCanonicalType(T);
+
+  FunctionProtoType::ExtProtoInfo CanonicalEPI = Proto->getExtProtoInfo();
+  CanonicalEPI.HasTrailingReturn = false;
+  CanonicalEPI.ExceptionSpec = FunctionProtoType::ExceptionSpecInfo();
+
+  // Adjust the canonical function result type.
+  CanQualType CanResultTy =
+      getCanonicalFunctionResultType(Proto->getReturnType());
+  QualType Result = getFunctionType(CanResultTy, CanonicalArgs, CanonicalEPI);
+  return CanQualType::CreateUnsafe(Result);
+}
+
 QualType ASTContext::getUnqualifiedArrayType(QualType type,
                                              Qualifiers &quals) {
   SplitQualType splitType = type.getSplitUnqualifiedType();

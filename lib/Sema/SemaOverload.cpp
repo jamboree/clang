@@ -1538,24 +1538,37 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
   // array-to-pointer conversion, or function-to-pointer conversion
   // (C++ 4p1).
 
+  FunctionDecl *Fn = nullptr;
+  DeclAccessPair AccessPair;
   if (FromType == S.Context.OverloadTy) {
-    DeclAccessPair AccessPair;
-    if (FunctionDecl *Fn
-          = S.ResolveAddressOfOverloadedFunction(From, ToType, false,
-                                                 AccessPair)) {
-      // We were able to resolve the address of the overloaded function,
-      // so we can convert to the type of that function.
-      FromType = Fn->getType();
-      SCS.setFromType(FromType);
-
-      // Adjust the function prototype for designators.
-      QualType UnqualToFunction = S.ExtractUnqualifiedFunctionType(ToType);
-      if (const FunctionProtoType *Proto =
-              UnqualToFunction->getAs<FunctionProtoType>()) {
-        if (Proto->hasDesignators())
-          FromType = S.Context.getCanonicalDesigFunctionType(Fn);
+    Fn = S.ResolveAddressOfOverloadedFunction(From, ToType, false, AccessPair);
+    if (!Fn)
+      return false;
+    // We were able to resolve the address of the overloaded function,
+    // so we can convert to the type of that function.
+    FromType = Fn->getType();
+    SCS.setFromType(FromType);
+  } else {
+    Expr *E = From->IgnoreParenCasts();
+    if (UnaryOperator *UnOp = dyn_cast<UnaryOperator>(E))
+      if (UnOp->getOpcode() == UO_AddrOf)
+        E = UnOp->getSubExpr()->IgnoreParenCasts();
+    if (auto *DRE = dyn_cast<DeclRefExpr>(E))
+      Fn = dyn_cast<FunctionDecl>(DRE->getDecl());
+  }
+  if (Fn) {
+    // Adjust the function prototype for designators.
+    QualType UnqualToFunction = S.ExtractUnqualifiedFunctionType(ToType);
+    if (const FunctionProtoType *Proto =
+            UnqualToFunction->getAs<FunctionProtoType>()) {
+      if (Proto->hasDesignators()) {
+        FromType = S.Context.getCanonicalDesigFunctionType(Fn);
+        if (FromType.isNull())
+          return false;
       }
+    }
 
+    if (FromType->isFunctionType()) {
       // we can sometimes resolve &foo<int> regardless of ToType, so check
       // if the type matches (identity) or we are converting to bool
       if (!S.Context.hasSameUnqualifiedType(UnqualToFunction, FromType)) {
@@ -1570,32 +1583,30 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
       // Check if the "from" expression is taking the address of an overloaded
       // function and recompute the FromType accordingly. Take advantage of the
       // fact that non-static member functions *must* have such an address-of
-      // expression. 
+      // expression.
       CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(Fn);
       if (Method && !Method->isStatic()) {
         assert(isa<UnaryOperator>(From->IgnoreParens()) &&
                "Non-unary operator on non-static member address");
-        assert(cast<UnaryOperator>(From->IgnoreParens())->getOpcode()
-               == UO_AddrOf &&
+        assert(cast<UnaryOperator>(From->IgnoreParens())->getOpcode() ==
+                   UO_AddrOf &&
                "Non-address-of operator on non-static member address");
-        const Type *ClassType
-          = S.Context.getTypeDeclType(Method->getParent()).getTypePtr();
+        const Type *ClassType =
+            S.Context.getTypeDeclType(Method->getParent()).getTypePtr();
         FromType = S.Context.getMemberPointerType(FromType, ClassType);
       } else if (isa<UnaryOperator>(From->IgnoreParens())) {
         assert(cast<UnaryOperator>(From->IgnoreParens())->getOpcode() ==
-               UO_AddrOf &&
+                   UO_AddrOf &&
                "Non-address-of operator for overloaded function expression");
         FromType = S.Context.getPointerType(FromType);
       }
-      
       // Check that we've computed the proper type after overload resolution.
-      assert(S.Context.hasSameType(
-        FromType,
-        S.FixOverloadedFunctionReference(From, AccessPair, Fn)->getType()));
-    } else {
-      return false;
+      // assert(S.Context.hasSameType(
+      //  FromType,
+      //  S.FixOverloadedFunctionReference(From, AccessPair, Fn)->getType()));
     }
   }
+
   // Lvalue-to-rvalue conversion (C++11 4.1):
   //   A glvalue (3.10) of a non-function, non-array type T can
   //   be converted to a prvalue.
@@ -1644,18 +1655,9 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
     SCS.First = ICK_Function_To_Pointer;
 
     if (auto *DRE = dyn_cast<DeclRefExpr>(From->IgnoreParenCasts()))
-      if (auto *FD = dyn_cast<FunctionDecl>(DRE->getDecl())) {
+      if (auto *FD = dyn_cast<FunctionDecl>(DRE->getDecl()))
         if (!S.checkAddressOfFunctionIsAvailable(FD))
           return false;
-
-        // Adjust the function prototype for designators.
-        QualType UnqualToFunction = S.ExtractUnqualifiedFunctionType(ToType);
-        if (const FunctionProtoType *Proto =
-                UnqualToFunction->getAs<FunctionProtoType>()) {
-          if (Proto->hasDesignators())
-            FromType = S.Context.getCanonicalDesigFunctionType(FD);
-        }
-      }
 
     // An lvalue of function type T can be converted to an rvalue of
     // type "pointer to T." The result is a pointer to the
@@ -2235,16 +2237,16 @@ bool Sema::IsPointerConversion(Expr *From, QualType FromType, QualType ToType,
     return true;
   }
 
-  if (FromPointeeType->isFunctionProtoType()) {
-    if (const FunctionProtoType *ToProto =
-            ToPointeeType->getAs<FunctionProtoType>()) {
-      if (!ToProto->hasDesignators() &&
-          areCompatibleFunctionProtoTypes(ToPointeeType, FromPointeeType)) {
-        ConvertedType = ToType;
-        return true;
-      }
-    }
-  }
+  //if (FromPointeeType->isFunctionProtoType()) {
+  //  if (const FunctionProtoType *ToProto =
+  //          ToPointeeType->getAs<FunctionProtoType>()) {
+  //    if (!ToProto->hasDesignators() &&
+  //        areCompatibleFunctionProtoTypes(ToPointeeType, FromPointeeType)) {
+  //      ConvertedType = ToType;
+  //      return true;
+  //    }
+  //  }
+  //}
 
   // When we're overloading in C, we allow a special kind of pointer
   // conversion for compatible-but-not-identical pointee types.
@@ -10654,15 +10656,14 @@ private:
   bool candidateHasExactlyCorrectType(const FunctionDecl *FD) {
     QualType Discard;
     QualType FT = FD->getType();
-    if (Context.hasSameUnqualifiedType(TargetFunctionType, FT) ||
-        S.IsNoReturnConversion(FT, TargetFunctionType, Discard))
-      return true;
+    if (const FunctionProtoType *Proto =
+            TargetFunctionType->getAs<FunctionProtoType>())
+      if (Proto->hasDesignators()) {
+        FT = Context.getCanonicalDesigFunctionType(FD);
+        if (FT.isNull())
+          return false;
+      }
 
-    FT = Context.getCanonicalDesigFunctionType(FD);
-    if (FT.isNull())
-      return false;
-
-    // Try again with designating version.
     return Context.hasSameUnqualifiedType(TargetFunctionType, FT) ||
            S.IsNoReturnConversion(FT, TargetFunctionType, Discard);
   }
@@ -10754,7 +10755,7 @@ private:
     // This function template specicalization works.
     assert(S.isSameOrCompatibleFunctionType(
               Context.getCanonicalType(Specialization->getType()),
-              Context.getCanonicalType(TargetFunctionType)));
+              Context.getCanonicalNonDesigFunctionType(TargetFunctionType)));
 
     if (!S.checkAddressOfFunctionIsAvailable(Specialization))
       return false;

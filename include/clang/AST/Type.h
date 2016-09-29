@@ -1732,7 +1732,8 @@ public:
   bool isTemplateTypeParmType() const;          // C++ template type parameter
   bool isNullPtrType() const;                   // C++0x nullptr_t
   bool isAtomicType() const;                    // C11 _Atomic()
-  bool isDesignatingType() const;
+  bool isDesignatingType() const;               // T.N
+  bool isStrictlyDesignatingType() const;       // T.n where n cannot be null
 
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
   bool is##Id##Type() const;

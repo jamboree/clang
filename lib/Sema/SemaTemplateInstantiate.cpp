@@ -966,7 +966,8 @@ DeclarationNameInfo TemplateInstantiator::TransformDeclarationNameInfo(
                   NameInfo.getLoc());
           }
 
-          if (getSema().ArgumentPackSubstitutionIndex >= Arg.pack_size())
+          if (unsigned(getSema().ArgumentPackSubstitutionIndex) >=
+              Arg.pack_size())
             return NameInfo;
 
           Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
@@ -1121,7 +1122,8 @@ TemplateName TemplateInstantiator::TransformTemplateName(CXXScopeSpec &SS,
           return getSema().Context.getSubstTemplateTemplateParmPack(TTP, Arg);
         }
 
-        if (getSema().ArgumentPackSubstitutionIndex >= Arg.pack_size())
+        if (unsigned(getSema().ArgumentPackSubstitutionIndex) >=
+            Arg.pack_size())
           return Name;
 
         Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
@@ -1195,7 +1197,7 @@ TemplateInstantiator::TransformTemplateParmRefExpr(DeclRefExpr *E,
                                                                     Arg);
     }
 
-    if (getSema().ArgumentPackSubstitutionIndex >= Arg.pack_size())
+    if (unsigned(getSema().ArgumentPackSubstitutionIndex) >= Arg.pack_size())
       return E;
 
     Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
@@ -1461,7 +1463,7 @@ TemplateInstantiator::TransformTemplateTypeParmType(TypeLocBuilder &TLB,
         return Result;
       }
 
-      if (getSema().ArgumentPackSubstitutionIndex >= Arg.pack_size())
+      if (unsigned(getSema().ArgumentPackSubstitutionIndex) >= Arg.pack_size())
           goto ArgUnavailable;
 
       Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
@@ -1816,7 +1818,7 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
 
   NewParm->setHasInheritedDefaultArg(OldParm->hasInheritedDefaultArg());
 
-  NewParm->setDesignatable(OldParm->isDesignatable());
+  NewParm->setDesignatable(OldParm->isDesignatable() && NameInfo.getName());
 
   if (OldParm->isParameterPack() && !NumExpansions &&
       !NewParm->isParameterPack()) {

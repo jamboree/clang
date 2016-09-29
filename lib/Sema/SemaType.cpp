@@ -1679,7 +1679,7 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
     //   The effect of a cv-qualifier-seq in a function declarator is not the
     //   same as adding cv-qualification on top of the function type. In the
     //   latter case, the cv-qualifiers are ignored.
-    if (TypeQuals && Result->isFunctionType()) {
+    if (Result->isFunctionType()) {
       diagnoseAndRemoveTypeQualifiers(
           S, DS, TypeQuals, Result, DeclSpec::TQ_const | DeclSpec::TQ_volatile,
           S.getLangOpts().CPlusPlus
@@ -1697,11 +1697,18 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
     // There don't appear to be any other contexts in which a cv-qualified
     // reference type could be formed, so the 'ill-formed' clause here appears
     // to never happen.
-    if (TypeQuals && Result->isReferenceType()) {
+    if (Result->isReferenceType()) {
       diagnoseAndRemoveTypeQualifiers(
           S, DS, TypeQuals, Result,
           DeclSpec::TQ_const | DeclSpec::TQ_volatile | DeclSpec::TQ_atomic,
           diag::warn_typecheck_reference_qualifiers);
+    }
+
+    if (Result->isDesignatingType()) {
+      diagnoseAndRemoveTypeQualifiers(
+          S, DS, TypeQuals, Result,
+          DeclSpec::TQ_const | DeclSpec::TQ_volatile | DeclSpec::TQ_atomic,
+          diag::warn_typecheck_designating_type_qualifiers);
     }
 
     // C90 6.5.3 constraints: "The same type qualifier shall not appear more
@@ -1955,6 +1962,11 @@ QualType Sema::BuildPointerType(QualType T,
     return QualType();
   }
 
+  if (T->isDesignatingType()) {
+    Diag(Loc, diag::err_pointer_or_reference_to_designating_type) << 0 << T;
+    return QualType();
+  }
+
   if (checkQualifiedFunction(*this, T, Loc, QFK_Pointer))
     return QualType();
 
@@ -2014,6 +2026,11 @@ QualType Sema::BuildReferenceType(QualType T, bool SpelledAsLValue,
   //   is ill-formed.
   if (T->isVoidType()) {
     Diag(Loc, diag::err_reference_to_void);
+    return QualType();
+  }
+
+  if (T->isDesignatingType()) {
+    Diag(Loc, diag::err_pointer_or_reference_to_designating_type) << 1 << T;
     return QualType();
   }
 
@@ -2117,7 +2134,8 @@ QualType Sema::BuildArrayType(QualType T, ArrayType::ArraySizeModifier ASM,
       return QualType();
     }
 
-    if (T->isVoidType() || T->isIncompleteArrayType()) {
+    if (T->isVoidType() || T->isIncompleteArrayType() ||
+        T->isDesignatingType()) {
       Diag(Loc, diag::err_illegal_decl_array_incomplete_type) << T;
       return QualType();
     }
