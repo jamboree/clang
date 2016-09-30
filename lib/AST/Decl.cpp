@@ -2761,6 +2761,11 @@ void FunctionDecl::setParams(ASTContext &C,
   if (!NewParamInfo.empty()) {
     ParamInfo = new (C) ParmVarDecl*[NewParamInfo.size()];
     std::copy(NewParamInfo.begin(), NewParamInfo.end(), ParamInfo);
+    if (const FunctionProtoType *Proto = getType()->getAs<FunctionProtoType>())
+      DesigProto =
+          C.getCanonicalDesigFunctionType(Proto->getReturnType(), parameters(),
+                                          Proto->getExtProtoInfo())
+              ->getAs<FunctionProtoType>();
   }
 }
 

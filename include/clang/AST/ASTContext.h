@@ -1987,8 +1987,6 @@ public:
   /// pointers, and arrays decay one level into pointers.
   CanQualType getCanonicalParamType(QualType T) const;
 
-  CanQualType getCanonicalDesigFunctionType(const FunctionDecl *FD) const;
-
   CanQualType getCanonicalDesigFunctionType(
       QualType ResultTy, ArrayRef<ParmVarDecl *> ArgArray,
       const FunctionProtoType::ExtProtoInfo &EPI) const;

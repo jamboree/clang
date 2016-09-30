@@ -3561,9 +3561,6 @@ def err_ovl_deleted_object_call : Error<
 def note_ovl_surrogate_cand : Note<"conversion candidate of type %0">;
 def err_member_call_without_object : Error<
   "call to non-static member function without an object argument">;
-def note_ovl_surrogate_desig : Note<
-  "designated arguments cannot be used by surrogate "
-  "(implicit conversion to function pointer)">;
 
 // C++ Address of Overloaded Function
 def err_addr_ovl_no_viable : Error<
@@ -6590,10 +6587,6 @@ def err_protocheck_bad_argument_pos : Error<
   "%select{multiple arguments provided|missing argument}0 for %ordinal1 parameter">;
 def err_protocheck_argument_out_of_bounds : Error<
   "argument index %0 is out of bounds, max %1 parameter%s1">;
-
-def err_designated_arguments_indirect_callee : Error<
-  "designated arguments cannot be used by "
-  "%select{function pointer|member function pointer}0">;
 
 def err_arc_typecheck_convert_incompatible_pointer : Error<
   "incompatible pointer types passing retainable parameter of type %0"

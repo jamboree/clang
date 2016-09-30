@@ -5274,14 +5274,9 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
       if (!checkAddressOfFunctionIsAvailable(FD, /*Complain=*/true,
                                              Fn->getLocStart()))
         return ExprError();
-      if (auto Arg = AnyDesignated(ArgExprs)) {
-        Diag(Arg->getLocStart(), diag::err_designated_arguments_indirect_callee)
-            << 0 << Arg->getSourceRange();
-        return ExprError();
-      }
-    } else if (DesignateArgumentsForCall(FD, Fn, ArgExprs, MappedArgs))
+    }
+    if (DesignateArgumentsForCall(FD, Fn, ArgExprs, MappedArgs))
       return ExprError();
-
     if (!MappedArgs.empty()) {
       SyntacticArgs = ArgExprs;
       ArgExprs = MappedArgs;
@@ -5306,10 +5301,18 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
             << Attr->getCond()->getSourceRange() << Attr->getMessage();
       }
     }
-  } else if (auto Arg = AnyDesignated(ArgExprs)) {
-    Diag(Arg->getLocStart(), diag::err_designated_arguments_indirect_callee)
-        << 0 << Arg->getSourceRange();
-    return ExprError();
+  } else {
+    QualType FT = Fn->getType().IgnoreParens();
+    if (const PointerType *Indirect = FT->getAs<PointerType>())
+      FT = Indirect->getPointeeType();
+    if (const FunctionProtoType *Proto = FT->getAs<FunctionProtoType>()) {
+      if (DesignateArgumentsForCall(Proto, Fn, ArgExprs, MappedArgs))
+        return ExprError();
+      if (!MappedArgs.empty()) {
+        SyntacticArgs = ArgExprs;
+        ArgExprs = MappedArgs;
+      }
+    }
   }
 
   return BuildResolvedCallExpr(Fn, NDecl, LParenLoc, ArgExprs, SyntacticArgs,
@@ -5419,7 +5422,9 @@ Sema::BuildResolvedCallExpr(Expr *Fn, NamedDecl *NDecl,
   if (const PointerType *PT = Fn->getType()->getAs<PointerType>()) {
     // C99 6.5.2.2p1 - "The expression that denotes the called function shall
     // have type pointer to function".
-    FuncT = PT->getPointeeType()->getAs<FunctionType>();
+    QualType NonDesig =
+        Context.getCanonicalNonDesigFunctionType(PT->getPointeeType());
+    FuncT = NonDesig->getAs<FunctionType>();
     if (!FuncT)
       return ExprError(Diag(LParenLoc, diag::err_typecheck_call_not_function)
                          << Fn->getType() << Fn->getSourceRange());

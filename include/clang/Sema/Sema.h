@@ -2530,10 +2530,10 @@ public:
   void AddSurrogateCandidate(CXXConversionDecl *Conversion,
                              DeclAccessPair FoundDecl,
                              CXXRecordDecl *ActingContext,
-                             const FunctionProtoType *Proto,
-                             Expr *Object, ArrayRef<Expr *> Args,
-                             OverloadCandidateSet& CandidateSet,
-                             bool HasDesig);
+                             const FunctionProtoType *Proto, Expr *Object,
+                             ArrayRef<Expr *> Args,
+                             SmallVectorImpl<Expr *> &MappedArgs,
+                             OverloadCandidateSet &CandidateSet, bool HasDesig);
   void AddMemberOperatorCandidates(OverloadedOperatorKind Op,
                                    SourceLocation OpLoc, ArrayRef<Expr *> Args,
                                    OverloadCandidateSet& CandidateSet,
@@ -2560,6 +2560,9 @@ public:
       llvm::function_ref<unsigned(unsigned, const DesignationFailureInfo &)>
   DesignationFailureSink;
 
+  typedef llvm::PointerUnion<const FunctionDecl *, const FunctionProtoType *>
+      FunctionDeclOrProtoType;
+
   /// This handles arg arity checking and designated arg mapping, failure is
   /// reported via DesignationFailureSink, 0 is returned on success.
   /// If HasDesig is false, Args and MappedArgs are untouched, otherwise, 
@@ -2574,17 +2577,15 @@ public:
   ///
   /// Note that ovl_fail_missing_argument is not handled here and needs a
   /// separate check.
-  unsigned DesignateArguments(FunctionDecl *Function,
-                              unsigned NumParams,
-                              unsigned MinRequiredArgs,
-                              ArrayRef<Expr *>& Args,
+  unsigned DesignateArguments(const FunctionProtoType *Proto,
+                              unsigned NumParams, unsigned MinRequiredArgs,
+                              ArrayRef<Expr *> &Args,
                               SmallVectorImpl<Expr *> &MappedArgs,
-                              DesignationFailureSink Sink,
-                              bool HasDesig,
+                              DesignationFailureSink Sink, bool HasDesig,
                               bool PartialOverloading = false);
 
-  bool DesignateArgumentsForCall(FunctionDecl *Function, Expr *CallExpr,
-                                 MultiExprArg Args,
+  bool DesignateArgumentsForCall(FunctionDeclOrProtoType Function,
+                                 Expr *CallExpr, MultiExprArg Args,
                                  SmallVectorImpl<Expr *> &MappedArgs);
 
   // Emit as a 'note' the specific overload candidate

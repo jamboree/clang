@@ -1579,36 +1579,6 @@ public:
     TK_DependentFunctionTemplateSpecialization
   };
 
-  /// DesigParamFinder - A one-time finder used to find designated param index,
-  /// `Find` should not be called with the same `Id` more than once.
-  class DesigParamFinder {
-    llvm::SmallDenseMap<IdentifierInfo *, unsigned> Cache;
-    ParmVarDecl *const *ParamDecls;
-    unsigned Index;
-
-  public:
-    const unsigned End;
-
-    explicit DesigParamFinder(ArrayRef<ParmVarDecl *> ParamDecls)
-        : ParamDecls(ParamDecls.data()), Index(0), End(ParamDecls.size()) {}
-
-    unsigned Find(IdentifierInfo *Id) {
-      auto I = Cache.find(Id);
-      if (I != Cache.end())
-        return I->second;
-      for (; Index != End; ++Index) {
-        auto Param = ParamDecls[Index];
-        if (Param->isDesignatable()) {
-          auto PId = Param->getIdentifier();
-          if (Id == PId)
-            return Index++;
-          Cache[PId] = Index;
-        }
-      }
-      return End;
-    }
-  };
-
 private:
   /// ParamInfo - new[]'d array of pointers to VarDecls for the formal
   /// parameters of this function.  This is null if a prototype or if there are
@@ -1621,6 +1591,8 @@ private:
   ArrayRef<NamedDecl *> DeclsInPrototypeScope;
 
   LazyDeclStmtPtr Body;
+
+  const FunctionProtoType *DesigProto;
 
   // FIXME: This can be packed into the bitfields in DeclContext.
   // NOTE: VC++ packs bitfields poorly if the types differ.
@@ -1723,7 +1695,7 @@ protected:
                      StartLoc),
       DeclContext(DK),
       redeclarable_base(C),
-      ParamInfo(nullptr), Body(),
+      ParamInfo(nullptr), Body(), DesigProto(),
       SClass(S),
       IsInline(isInlineSpecified), IsInlineSpecified(isInlineSpecified),
       IsVirtualAsWritten(false), IsPure(false), HasInheritedPrototype(false),
@@ -2047,6 +2019,8 @@ public:
   void setParams(ArrayRef<ParmVarDecl *> NewParamInfo) {
     setParams(getASTContext(), NewParamInfo);
   }
+
+  const FunctionProtoType *getDesigProtoType() const { return DesigProto; }
 
   ArrayRef<NamedDecl *> getDeclsInPrototypeScope() const {
     return DeclsInPrototypeScope;

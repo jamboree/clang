@@ -4248,16 +4248,6 @@ CanQualType ASTContext::getCanonicalParamType(QualType T) const {
   return CanQualType::CreateUnsafe(Result);
 }
 
-CanQualType
-ASTContext::getCanonicalDesigFunctionType(const FunctionDecl *FD) const {
-  const FunctionProtoType *Proto = FD->getType()->getAs<FunctionProtoType>();
-  if (!Proto)
-    return CanQualType();
-
-  return getCanonicalDesigFunctionType(Proto->getReturnType(), FD->parameters(),
-                                       Proto->getExtProtoInfo());
-}
-
 CanQualType ASTContext::getCanonicalDesigFunctionType(
     QualType ResultTy, ArrayRef<ParmVarDecl *> ArgArray,
     const FunctionProtoType::ExtProtoInfo &EPI) const {

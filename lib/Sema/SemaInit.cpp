@@ -3716,8 +3716,7 @@ ResolveOverloadedFunctionForReferenceBinding(Sema &S,
     if (const FunctionProtoType *Proto =
             UnqualToFunction->getAs<FunctionProtoType>()) {
       if (Proto->hasDesignators()) {
-        QualType DesigFunctionType =
-            S.Context.getCanonicalDesigFunctionType(Fn);
+        QualType DesigFunctionType(Fn->getDesigProtoType(), 0);
         if (DesigFunctionType.isNull())
           return true;
         SourceType = DesigFunctionType;
