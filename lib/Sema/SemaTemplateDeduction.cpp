@@ -3120,7 +3120,7 @@ static QualType GetTypeOfFunction(Sema &S, const OverloadExpr::FindResult &R,
 static QualType
 ResolveOverloadForDeduction(Sema &S, TemplateParameterList *TemplateParams,
                             Expr *Arg, QualType ParamType,
-                            bool ParamWasReference) {
+                            bool ParamWasReference, FunctionDecl *&FD) {
 
   OverloadExpr::FindResult R = OverloadExpr::find(Arg);
 
@@ -3211,6 +3211,7 @@ ResolveOverloadForDeduction(Sema &S, TemplateParameterList *TemplateParams,
     if (Result) continue;
     if (!Match.isNull()) return QualType();
     Match = ArgType;
+    FD = Fn;
   }
 
   return Match;
@@ -3240,15 +3241,35 @@ static bool AdjustFunctionParmAndArgTypesForDeduction(Sema &S,
   if (ParamRefType)
     ParamType = ParamRefType->getPointeeType();
 
+  FunctionDecl *Fn = nullptr;
   // Overload sets usually make this parameter an undeduced context,
   // but there are sometimes special circumstances.  Typically
   // involving a template-id-expr.
   if (ArgType == S.Context.OverloadTy) {
     ArgType = ResolveOverloadForDeduction(S, TemplateParams,
                                           Arg, ParamType,
-                                          ParamRefType != nullptr);
+                                          ParamRefType != nullptr, Fn);
     if (ArgType.isNull())
       return true;
+  } else {
+    Expr *E = Arg->IgnoreParenCasts();
+    if (UnaryOperator *UnOp = dyn_cast<UnaryOperator>(E))
+      if (UnOp->getOpcode() == UO_AddrOf)
+        E = UnOp->getSubExpr()->IgnoreParenCasts();
+    if (auto *DRE = dyn_cast<DeclRefExpr>(E))
+      Fn = dyn_cast<FunctionDecl>(DRE->getDecl());
+  }
+  if (Fn) {
+    // Adjust the function prototype for designators.
+    QualType FT = ParamType.IgnoreParens();
+    if (const PointerType *Indirect = FT->getAs<PointerType>())
+      FT = Indirect->getPointeeType();
+    if (const FunctionProtoType *Proto = FT->getAs<FunctionProtoType>()) {
+      if (Proto->hasDesignators()) {
+        if (const FunctionProtoType *DesigProto = Fn->getDesigProtoType())
+          ArgType = QualType(DesigProto, 0);
+      }
+    }
   }
 
   if (ParamRefType) {
