@@ -4378,14 +4378,26 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
   QualType T1 = DeclType->getAs<ReferenceType>()->getPointeeType();
   QualType T2 = Init->getType();
 
+  FunctionDecl *Fn = nullptr;
   // If the initializer is the address of an overloaded function, try
   // to resolve the overloaded function. If all goes well, T2 is the
   // type of the resulting function.
   if (S.Context.getCanonicalType(T2) == S.Context.OverloadTy) {
     DeclAccessPair Found;
-    if (FunctionDecl *Fn = S.ResolveAddressOfOverloadedFunction(Init, DeclType,
+    if (Fn = S.ResolveAddressOfOverloadedFunction(Init, DeclType,
                                                                 false, Found))
       T2 = Fn->getType();
+  } else if (auto *DRE = dyn_cast<DeclRefExpr>(Init->IgnoreParenCasts()))
+    Fn = dyn_cast<FunctionDecl>(DRE->getDecl());
+
+  if (Fn) {
+    // Adjust the function prototype for designators.
+    if (const FunctionProtoType *Proto = T1->getAs<FunctionProtoType>()) {
+      if (Proto->hasDesignators()) {
+        if (const FunctionProtoType *DesigProto = Fn->getDesigProtoType())
+          T2 = QualType(DesigProto, 0);
+      }
+    }
   }
 
   // Compute some basic properties of the types and the initializer.
