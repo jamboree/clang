@@ -1104,18 +1104,9 @@ static TryCastResult TryStaticCast(Sema &Self, ExprResult &SrcExpr,
         Kind = CK_AnyPointerToBlockPointerCast;
         return TC_Success;
       }
-    } else if (SrcPointee->isFunctionProtoType()) {
-      if (const PointerType *DestPointer = DestType->getAs<PointerType>()) {
-        QualType DestPointee = DestPointer->getPointeeType();
-        if (DestPointee->isFunctionProtoType()) {
-          if (Self.areCompatibleFunctionProtoTypes(SrcPointee, DestPointee)) {
-            Kind = CK_NoOp;
-            return TC_Success;
-          }
-        }
-      }
     }
   }
+
   // Allow arbitray objective-c pointer conversion with static casts.
   if (SrcType->isObjCObjectPointerType() &&
       DestType->isObjCObjectPointerType()) {
@@ -1276,6 +1267,20 @@ TryStaticDowncast(Sema &Self, CanQualType SrcType, CanQualType DestType,
   if (!Self.isCompleteType(OpRange.getBegin(), SrcType) ||
       !Self.isCompleteType(OpRange.getBegin(), DestType))
     return TC_NotApplicable;
+
+  // FunctionProtoType downcast: R(T) -> R(T.a)
+  if (const FunctionProtoType *SrcProto = SrcType->getAs<FunctionProtoType>()) {
+    if (const FunctionProtoType *DestProto =
+            DestType->getAs<FunctionProtoType>()) {
+      if (DestProto->hasDesignators() && !SrcProto->hasDesignators()) {
+        if (Self.Context.getCanonicalNonDesigFunctionType(DestType) ==
+            SrcType) {
+          Kind = CK_NoOp;
+          return TC_Success;
+        }
+      }
+    }
+  }
 
   // Downcast can only happen in class hierarchies, so we need classes.
   if (!DestType->getAs<RecordType>() || !SrcType->getAs<RecordType>()) {
