@@ -4306,6 +4306,16 @@ CanQualType ASTContext::getCanonicalNonDesigFunctionType(QualType T) const {
   return CanQualType::CreateUnsafe(Result);
 }
 
+bool ASTContext::isFunctionProtoDesigStrip(QualType Src, QualType Dest) const {
+  if (const FunctionProtoType *DestProto = Dest->getAs<FunctionProtoType>()) {
+    if (!DestProto->hasDesignators()) {
+      if (getCanonicalNonDesigFunctionType(Src) == getCanonicalType(Dest))
+        return true;
+    }
+  }
+  return false;
+}
+
 QualType ASTContext::getUnqualifiedArrayType(QualType type,
                                              Qualifiers &quals) {
   SplitQualType splitType = type.getSplitUnqualifiedType();

@@ -2240,19 +2240,9 @@ bool Sema::IsPointerConversion(Expr *From, QualType FromType, QualType ToType,
   }
 
   // R(T.a) -> R(T)
-  if (FromPointeeType->isFunctionProtoType()) {
-    if (const FunctionProtoType *ToProto =
-            ToPointeeType->getAs<FunctionProtoType>()) {
-      if (!ToProto->hasDesignators()) {
-        ToPointeeType = Context.getCanonicalType(ToPointeeType);
-        FromPointeeType =
-            Context.getCanonicalNonDesigFunctionType(FromPointeeType);
-        if (ToPointeeType == FromPointeeType) {
-          ConvertedType = ToType;
-          return true;
-        }
-      }
-    }
+  if (Context.isFunctionProtoDesigStrip(FromPointeeType, ToPointeeType)) {
+    ConvertedType = ToType;
+    return true;
   }
 
   // When we're overloading in C, we allow a special kind of pointer
@@ -4157,19 +4147,6 @@ static bool isTypeValid(QualType T) {
   return true;
 }
 
-static bool isFunctionProtoDesigStrip(ASTContext &C, QualType Src,
-                                      QualType Dest) {
-  if (const FunctionProtoType *SrcProto = Src->getAs<FunctionProtoType>()) {
-    if (const FunctionProtoType *DestProto = Dest->getAs<FunctionProtoType>()) {
-      if (!DestProto->hasDesignators() && SrcProto->hasDesignators()) {
-        if (C.getCanonicalNonDesigFunctionType(Src) == Dest)
-          return true;
-      }
-    }
-  }
-  return false;
-}
-
 /// CompareReferenceRelationship - Compare the two types T1 and T2 to
 /// determine whether they are reference-related,
 /// reference-compatible, reference-compatible with added
@@ -4210,7 +4187,7 @@ Sema::CompareReferenceRelationship(SourceLocation Loc,
            UnqualT2->isObjCObjectOrInterfaceType() &&
            Context.canBindObjCObjectType(UnqualT1, UnqualT2))
     ObjCConversion = true;
-  else if (isFunctionProtoDesigStrip(Context, UnqualT2, UnqualT1)) {
+  else if (Context.isFunctionProtoDesigStrip(UnqualT2, UnqualT1)) {
     // Nothing to do.
   } else
     return Ref_Incompatible;

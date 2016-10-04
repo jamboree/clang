@@ -1263,24 +1263,16 @@ TryStaticDowncast(Sema &Self, CanQualType SrcType, CanQualType DestType,
                   bool CStyle, SourceRange OpRange, QualType OrigSrcType,
                   QualType OrigDestType, unsigned &msg, 
                   CastKind &Kind, CXXCastPath &BasePath) {
+  // FunctionProtoType downcast: R(T) -> R(T.a)
+  if (Self.Context.isFunctionProtoDesigStrip(DestType, SrcType)) {
+    Kind = CK_NoOp;
+    return TC_Success;
+  }
+
   // We can only work with complete types. But don't complain if it doesn't work
   if (!Self.isCompleteType(OpRange.getBegin(), SrcType) ||
       !Self.isCompleteType(OpRange.getBegin(), DestType))
     return TC_NotApplicable;
-
-  // FunctionProtoType downcast: R(T) -> R(T.a)
-  if (const FunctionProtoType *SrcProto = SrcType->getAs<FunctionProtoType>()) {
-    if (const FunctionProtoType *DestProto =
-            DestType->getAs<FunctionProtoType>()) {
-      if (DestProto->hasDesignators() && !SrcProto->hasDesignators()) {
-        if (Self.Context.getCanonicalNonDesigFunctionType(DestType) ==
-            SrcType) {
-          Kind = CK_NoOp;
-          return TC_Success;
-        }
-      }
-    }
-  }
 
   // Downcast can only happen in class hierarchies, so we need classes.
   if (!DestType->getAs<RecordType>() || !SrcType->getAs<RecordType>()) {
