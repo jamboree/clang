@@ -810,6 +810,7 @@ public:
     CXXUsingDirective,
     CXXTemplatedName,
     SubstTemplateDeclNameParmPack,
+    SubstUnnamed,
     NUM_EXTRA_KINDS
   };
 

@@ -2653,6 +2653,8 @@ public:
                                             DeclAccessPair FoundDecl,
                                             FunctionDecl *Fn);
 
+  void FixProtoDesigForFunctionReference(Expr *E, QualType ToType);
+
   void AddOverloadedCallCandidates(UnresolvedLookupExpr *ULE,
                                    ArrayRef<Expr *> Args,
                                    OverloadCandidateSet &CandidateSet,
@@ -8962,11 +8964,16 @@ public:
     Ref_Compatible
   };
 
+  enum ReferenceCastFlag {
+    RCF_DerivedToBase = 0x01,
+    RCF_ObjCConversion = 0x02,
+    RCF_ObjCLifetimeConversion = 0x04,
+    RCF_StripFunctionProtoDesig = 0x08
+  };
+
   ReferenceCompareResult CompareReferenceRelationship(SourceLocation Loc,
                                                       QualType T1, QualType T2,
-                                                      bool &DerivedToBase,
-                                                      bool &ObjCConversion,
-                                                bool &ObjCLifetimeConversion);
+                                                      unsigned &Flags);
 
   ExprResult checkUnknownAnyCast(SourceRange TypeRange, QualType CastType,
                                  Expr *CastExpr, CastKind &CastKind,

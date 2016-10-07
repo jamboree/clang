@@ -3541,6 +3541,7 @@ TreeTransform<Derived>
   case DeclarationName::CXXOperatorName:
   case DeclarationName::CXXLiteralOperatorName:
   case DeclarationName::CXXUsingDirective:
+  case DeclarationName::SubstUnnamed:
     return NameInfo;
 
   case DeclarationName::CXXConstructorName:

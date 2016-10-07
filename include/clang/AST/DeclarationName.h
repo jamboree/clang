@@ -39,6 +39,7 @@ namespace clang {
   class UsingDirectiveDecl;
   class TemplateDeclNameParmDecl;
   class SubstTemplateDeclNameParmPackStorage;
+  class SubstUnnamedStorage;
   class TemplateArgument;
 
   template <typename> class CanQual;
@@ -65,9 +66,10 @@ public:
     CXXLiteralOperatorName,
     CXXUsingDirective,
     CXXTemplatedName,
-    SubstTemplateDeclNameParmPack
+    SubstTemplateDeclNameParmPack,
+    SubstUnnamed
   };
-  static const unsigned NumNameKinds = CXXTemplatedName + 1;
+  static const unsigned NumNameKinds = SubstUnnamed + 1;
 
 private:
   /// StoredNameKind - The kind of name that is actually stored in the
@@ -197,7 +199,13 @@ public:
   DeclarationName(SubstTemplateDeclNameParmPackStorage *Name)
       : Ptr(reinterpret_cast<uintptr_t>(Name)) {
     assert((Ptr & PtrMask) == 0 &&
-           "Improperly aligned CXXTemplateDeclNameParmName");
+           "Improperly aligned SubstTemplateDeclNameParmPackStorage");
+    Ptr |= StoredDeclarationNameExtra;
+  }
+
+  DeclarationName(SubstUnnamedStorage *Name)
+      : Ptr(reinterpret_cast<uintptr_t>(Name)) {
+    assert((Ptr & PtrMask) == 0 && "Improperly aligned SubstUnnamedStorage");
     Ptr |= StoredDeclarationNameExtra;
   }
 
@@ -273,6 +281,12 @@ public:
     if (getNameKind() == SubstTemplateDeclNameParmPack)
       return reinterpret_cast<SubstTemplateDeclNameParmPackStorage *>(Ptr &
                                                                       ~PtrMask);
+    return nullptr;
+  }
+
+  SubstUnnamedStorage *getAsSubstUnnamed() const {
+    if (getNameKind() == SubstUnnamed)
+      return reinterpret_cast<SubstUnnamedStorage *>(Ptr & ~PtrMask);
     return nullptr;
   }
 
@@ -482,6 +496,30 @@ public:
                       const TemplateArgument &ArgPack);
 };
 
+class SubstUnnamedStorage : public DeclarationNameExtra,
+                            public llvm::FoldingSetNode {
+  unsigned Depth;
+  unsigned Index;
+
+public:
+  SubstUnnamedStorage(unsigned Depth, unsigned Index)
+      : Depth(Depth), Index(Index) {
+    ExtraKindOrNumArgs = SubstUnnamed;
+  }
+
+  unsigned getDepth() const { return Depth; }
+
+  unsigned getIndex() const { return Index; }
+
+  void Profile(llvm::FoldingSetNodeID &ID) { Profile(ID, Depth, Index); }
+
+  static void Profile(llvm::FoldingSetNodeID &ID, unsigned Depth,
+                      unsigned Index) {
+    ID.AddInteger(Depth);
+    ID.AddInteger(Index);
+  }
+};
+
 /// DeclarationNameTable - Used to store and retrieve DeclarationName
 /// instances for the various kinds of declaration names, e.g., normal
 /// identifiers, C++ constructor names, etc. This class contains
@@ -494,6 +532,7 @@ class DeclarationNameTable {
   CXXOperatorIdName *CXXOperatorNames; // Operator names
   void *CXXLiteralOperatorNames; // Actually a CXXOperatorIdName*
   void *CXXTemplatedNames; // FoldingSet<CXXTemplateDeclNameParmName> *
+  void *SubstUnnameds; // FoldingSet<SubstUnnamedStorage> *
 
   DeclarationNameTable(const DeclarationNameTable&) = delete;
   void operator=(const DeclarationNameTable&) = delete;
@@ -538,6 +577,8 @@ public:
   DeclarationName
   getCXXTemplatedName(unsigned Depth, unsigned Index, bool ParameterPack,
                       TemplateDeclNameParmDecl *TDPDecl = nullptr);
+
+  DeclarationName getSubstUnnamed(unsigned Depth, unsigned Index);
 };
 
 /// DeclarationNameLoc - Additional source/type location info

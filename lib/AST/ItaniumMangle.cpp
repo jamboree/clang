@@ -490,6 +490,7 @@ private:
   void mangleSourceNameWithAbiTags(
       const NamedDecl *ND, const AbiTagList *AdditionalAbiTags = nullptr);
   void mangleDeclName(DeclarationName Name);
+  void mangleSubstUnnamed(unsigned D, unsigned P);
   void mangleLocalName(const Decl *D,
                        const AbiTagList *AdditionalAbiTags);
   void mangleBlockForPrefix(const BlockDecl *Block);
@@ -634,9 +635,26 @@ void CXXNameMangler::mangleDeclName(DeclarationName Name) {
   case DeclarationName::CXXTemplatedName:
     mangleTemplateParameter(Name.getCXXTemplatedNameParmDecl()->getIndex());
     break;
+  case DeclarationName::SubstUnnamed: {
+    const SubstUnnamedStorage *Subst = Name.getAsSubstUnnamed();
+    mangleSubstUnnamed(Subst->getDepth(), Subst->getIndex());
+    break;
+  }
   default:
     llvm_unreachable("Can't mangle this declname!");
   }
+}
+
+void CXXNameMangler::mangleSubstUnnamed(unsigned D, unsigned P) {
+  if (D == 0)
+    Out << "X_";
+  else
+    Out << 'X' << (D - 1) << '_';
+
+  if (P == 0)
+    Out << "_";
+  else
+    Out << (P - 1) << '_';
 }
 
 void CXXNameMangler::mangle(const NamedDecl *D) {
@@ -1187,6 +1205,8 @@ void CXXNameMangler::mangleUnresolvedName(NestedNameSpecifier *qualifier,
     case DeclarationName::CXXTemplatedName:
       mangleTemplateParameter(name.getCXXTemplatedNameParmDecl()->getIndex());
       break;
+    case DeclarationName::SubstUnnamed:
+      llvm_unreachable("Can't mangle a unnamed name here!");
     case DeclarationName::CXXConstructorName:
       llvm_unreachable("Can't mangle a constructor name!");
     case DeclarationName::CXXUsingDirective:
@@ -1395,6 +1415,13 @@ void CXXNameMangler::mangleUnqualifiedName(const NamedDecl *ND,
     mangleTemplateParameter(Name.getCXXTemplatedNameParmDecl()->getIndex());
     writeAbiTags(ND, AdditionalAbiTags);
     break;
+
+  case DeclarationName::SubstUnnamed: {
+    const SubstUnnamedStorage *Subst = Name.getAsSubstUnnamed();
+    mangleSubstUnnamed(Subst->getDepth(), Subst->getIndex());
+    writeAbiTags(ND, AdditionalAbiTags);
+    break;
+  }
   }
 }
 
@@ -1965,6 +1992,7 @@ void CXXNameMangler::mangleOperatorName(DeclarationName Name, unsigned Arity) {
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::ObjCOneArgSelector:
   case DeclarationName::ObjCZeroArgSelector:
+  case DeclarationName::SubstUnnamed:
     llvm_unreachable("Not an operator name");
 
   case DeclarationName::CXXConversionFunctionName:

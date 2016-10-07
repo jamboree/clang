@@ -139,6 +139,7 @@ int DeclarationName::compare(DeclarationName LHS, DeclarationName RHS) {
                       RHS.getAsCXXTemplateDeclNameParmName());
 
   case DeclarationName::SubstTemplateDeclNameParmPack:
+  case DeclarationName::SubstUnnamed:
     // FIXME: is this ok?
     return 0;
   }
@@ -242,6 +243,9 @@ void DeclarationName::print(raw_ostream &OS, const PrintingPolicy &Policy) {
       OS << "declname-parameter-" << TDP->getDepth() << '-' << TDP->getIndex();
     return;
   }
+  case DeclarationName::SubstUnnamed:
+    OS << "?";
+    return;
   }
 
   llvm_unreachable("Unexpected declaration name kind");
@@ -283,6 +287,9 @@ DeclarationName::NameKind DeclarationName::getNameKind() const {
 
     case DeclarationNameExtra::SubstTemplateDeclNameParmPack:
       return SubstTemplateDeclNameParmPack;
+
+    case DeclarationName::SubstUnnamed:
+      return SubstUnnamed;
 
     default:
       // Check if we have one of the CXXOperator* enumeration values.
@@ -439,10 +446,13 @@ DeclarationNameTable::~DeclarationNameTable() {
   llvm::FoldingSet<CXXTemplateDeclNameParmName> *TemplatedNames =
       static_cast<llvm::FoldingSet<CXXTemplateDeclNameParmName> *>(
           CXXTemplatedNames);
+  llvm::FoldingSet<SubstUnnamedStorage> *NoNames =
+      static_cast<llvm::FoldingSet<SubstUnnamedStorage> *>(SubstUnnameds);
 
   delete SpecialNames;
   delete LiteralNames;
   delete TemplatedNames;
+  delete NoNames;
 }
 
 DeclarationName DeclarationNameTable::getCXXConstructorName(CanQualType Ty) {
@@ -573,6 +583,27 @@ DeclarationNameTable::getCXXTemplatedName(unsigned Depth, unsigned Index,
   return DeclarationName(NameParm);
 }
 
+DeclarationName DeclarationNameTable::getSubstUnnamed(unsigned Depth,
+                                                      unsigned Index) {
+  llvm::FoldingSet<SubstUnnamedStorage> *NoNames =
+      static_cast<llvm::FoldingSet<SubstUnnamedStorage> *>(SubstUnnameds);
+
+  llvm::FoldingSetNodeID ID;
+  SubstUnnamedStorage::Profile(ID, Depth, Index);
+
+  void *InsertPos = nullptr;
+  SubstUnnamedStorage *NameParm = NoNames->FindNodeOrInsertPos(ID, InsertPos);
+
+  if (NameParm)
+    return DeclarationName(NameParm);
+
+  NameParm = new (Ctx) SubstUnnamedStorage(Depth, Index);
+  NameParm->ExtraKindOrNumArgs = DeclarationNameExtra::CXXTemplatedName;
+
+  NoNames->InsertNode(NameParm, InsertPos);
+  return DeclarationName(NameParm);
+}
+
 DeclarationNameLoc::DeclarationNameLoc(DeclarationName Name) {
   switch (Name.getNameKind()) {
   case DeclarationName::Identifier:
@@ -597,6 +628,7 @@ DeclarationNameLoc::DeclarationNameLoc(DeclarationName Name) {
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXTemplatedName:
   case DeclarationName::SubstTemplateDeclNameParmPack:
+  case DeclarationName::SubstUnnamed:
     break;
   }
 }
@@ -610,6 +642,7 @@ bool DeclarationNameInfo::containsUnexpandedParameterPack() const {
   case DeclarationName::CXXOperatorName:
   case DeclarationName::CXXLiteralOperatorName:
   case DeclarationName::CXXUsingDirective:
+  case DeclarationName::SubstUnnamed:
     return false;
 
   case DeclarationName::CXXConstructorName:
@@ -638,6 +671,7 @@ bool DeclarationNameInfo::isInstantiationDependent() const {
   case DeclarationName::CXXOperatorName:
   case DeclarationName::CXXLiteralOperatorName:
   case DeclarationName::CXXUsingDirective:
+  case DeclarationName::SubstUnnamed:
     return false;
     
   case DeclarationName::CXXConstructorName:
@@ -672,6 +706,7 @@ void DeclarationNameInfo::printName(raw_ostream &OS) const {
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXTemplatedName:
   case DeclarationName::SubstTemplateDeclNameParmPack:
+  case DeclarationName::SubstUnnamed:
     OS << Name;
     return;
 
@@ -724,6 +759,7 @@ SourceLocation DeclarationNameInfo::getEndLoc() const {
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXTemplatedName:
   case DeclarationName::SubstTemplateDeclNameParmPack:
+  case DeclarationName::SubstUnnamed:
     return NameLoc;
   }
   llvm_unreachable("Unexpected declaration name kind");

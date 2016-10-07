@@ -967,6 +967,7 @@ ASTDeclContextNameLookupTrait::ReadKey(const unsigned char *d, unsigned) {
   case DeclarationName::CXXConversionFunctionName:
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXTemplatedName:
+  case DeclarationName::SubstUnnamed:
     Data = 0;
     break;
   }

@@ -3205,7 +3205,8 @@ private:
   }
 
   FunctionProtoType(QualType result, ArrayRef<QualType> params,
-                    QualType canonical, const ExtProtoInfo &epi);
+                    QualType canonical, QualType nonDesig,
+                    const ExtProtoInfo &epi);
 
   /// The number of parameters this function has, not counting '...'.
   unsigned NumParams : 15;
@@ -3224,6 +3225,9 @@ private:
 
   /// Whether this function has a trailing return type.
   unsigned HasTrailingReturn : 1;
+
+  /// Whether this function has designators.
+  unsigned HasDesignators : 1;
 
   // ParamInfo - There is an variable size array after the class in memory that
   // holds the parameter types.
@@ -3340,8 +3344,7 @@ public:
   Expr *getNoexceptExpr() const {
     if (getExceptionSpecType() != EST_ComputedNoexcept)
       return nullptr;
-    // NoexceptExpr sits where the arguments end.
-    return *reinterpret_cast<Expr *const *>(param_type_end());
+    return *reinterpret_cast<Expr *const *>(exception_begin());
   }
   /// \brief If this function type has an exception specification which hasn't
   /// been determined yet (either because it has not been evaluated or because
@@ -3351,7 +3354,7 @@ public:
     if (getExceptionSpecType() != EST_Uninstantiated &&
         getExceptionSpecType() != EST_Unevaluated)
       return nullptr;
-    return reinterpret_cast<FunctionDecl *const *>(param_type_end())[0];
+    return reinterpret_cast<FunctionDecl *const *>(exception_begin())[0];
   }
   /// \brief If this function type has an uninstantiated exception
   /// specification, this is the function whose exception specification
@@ -3360,7 +3363,7 @@ public:
   FunctionDecl *getExceptionSpecTemplate() const {
     if (getExceptionSpecType() != EST_Uninstantiated)
       return nullptr;
-    return reinterpret_cast<FunctionDecl *const *>(param_type_end())[1];
+    return reinterpret_cast<FunctionDecl *const *>(exception_begin())[1];
   }
   /// Determine whether this function type has a non-throwing exception
   /// specification. If this depends on template arguments, returns
@@ -3379,7 +3382,9 @@ public:
 
   /// Determines whether this function prototype contains designating types
   /// in its parameters.
-  bool hasDesignators() const;
+  bool hasDesignators() const {
+    return cast<FunctionProtoType>(getCanonicalTypeInternal())->HasDesignators;
+  }
 
   bool hasTrailingReturn() const { return HasTrailingReturn; }
 
@@ -3404,14 +3409,22 @@ public:
     return param_type_begin() + NumParams;
   }
 
+  QualType getCanonicalNonDesigProto() const {
+    const FunctionProtoType *CanProto =
+        cast<FunctionProtoType>(getCanonicalTypeInternal());
+    if (CanProto->HasDesignators)
+      return *CanProto->param_type_end();
+    return getCanonicalTypeInternal();
+  }
+
   typedef const QualType *exception_iterator;
 
   ArrayRef<QualType> exceptions() const {
     return llvm::makeArrayRef(exception_begin(), exception_end());
   }
   exception_iterator exception_begin() const {
-    // exceptions begin where arguments end
-    return param_type_end();
+    // exceptions begin where arguments (and alternative prototype if any) end
+    return param_type_end() + HasDesignators;
   }
   exception_iterator exception_end() const {
     if (getExceptionSpecType() != EST_Dynamic)

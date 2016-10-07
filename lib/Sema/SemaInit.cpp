@@ -3083,6 +3083,7 @@ void InitializationSequence::Step::Destroy() {
   case SK_StdInitializerListConstructorCall:
   case SK_OCLSamplerInit:
   case SK_OCLZeroEvent:
+  case SK_StripFunctionProtoDesig:
     break;
 
   case SK_ConversionSequence:
@@ -3342,6 +3343,13 @@ void InitializationSequence::AddOCLSamplerInitStep(QualType T) {
 void InitializationSequence::AddOCLZeroEventStep(QualType T) {
   Step S;
   S.Kind = SK_OCLZeroEvent;
+  S.Type = T;
+  Steps.push_back(S);
+}
+
+void InitializationSequence::AddStripFunctionProtoDesigStep(QualType T) {
+  Step S;
+  S.Kind = SK_StripFunctionProtoDesig;
   S.Type = T;
   Steps.push_back(S);
 }
@@ -3784,10 +3792,9 @@ static void TryReferenceListInitialization(Sema &S,
       return;
 
     SourceLocation DeclLoc = Initializer->getLocStart();
-    bool dummy1, dummy2, dummy3;
+    unsigned RCF;
     Sema::ReferenceCompareResult RefRelationship
-      = S.CompareReferenceRelationship(DeclLoc, cv1T1, cv2T2, dummy1,
-                                       dummy2, dummy3);
+      = S.CompareReferenceRelationship(DeclLoc, cv1T1, cv2T2, RCF);
     if (RefRelationship >= Sema::Ref_Related) {
       // Try to bind the reference here.
       TryReferenceInitializationCore(S, Entity, Kind, Initializer, cv1T1, T1,
@@ -4023,17 +4030,11 @@ static OverloadingResult TryRefInitWithConversionFunction(Sema &S,
   QualType cv2T2 = Initializer->getType();
   QualType T2 = cv2T2.getUnqualifiedType();
 
-  bool DerivedToBase;
-  bool ObjCConversion;
-  bool ObjCLifetimeConversion;
+  unsigned RCF;
   assert(!S.CompareReferenceRelationship(Initializer->getLocStart(),
-                                         T1, T2, DerivedToBase,
-                                         ObjCConversion,
-                                         ObjCLifetimeConversion) &&
+                                         T1, T2, RCF) &&
          "Must have incompatible references when binding via conversion");
-  (void)DerivedToBase;
-  (void)ObjCConversion;
-  (void)ObjCLifetimeConversion;
+  (void)RCF;
   
   // Build the candidate set directly in the initialization sequence
   // structure, so that it will persist if we fail.
@@ -4156,14 +4157,11 @@ static OverloadingResult TryRefInitWithConversionFunction(Sema &S,
   else if (const RValueReferenceType *RRef = T2->getAs<RValueReferenceType>())
     VK = RRef->getPointeeType()->isFunctionType() ? VK_LValue : VK_XValue;
 
-  bool NewDerivedToBase = false;
-  bool NewObjCConversion = false;
-  bool NewObjCLifetimeConversion = false;
+  unsigned NewRCF;
   Sema::ReferenceCompareResult NewRefRelationship
     = S.CompareReferenceRelationship(DeclLoc, T1,
                                      T2.getNonLValueExprType(S.Context),
-                                     NewDerivedToBase, NewObjCConversion,
-                                     NewObjCLifetimeConversion);
+                                     NewRCF);
   if (NewRefRelationship == Sema::Ref_Incompatible) {
     // If the type we've converted to is not reference-related to the
     // type we're looking for, then there is another conversion step
@@ -4174,12 +4172,12 @@ static OverloadingResult TryRefInitWithConversionFunction(Sema &S,
     ICS.Standard = Best->FinalConversion;
     T2 = ICS.Standard.getToType(2);
     Sequence.AddConversionSequenceStep(ICS, T2);
-  } else if (NewDerivedToBase)
+  } else if (NewRCF & Sema::RCF_DerivedToBase)
     Sequence.AddDerivedToBaseCastStep(
                                 S.Context.getQualifiedType(T1,
                                   T2.getNonReferenceType().getQualifiers()),
                                       VK);
-  else if (NewObjCConversion)
+  else if (NewRCF & Sema::RCF_ObjCConversion)
     Sequence.AddObjCObjectConversionStep(
                                 S.Context.getQualifiedType(T1,
                                   T2.getNonReferenceType().getQualifiers()));
@@ -4286,13 +4284,10 @@ static void TryReferenceInitializationCore(Sema &S,
   // Compute some basic properties of the types and the initializer.
   bool isLValueRef = DestType->isLValueReferenceType();
   bool isRValueRef = !isLValueRef;
-  bool DerivedToBase = false;
-  bool ObjCConversion = false;
-  bool ObjCLifetimeConversion = false;
+  unsigned RCF;
   Expr::Classification InitCategory = Initializer->Classify(S.Context);
   Sema::ReferenceCompareResult RefRelationship
-    = S.CompareReferenceRelationship(DeclLoc, cv1T1, cv2T2, DerivedToBase,
-                                     ObjCConversion, ObjCLifetimeConversion);
+    = S.CompareReferenceRelationship(DeclLoc, cv1T1, cv2T2, RCF);
 
   // C++0x [dcl.init.ref]p5:
   //   A reference to type "cv1 T1" is initialized by an expression of type
@@ -4318,13 +4313,15 @@ static void TryReferenceInitializationCore(Sema &S,
       // can occur. However, we do pay attention to whether it is a bit-field
       // to decide whether we're actually binding to a temporary created from
       // the bit-field.
-      if (DerivedToBase)
+      if (RCF & Sema::RCF_DerivedToBase)
         Sequence.AddDerivedToBaseCastStep(
                          S.Context.getQualifiedType(T1, T2Quals),
                          VK_LValue);
-      else if (ObjCConversion)
+      else if (RCF & Sema::RCF_ObjCConversion)
         Sequence.AddObjCObjectConversionStep(
                                      S.Context.getQualifiedType(T1, T2Quals));
+      else if (RCF & Sema::RCF_StripFunctionProtoDesig)
+        Sequence.AddStripFunctionProtoDesigStep(T1);
 
       ExprValueKind ValueKind =
         convertQualifiersAndValueKindIfNecessary(S, Sequence, Initializer,
@@ -4403,10 +4400,10 @@ static void TryReferenceInitializationCore(Sema &S,
         CheckCXX98CompatAccessibleCopy(S, Entity, Initializer);
     }
 
-    if (DerivedToBase)
+    if (RCF & Sema::RCF_DerivedToBase)
       Sequence.AddDerivedToBaseCastStep(S.Context.getQualifiedType(T1, T2Quals),
                                         ValueKind);
-    else if (ObjCConversion)
+    else if (RCF & Sema::RCF_ObjCConversion)
       Sequence.AddObjCObjectConversionStep(
                                        S.Context.getQualifiedType(T1, T2Quals));
 
@@ -6445,7 +6442,8 @@ InitializationSequence::Perform(Sema &S,
   case SK_ProduceObjCObject:
   case SK_StdInitializerList:
   case SK_OCLSamplerInit:
-  case SK_OCLZeroEvent: {
+  case SK_OCLZeroEvent:
+  case SK_StripFunctionProtoDesig: {
     assert(Args.size() == 1);
     CurInit = Args[0];
     if (!CurInit.get()) return ExprError();
@@ -6551,6 +6549,9 @@ InitializationSequence::Perform(Sema &S,
                                   ExtendingEntity->getDecl());
 
       CheckForNullPointerDereference(S, CurInit.get());
+#if 0
+      S.FixProtoDesigForFunctionReference(CurInit.get(), DestType);
+#endif
       break;
 
     case SK_BindReferenceToTemporary: {
@@ -7031,6 +7032,10 @@ InitializationSequence::Perform(Sema &S,
                                     CurInit.get()->getValueKind());
       break;
     }
+    case SK_StripFunctionProtoDesig:
+      CurInit =
+          S.ImpCastExprToType(CurInit.get(), Step->Type, CK_NoOp, VK_LValue);
+      break;
     }
   }
 
@@ -7855,6 +7860,10 @@ void InitializationSequence::dump(raw_ostream &OS) const {
 
     case SK_OCLZeroEvent:
       OS << "OpenCL event_t from zero";
+      break;
+
+    case SK_StripFunctionProtoDesig:
+      OS << "strip function prototype designators";
       break;
     }
 

@@ -3406,7 +3406,10 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
     From = FixOverloadedFunctionReference(From, Found, Fn);
     FromType = From->getType();
   }
-
+#if 0
+  FixProtoDesigForFunctionReference(From, ToType);
+  FromType = From->getType();
+#endif
   // If we're converting to an atomic type, first convert to the corresponding
   // non-atomic type.
   QualType ToAtomicType;
@@ -3731,6 +3734,10 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
     From = ImpCastExprToType(From, ToType,
                              CK_ZeroToOCLEvent,
                              From->getValueKind()).get();
+    break;
+
+  case ICK_StripFunctionProtoDesig:
+    From = ImpCastExprToType(From, ToType, CK_NoOp, From->getValueKind()).get();
     break;
 
   case ICK_Lvalue_To_Rvalue:

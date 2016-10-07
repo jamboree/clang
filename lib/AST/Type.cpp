@@ -2660,10 +2660,9 @@ StringRef FunctionType::getNameForCallConv(CallingConv CC) {
 }
 
 FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
-                                     QualType canonical,
+                                     QualType canonical, QualType nonDesig,
                                      const ExtProtoInfo &epi)
-    : FunctionType(FunctionProto, result, canonical,
-                   result->isDependentType(),
+    : FunctionType(FunctionProto, result, canonical, result->isDependentType(),
                    result->isInstantiationDependentType(),
                    result->isVariablyModifiedType(),
                    result->containsUnexpandedParameterPack(), epi.ExtInfo),
@@ -2671,7 +2670,8 @@ FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
       NumExceptions(epi.ExceptionSpec.Exceptions.size()),
       ExceptionSpecType(epi.ExceptionSpec.Type),
       HasExtParameterInfos(epi.ExtParameterInfos != nullptr),
-      Variadic(epi.Variadic), HasTrailingReturn(epi.HasTrailingReturn) {
+      Variadic(epi.Variadic), HasTrailingReturn(epi.HasTrailingReturn),
+      HasDesignators(!nonDesig.isNull()) {
   assert(NumParams == params.size() && "function has too many parameters");
 
   FunctionTypeBits.TypeQuals = epi.TypeQuals;
@@ -2690,10 +2690,15 @@ FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
 
     argSlot[i] = params[i];
   }
+  // Fill in the prototype without designators.
+  if (HasDesignators) {
+    QualType *protoSlot = argSlot + NumParams;
+    *protoSlot = nonDesig;
+  }
 
   if (getExceptionSpecType() == EST_Dynamic) {
     // Fill in the exception array.
-    QualType *exnSlot = argSlot + NumParams;
+    QualType *exnSlot = argSlot + NumParams + HasDesignators;
     unsigned I = 0;
     for (QualType ExceptionType : epi.ExceptionSpec.Exceptions) {
       // Note that a dependent exception specification does *not* make
@@ -2811,14 +2816,6 @@ bool FunctionProtoType::isTemplateVariadic() const {
             dyn_cast<PackExpansionType>(getParamType(ArgIdx - 1)))
       if (!Expansion->getNumExpansions())
         return true;
-
-  return false;
-}
-
-bool FunctionProtoType::hasDesignators() const {
-  for (unsigned ArgIdx = getNumParams(); ArgIdx; --ArgIdx)
-    if (getParamType(ArgIdx - 1)->isDesignatingType())
-      return true;
 
   return false;
 }

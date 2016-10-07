@@ -1502,6 +1502,43 @@ static bool IsVectorConversion(Sema &S, QualType FromType,
   return false;
 }
 
+static bool IsFunctionProtoDesigStripConversion(Sema &S, QualType FromType,
+                                                QualType ToType) {
+  if (S.Context.hasSameUnqualifiedType(FromType, ToType))
+    return false;
+
+  CanQualType CanTo = S.Context.getCanonicalType(ToType);
+  CanQualType CanFrom = S.Context.getCanonicalType(FromType);
+  Type::TypeClass TyClass = CanTo->getTypeClass();
+  if (TyClass != CanFrom->getTypeClass())
+    return false;
+  switch (TyClass) {
+  case Type::Pointer:
+    CanTo = CanTo.castAs<PointerType>()->getPointeeType();
+    CanFrom = CanFrom.castAs<PointerType>()->getPointeeType();
+    break;
+  case Type::BlockPointer:
+    CanTo = CanTo.castAs<BlockPointerType>()->getPointeeType();
+    CanFrom = CanFrom.castAs<BlockPointerType>()->getPointeeType();
+    break;
+  case Type::MemberPointer:
+    CanTo = CanTo.castAs<MemberPointerType>()->getPointeeType();
+    CanFrom = CanFrom.castAs<MemberPointerType>()->getPointeeType();
+    break;
+  case Type::FunctionProto:
+    return S.Context.isFunctionProtoDesigStrip(CanFrom, CanTo);
+  default:
+    return false;
+  }
+  TyClass = CanTo->getTypeClass();
+  if (TyClass != CanFrom->getTypeClass())
+    return false;
+  if (TyClass != Type::FunctionProto)
+    return false;
+
+  return S.Context.isFunctionProtoDesigStrip(CanFrom, CanTo);
+}
+
 static bool tryAtomicConversion(Sema &S, Expr *From, QualType ToType,
                                 bool InOverloadResolution,
                                 StandardConversionSequence &SCS,
@@ -1769,9 +1806,11 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
   } else if (S.IsNoReturnConversion(FromType, ToType, FromType)) {
     // Treat a conversion that strips "noreturn" as an identity conversion.
     SCS.Second = ICK_NoReturn_Adjustment;
-  } else if (IsTransparentUnionStandardConversion(S, From, ToType,
-                                             InOverloadResolution,
-                                             SCS, CStyle)) {
+  } else if (IsFunctionProtoDesigStripConversion(S, FromType, ToType)) {
+    SCS.Second = ICK_StripFunctionProtoDesig;
+    FromType = ToType;
+  } else if (IsTransparentUnionStandardConversion(
+                 S, From, ToType, InOverloadResolution, SCS, CStyle)) {
     SCS.Second = ICK_TransparentUnionConversion;
     FromType = ToType;
   } else if (tryAtomicConversion(S, From, ToType, InOverloadResolution, SCS,
@@ -2236,12 +2275,6 @@ bool Sema::IsPointerConversion(Expr *From, QualType FromType, QualType ToType,
     ConvertedType = BuildSimilarlyQualifiedPointerType(FromTypePtr,
                                                        ToPointeeType,
                                                        ToType, Context);
-    return true;
-  }
-
-  // R(T.a) -> R(T)
-  if (Context.isFunctionProtoDesigStrip(FromPointeeType, ToPointeeType)) {
-    ConvertedType = ToType;
     return true;
   }
 
@@ -4157,9 +4190,7 @@ static bool isTypeValid(QualType T) {
 Sema::ReferenceCompareResult
 Sema::CompareReferenceRelationship(SourceLocation Loc,
                                    QualType OrigT1, QualType OrigT2,
-                                   bool &DerivedToBase,
-                                   bool &ObjCConversion,
-                                   bool &ObjCLifetimeConversion) {
+                                   unsigned &Flags) {
   assert(!OrigT1->isReferenceType() &&
     "T1 must be the pointee type of the reference type");
   assert(!OrigT2->isReferenceType() && "T2 cannot be a reference type");
@@ -4174,21 +4205,19 @@ Sema::CompareReferenceRelationship(SourceLocation Loc,
   //   Given types "cv1 T1" and "cv2 T2," "cv1 T1" is
   //   reference-related to "cv2 T2" if T1 is the same type as T2, or
   //   T1 is a base class of T2.
-  DerivedToBase = false;
-  ObjCConversion = false;
-  ObjCLifetimeConversion = false;
+  Flags = 0;
   if (UnqualT1 == UnqualT2) {
     // Nothing to do.
   } else if (isCompleteType(Loc, OrigT2) &&
              isTypeValid(UnqualT1) && isTypeValid(UnqualT2) &&
              IsDerivedFrom(Loc, UnqualT2, UnqualT1))
-    DerivedToBase = true;
+    Flags |= RCF_DerivedToBase;
   else if (UnqualT1->isObjCObjectOrInterfaceType() &&
            UnqualT2->isObjCObjectOrInterfaceType() &&
            Context.canBindObjCObjectType(UnqualT1, UnqualT2))
-    ObjCConversion = true;
+    Flags |= RCF_ObjCConversion;
   else if (Context.isFunctionProtoDesigStrip(UnqualT2, UnqualT1)) {
-    // Nothing to do.
+    Flags |= RCF_StripFunctionProtoDesig;
   } else
     return Ref_Incompatible;
 
@@ -4217,7 +4246,7 @@ Sema::CompareReferenceRelationship(SourceLocation Loc,
   if (T1Quals.getObjCLifetime() != T2Quals.getObjCLifetime() &&
       T1Quals.compatiblyIncludesObjCLifetime(T2Quals)) {
     if (isNonTrivialObjCLifetimeConversion(T2Quals, T1Quals))
-      ObjCLifetimeConversion = true;
+      Flags |= RCF_ObjCLifetimeConversion;
 
     T1Quals.removeObjCLifetime();
     T2Quals.removeObjCLifetime();    
@@ -4268,9 +4297,7 @@ FindConversionForRefInit(Sema &S, ImplicitConversionSequence &ICS,
       continue;
 
     if (AllowRvalues) {
-      bool DerivedToBase = false;
-      bool ObjCConversion = false;
-      bool ObjCLifetimeConversion = false;
+      unsigned RCF;
       
       // If we are initializing an rvalue reference, don't permit conversion
       // functions that return lvalues.
@@ -4286,8 +4313,7 @@ FindConversionForRefInit(Sema &S, ImplicitConversionSequence &ICS,
             DeclLoc,
             Conv->getConversionType().getNonReferenceType()
               .getUnqualifiedType(),
-            DeclType.getNonReferenceType().getUnqualifiedType(),
-            DerivedToBase, ObjCConversion, ObjCLifetimeConversion) ==
+            DeclType.getNonReferenceType().getUnqualifiedType(), RCF) ==
           Sema::Ref_Incompatible)
         continue;
     } else {
@@ -4401,14 +4427,14 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
 
   // Compute some basic properties of the types and the initializer.
   bool isRValRef = DeclType->isRValueReferenceType();
-  bool DerivedToBase = false;
-  bool ObjCConversion = false;
-  bool ObjCLifetimeConversion = false;
+  unsigned RCF;
   Expr::Classification InitCategory = Init->Classify(S.Context);
   Sema::ReferenceCompareResult RefRelationship
-    = S.CompareReferenceRelationship(DeclLoc, T1, T2, DerivedToBase,
-                                     ObjCConversion, ObjCLifetimeConversion);
-
+    = S.CompareReferenceRelationship(DeclLoc, T1, T2, RCF);
+  bool DerivedToBase = RCF & Sema::RCF_DerivedToBase;
+  bool ObjCConversion = RCF & Sema::RCF_ObjCConversion;
+  bool ObjCLifetimeConversion = RCF & Sema::RCF_ObjCLifetimeConversion;
+  bool StripFunctionProtoDesig = RCF & Sema::RCF_StripFunctionProtoDesig;
 
   // C++0x [dcl.init.ref]p5:
   //   A reference to type "cv1 T1" is initialized by an expression
@@ -4433,6 +4459,7 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
       ICS.Standard.First = ICK_Identity;
       ICS.Standard.Second = DerivedToBase? ICK_Derived_To_Base
                          : ObjCConversion? ICK_Compatible_Conversion
+                         : StripFunctionProtoDesig? ICK_StripFunctionProtoDesig
                          : ICK_Identity;
       ICS.Standard.Third = ICK_Identity;
       ICS.Standard.FromTypePtr = T2.getAsOpaquePtr();
@@ -4491,6 +4518,7 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
     ICS.Standard.First = ICK_Identity;
     ICS.Standard.Second = DerivedToBase? ICK_Derived_To_Base
                       : ObjCConversion? ICK_Compatible_Conversion
+                      : StripFunctionProtoDesig? ICK_StripFunctionProtoDesig
                       : ICK_Identity;
     ICS.Standard.Third = ICK_Identity;
     ICS.Standard.FromTypePtr = T2.getAsOpaquePtr();
@@ -4832,12 +4860,9 @@ TryListConversion(Sema &S, InitListExpr *From, QualType ToType,
       }
 
       // Compute some basic properties of the types and the initializer.
-      bool dummy1 = false;
-      bool dummy2 = false;
-      bool dummy3 = false;
+      unsigned RCF;
       Sema::ReferenceCompareResult RefRelationship
-        = S.CompareReferenceRelationship(From->getLocStart(), T1, T2, dummy1,
-                                         dummy2, dummy3);
+        = S.CompareReferenceRelationship(From->getLocStart(), T1, T2, RCF);
 
       if (RefRelationship >= Sema::Ref_Related) {
         return TryReferenceInit(S, Init, ToType, /*FIXME*/From->getLocStart(),
@@ -5165,6 +5190,7 @@ static bool CheckConvertedConstantConversions(Sema &S,
   case ICK_NoReturn_Adjustment:
   case ICK_Integral_Promotion:
   case ICK_Integral_Conversion: // Narrowing conversions are checked elsewhere.
+  case ICK_StripFunctionProtoDesig:
     return true;
 
   case ICK_Boolean_Conversion:
@@ -13629,4 +13655,25 @@ ExprResult Sema::FixOverloadedFunctionReference(ExprResult E,
                                                 DeclAccessPair Found,
                                                 FunctionDecl *Fn) {
   return FixOverloadedFunctionReference(E.get(), Found, Fn);
+}
+
+void Sema::FixProtoDesigForFunctionReference(Expr *E, QualType ToType) {
+  QualType UnqualToFunction = ExtractUnqualifiedFunctionType(ToType);
+  const FunctionProtoType *Proto = UnqualToFunction->getAs<FunctionProtoType>();
+  if (!Proto)
+    return;
+  if (!Proto->hasDesignators())
+    return;
+
+  E = E->IgnoreParenCasts();
+  if (UnaryOperator *UnOp = dyn_cast<UnaryOperator>(E))
+    if (UnOp->getOpcode() == UO_AddrOf)
+      E = UnOp->getSubExpr()->IgnoreParenCasts();
+  if (auto *DRE = dyn_cast<DeclRefExpr>(E)) {
+    if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(DRE->getDecl())) {
+      QualType Type = QualType(Fn->getDesigProtoType(), 0);
+      if (!Type.isNull())
+        DRE->setType(Type);
+    }
+  }
 }

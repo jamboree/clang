@@ -5117,6 +5117,8 @@ def err_var_or_ret_designating_type : Error<
   "%select{variable has|function cannot return}0 designating type %1">;
 def err_parm_types_have_same_designator : Error<
   "%ordinal0 and %ordinal1 parameters have the same designator %2 in type">;
+def err_function_decl_has_designators_in_prototype : Error<
+  "function declaration has designators in prototype %0">;
 
 // Expressions.
 def ext_sizeof_alignof_function_type : Extension<

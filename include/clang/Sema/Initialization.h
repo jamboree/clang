@@ -712,7 +712,9 @@ public:
     /// \brief Initialize an OpenCL sampler from an integer.
     SK_OCLSamplerInit,
     /// \brief Passing zero to a function where OpenCL event_t is expected.
-    SK_OCLZeroEvent
+    SK_OCLZeroEvent,
+    /// \brief Perform a prototype-strip-designators cast.
+    SK_StripFunctionProtoDesig
   };
   
   /// \brief A single step in the initialization sequence.
@@ -1105,6 +1107,8 @@ public:
   /// \brief Add a step to initialize an OpenCL event_t from a NULL
   /// constant.
   void AddOCLZeroEventStep(QualType T);
+
+  void AddStripFunctionProtoDesigStep(QualType T);
 
   /// \brief Add steps to unwrap a initializer list for a reference around a
   /// single element and rewrap it at the end.

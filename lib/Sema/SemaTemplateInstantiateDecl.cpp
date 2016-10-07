@@ -1445,6 +1445,14 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
   DeclarationNameInfo NameInfo =
       SemaRef.SubstDeclarationNameInfo(D->getNameInfo(), TemplateArgs);
 
+  static_assert(false, "FIXME!!!");
+  if (!NameInfo.getName()) {
+    if (TemplateDeclNameParmDecl *TDP =
+            D->getDeclName().getCXXTemplatedNameParmDecl())
+      NameInfo.setName(SemaRef.Context.DeclarationNames.getSubstUnnamed(
+          TDP->getDepth(), TDP->getIndex()));
+  }
+
   CXXRecordDecl *Record = CXXRecordDecl::Create(
       SemaRef.Context, D->getTagKind(), Owner, D->getLocStart(),
       NameInfo.getLoc(), NameInfo.getName(), PrevDecl);

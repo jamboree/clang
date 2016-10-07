@@ -3862,6 +3862,7 @@ static void captureVariablyModifiedType(ASTContext &Context, QualType T,
     case Type::ObjCInterface:
     case Type::ObjCObjectPointer:
     case Type::Pipe:
+    case Type::Designating:
       llvm_unreachable("type class is never variably-modified!");
     case Type::Adjusted:
       T = cast<AdjustedType>(Ty)->getOriginalType();
@@ -5422,8 +5423,10 @@ Sema::BuildResolvedCallExpr(Expr *Fn, NamedDecl *NDecl,
   if (const PointerType *PT = Fn->getType()->getAs<PointerType>()) {
     // C99 6.5.2.2p1 - "The expression that denotes the called function shall
     // have type pointer to function".
-    QualType NonDesig =
-        Context.getCanonicalNonDesigFunctionType(PT->getPointeeType());
+    QualType NonDesig = PT->getPointeeType();
+    if (const FunctionProtoType *SrcProto =
+            NonDesig->getAs<FunctionProtoType>())
+      NonDesig = SrcProto->getCanonicalNonDesigProto();
     FuncT = NonDesig->getAs<FunctionType>();
     if (!FuncT)
       return ExprError(Diag(LParenLoc, diag::err_typecheck_call_not_function)

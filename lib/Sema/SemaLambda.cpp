@@ -1030,7 +1030,7 @@ void Sema::ActOnStartOfLambdaDefinition(LambdaIntroducer &Intro,
       // C++11 [expr.prim.lambda]p10:
       //   The identifiers in a capture-list are looked up using the usual
       //   rules for unqualified name lookup (3.4.1)
-      DeclarationNameInfo Name(C->Id, C->Loc);
+      DeclarationNameInfo Name(getPossiblyTemplatedName(C->Id), C->Loc);
       LookupResult R(*this, Name, LookupOrdinaryName);
       LookupName(R, CurScope);
       if (R.isAmbiguous())

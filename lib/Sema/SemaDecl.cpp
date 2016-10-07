@@ -3747,8 +3747,7 @@ void Sema::handleTagNumbering(const TagDecl *Tag, Scope *TagScope) {
   if (isa<CXXRecordDecl>(Tag->getParent())) {
     // If this tag is the direct child of a class, number it if
     // it is anonymous.
-    if (Tag->getDeclName().getNameKind() == DeclarationName::CXXTemplatedName ||
-        !Tag->getName().empty() || Tag->getTypedefNameForAnonDecl())
+    if (!Tag->getName().empty() || Tag->getTypedefNameForAnonDecl())
       return;
     MangleNumberingContext &MCtx =
         Context.getManglingNumberContext(Tag->getParent());
@@ -5133,6 +5132,18 @@ NamedDecl *Sema::HandleDeclarator(Scope *S, Declarator &D,
 
     New = ActOnTypedefDeclarator(S, D, DC, TInfo, Previous);
   } else if (R->isFunctionType()) {
+    if (const FunctionProtoType *Proto = R->getAs<FunctionProtoType>()) {
+      if (Proto->hasDesignators()) {
+        // This may happen through a typedef, e.g.
+        //
+        //   using F = void(int.a);
+        //   F f;
+        Diag(D.getIdentifierLoc(),
+             diag::err_function_decl_has_designators_in_prototype)
+            << R;
+        return nullptr;
+      }
+    }
     New = ActOnFunctionDeclarator(S, D, DC, TInfo, Previous,
                                   TemplateParamLists,
                                   AddToScope);
@@ -12961,19 +12972,6 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
       Previous.clear();
     }
   }
-
-  // Templated name is not allowed on local declarations.
-  //if (CurContext->isFunctionOrMethod()) {
-  //  if (TemplateDeclNameParmDecl *TDP =
-  //          Name.getCXXTemplatedNameParmDecl()) {
-  //    Diag(NameLoc, diag::err_templated_name_on_local_decl);
-  //    Diag(TDP->getLocation(), diag::note_template_param_here);
-  //    // Recover by making this an anonymous redefinition.
-  //    Name = {};
-  //    Previous.clear();
-  //    Invalid = true;
-  //  }
-  //}
 
 CreateNewDecl:
 

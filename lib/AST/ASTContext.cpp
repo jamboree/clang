@@ -3084,6 +3084,7 @@ ASTContext::getFunctionType(QualType ResultTy, ArrayRef<QualType> ArgArray,
   // If this type isn't canonical, get the canonical version of it.
   // The exception spec is not part of the canonical type.
   QualType Canonical;
+  QualType NonDesig;
   if (!isCanonical) {
     SmallVector<QualType, 16> CanonicalArgs;
     CanonicalArgs.reserve(NumArgs);
@@ -3102,6 +3103,31 @@ ASTContext::getFunctionType(QualType ResultTy, ArrayRef<QualType> ArgArray,
     FunctionProtoType *NewIP =
       FunctionProtoTypes.FindNodeOrInsertPos(ID, InsertPos);
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
+  } else {
+    // If it's canonical, check if the parameters have designators and get a
+    // prototype without designators.
+    unsigned i = 0;
+    for (; i != NumArgs; ++i) {
+      if (ArgArray[i]->isDesignatingType())
+        break;
+    }
+    if (i != NumArgs) {
+      SmallVector<QualType, 16> NonDesigArgs;
+      NonDesigArgs.reserve(NumArgs);
+      auto I = ArgArray.data();
+      NonDesigArgs.insert(NonDesigArgs.end(), I, I + i);
+      do {
+        QualType Parm = ArgArray[i];
+        if (const DesignatingType *Desig = Parm->getAs<DesignatingType>())
+          Parm = Desig->getMasterType();
+        NonDesigArgs.push_back(Parm);
+      } while (++i != NumArgs);
+      NonDesig = getFunctionType(ResultTy, NonDesigArgs, EPI);
+      // Get the new insert position for the node we care about.
+      FunctionProtoType *NewIP =
+          FunctionProtoTypes.FindNodeOrInsertPos(ID, InsertPos);
+      assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
+    }
   }
 
   // FunctionProtoType objects are allocated with extra bytes after
@@ -3114,6 +3140,9 @@ ASTContext::getFunctionType(QualType ResultTy, ArrayRef<QualType> ArgArray,
   // specification.
   size_t Size = sizeof(FunctionProtoType) +
                 NumArgs * sizeof(QualType);
+
+  if (!NonDesig.isNull())
+    Size += sizeof(QualType);
 
   if (EPI.ExceptionSpec.Type == EST_Dynamic) {
     Size += EPI.ExceptionSpec.Exceptions.size() * sizeof(QualType);
@@ -3137,7 +3166,7 @@ ASTContext::getFunctionType(QualType ResultTy, ArrayRef<QualType> ArgArray,
 
   FunctionProtoType *FTP = (FunctionProtoType*) Allocate(Size, TypeAlignment);
   FunctionProtoType::ExtProtoInfo newEPI = EPI;
-  new (FTP) FunctionProtoType(ResultTy, ArgArray, Canonical, newEPI);
+  new (FTP) FunctionProtoType(ResultTy, ArgArray, Canonical, NonDesig, newEPI);
   Types.push_back(FTP);
   FunctionProtoTypes.InsertNode(FTP, InsertPos);
   return QualType(FTP, 0);
@@ -4278,39 +4307,16 @@ CanQualType ASTContext::getCanonicalDesigFunctionType(
 
 CanQualType ASTContext::getCanonicalNonDesigFunctionType(QualType T) const {
   const FunctionProtoType *Proto = T->getAs<FunctionProtoType>();
-  if (!Proto)
-    return getCanonicalType(T);
-
-  SmallVector<QualType, 16> CanonicalArgs;
-  CanonicalArgs.reserve(Proto->getNumParams());
-  bool AnyDesig = false;
-
-  for (QualType Parm : Proto->param_types()) {
-    if (const DesignatingType *Desig = Parm->getAs<DesignatingType>()) {
-      Parm = Desig->getMasterType();
-      AnyDesig = true;
-    }
-    CanonicalArgs.push_back(getCanonicalParamType(Parm));
-  }
-  if (!AnyDesig)
-    return getCanonicalType(T);
-
-  FunctionProtoType::ExtProtoInfo CanonicalEPI = Proto->getExtProtoInfo();
-  CanonicalEPI.HasTrailingReturn = false;
-  CanonicalEPI.ExceptionSpec = FunctionProtoType::ExceptionSpecInfo();
-
-  // Adjust the canonical function result type.
-  CanQualType CanResultTy =
-      getCanonicalFunctionResultType(Proto->getReturnType());
-  QualType Result = getFunctionType(CanResultTy, CanonicalArgs, CanonicalEPI);
-  return CanQualType::CreateUnsafe(Result);
+  if (Proto)
+    T = Proto->getCanonicalNonDesigProto();
+  return getCanonicalType(T);
 }
 
 bool ASTContext::isFunctionProtoDesigStrip(QualType Src, QualType Dest) const {
   if (const FunctionProtoType *DestProto = Dest->getAs<FunctionProtoType>()) {
-    if (!DestProto->hasDesignators()) {
-      if (getCanonicalNonDesigFunctionType(Src) == getCanonicalType(Dest))
-        return true;
+    if (const FunctionProtoType *SrcProto = Src->getAs<FunctionProtoType>()) {
+      if (!DestProto->hasDesignators() && SrcProto->hasDesignators())
+        return hasSameType(SrcProto->getCanonicalNonDesigProto(), Dest);
     }
   }
   return false;
