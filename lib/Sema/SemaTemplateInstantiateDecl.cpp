@@ -1445,13 +1445,13 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
   DeclarationNameInfo NameInfo =
       SemaRef.SubstDeclarationNameInfo(D->getNameInfo(), TemplateArgs);
 
-  static_assert(false, "FIXME!!!");
-  if (!NameInfo.getName()) {
-    if (TemplateDeclNameParmDecl *TDP =
-            D->getDeclName().getCXXTemplatedNameParmDecl())
-      NameInfo.setName(SemaRef.Context.DeclarationNames.getSubstUnnamed(
-          TDP->getDepth(), TDP->getIndex()));
-  }
+  //static_assert(false, "FIXME!!!");
+  //if (!NameInfo.getName()) {
+  //  if (TemplateDeclNameParmDecl *TDP =
+  //          D->getDeclName().getCXXTemplatedNameParmDecl())
+  //    NameInfo.setName(SemaRef.Context.DeclarationNames.getSubstUnnamed(
+  //        TDP->getDepth(), TDP->getIndex()));
+  //}
 
   CXXRecordDecl *Record = CXXRecordDecl::Create(
       SemaRef.Context, D->getTagKind(), Owner, D->getLocStart(),
@@ -1613,10 +1613,11 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
     DC = SemaRef.FindInstantiatedContext(D->getLocation(), D->getDeclContext(),
                                          TemplateArgs);
   }
-
+  DeclarationNameInfo NameInfo
+    = SemaRef.SubstDeclarationNameInfo(D->getNameInfo(), TemplateArgs);
   FunctionDecl *Function =
       FunctionDecl::Create(SemaRef.Context, DC, D->getInnerLocStart(),
-                           D->getNameInfo(), T, TInfo,
+                           NameInfo, T, TInfo,
                            D->getCanonicalDecl()->getStorageClass(),
                            D->isInlineSpecified(), D->hasWrittenPrototype(),
                            D->isConstexpr());
