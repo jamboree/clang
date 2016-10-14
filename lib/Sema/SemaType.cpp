@@ -2070,8 +2070,8 @@ QualType Sema::BuildDesignatingType(QualType T, DeclarationName DesigName,
     return QualType();
   }
 
-  // Build the pointer type.
-  return Context.getDesignatingType(T, DesigName);
+  // Build the designating type.
+  return Context.getDesignatingType(T, DesigName.getCanonicalName());
 }
 
 /// Check whether the specified array size makes the array type a VLA.  If so,

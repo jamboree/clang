@@ -1248,25 +1248,6 @@ ASTContext::setInstantiatedFromUsingShadowDecl(UsingShadowDecl *Inst,
   InstantiatedFromUsingShadowDecl[Inst] = Pattern;
 }
 
-FieldDecl *ASTContext::getInstantiatedFromUnnamedFieldDecl(FieldDecl *Field) {
-  llvm::DenseMap<FieldDecl *, FieldDecl *>::iterator Pos
-    = InstantiatedFromUnnamedFieldDecl.find(Field);
-  if (Pos == InstantiatedFromUnnamedFieldDecl.end())
-    return nullptr;
-
-  return Pos->second;
-}
-
-void ASTContext::setInstantiatedFromUnnamedFieldDecl(FieldDecl *Inst,
-                                                     FieldDecl *Tmpl) {
-  assert(!Inst->getIdentifier() && "Instantiated field decl is not unnamed");
-  assert(!Tmpl->getIdentifier() && "Template field decl is not unnamed");
-  assert(!InstantiatedFromUnnamedFieldDecl[Inst] &&
-         "Already noted what unnamed field was instantiated from");
-
-  InstantiatedFromUnnamedFieldDecl[Inst] = Tmpl;
-}
-
 ASTContext::overridden_cxx_method_iterator
 ASTContext::overridden_methods_begin(const CXXMethodDecl *Method) const {
   llvm::DenseMap<const CXXMethodDecl *, CXXMethodVector>::const_iterator Pos =
@@ -3726,6 +3707,8 @@ ASTContext::getPackExpansionType(QualType Pattern,
 
 QualType ASTContext::getDesignatingType(QualType T,
                                         DeclarationName DesigName) const {
+  assert(DesigName.isCanonical() && "designator name must be canonical");
+
   // Unique pointers, to guarantee there is only one pointer of a particular
   // structure.
   llvm::FoldingSetNodeID ID;

@@ -39,23 +39,23 @@ namespace {
 /// refer to the anonymous union, and there is therefore no need to mangle its name.
 ///
 /// Returns the name of anonymous union VarDecl or nullptr if it is not found.
-static const IdentifierInfo *findAnonymousUnionVarDeclName(const VarDecl& VD) {
+static DeclarationName findAnonymousUnionVarDeclName(const VarDecl& VD) {
   const RecordType *RT = VD.getType()->getAs<RecordType>();
   assert(RT && "type of VarDecl is expected to be RecordType.");
   assert(RT->getDecl()->isUnion() && "RecordType is expected to be a union.");
   if (const FieldDecl *FD = RT->getDecl()->findFirstNamedDataMember()) {
-    return FD->getIdentifier();
+    return FD->getDeclName();
   }
 
-  return nullptr;
+  return DeclarationName();
 }
 
 /// \brief Keeps track of the mangled names of lambda expressions and block
 /// literals within a particular context.
 class ItaniumNumberingContext : public MangleNumberingContext {
   llvm::DenseMap<const Type *, unsigned> ManglingNumbers;
-  llvm::DenseMap<const IdentifierInfo *, unsigned> VarManglingNumbers;
-  llvm::DenseMap<const IdentifierInfo *, unsigned> TagManglingNumbers;
+  llvm::DenseMap<uintptr_t, unsigned> VarManglingNumbers;
+  llvm::DenseMap<uintptr_t, unsigned> TagManglingNumbers;
 
 public:
   unsigned getManglingNumber(const CXXMethodDecl *CallOperator) override {
@@ -81,16 +81,16 @@ public:
 
   /// Variable decls are numbered by identifier.
   unsigned getManglingNumber(const VarDecl *VD, unsigned) override {
-    const IdentifierInfo *Identifier = VD->getIdentifier();
-    if (!Identifier) {
+    DeclarationName Name = VD->getDeclName();
+    if (!Name) {
       // VarDecl without an identifier represents an anonymous union declaration.
-      Identifier = findAnonymousUnionVarDeclName(*VD);
+      Name = findAnonymousUnionVarDeclName(*VD);
     }
-    return ++VarManglingNumbers[Identifier];
+    return ++VarManglingNumbers[Name.getAsOpaqueInteger()];
   }
 
   unsigned getManglingNumber(const TagDecl *TD, unsigned) override {
-    return ++TagManglingNumbers[TD->getIdentifier()];
+    return ++TagManglingNumbers[TD->getDeclName().getAsOpaqueInteger()];
   }
 };
 

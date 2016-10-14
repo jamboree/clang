@@ -750,10 +750,6 @@ Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
   if (Invalid)
     Field->setInvalidDecl();
 
-  if (!Field->getDeclName()) {
-    // Keep track of where this decl came from.
-    SemaRef.Context.setInstantiatedFromUnnamedFieldDecl(Field, D);
-  }
   if (CXXRecordDecl *Parent= dyn_cast<CXXRecordDecl>(Field->getDeclContext())) {
     if (Parent->isAnonymousStructOrUnion() &&
         Parent->getRedeclContext()->isFunctionOrMethod())
@@ -4664,14 +4660,8 @@ static bool isInstantiationOf(ASTContext &Ctx, NamedDecl *D, Decl *Other) {
     return isInstantiationOf(cast<ClassTemplatePartialSpecializationDecl>(D),
                              PartialSpec);
 
-  if (FieldDecl *Field = dyn_cast<FieldDecl>(Other)) {
-    if (!Field->getDeclName()) {
-      // This is an unnamed field.
-      return declaresSameEntity(Ctx.getInstantiatedFromUnnamedFieldDecl(Field),
-                                cast<FieldDecl>(D));
-    }
+  if (FieldDecl *Field = dyn_cast<FieldDecl>(Other))
     return isInstantiationOf(cast<FieldDecl>(D), Field);
-  }
 
   if (UsingDecl *Using = dyn_cast<UsingDecl>(Other))
     return isInstantiationOf(cast<UsingDecl>(D), Using, Ctx);
@@ -4919,8 +4909,8 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
     NamedDecl *Result = nullptr;
     DeclarationNameInfo NameInfo(D->getDeclName(), D->getLocation());
     NameInfo = SubstDeclarationNameInfo(NameInfo, TemplateArgs);
-    if (NameInfo.getName()) {
-      DeclContext::lookup_result Found = ParentDC->lookup(NameInfo.getName());
+    if (DeclarationName CanName = NameInfo.getName().getCanonicalName()) {
+      DeclContext::lookup_result Found = ParentDC->lookup(CanName);
       Result = findInstantiationOf(Context, D, Found.begin(), Found.end());
     } else {
       // Since we don't have a name for the entity we're looking for,

@@ -5109,7 +5109,7 @@ void ASTRecordWriter::AddDeclarationName(DeclarationName Name) {
     break;
 
   case DeclarationName::CXXUsingDirective:
-  case DeclarationName::SubstUnnamed:
+  case DeclarationName::SubstTemplatedName:
     // No extra data to emit
     break;
 
@@ -5175,7 +5175,7 @@ void ASTRecordWriter::AddDeclarationNameLoc(const DeclarationNameLoc &DNLoc,
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXTemplatedName:
-  case DeclarationName::SubstUnnamed:
+  case DeclarationName::SubstTemplatedName:
     break;
   }
 }

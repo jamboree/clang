@@ -3541,7 +3541,7 @@ TreeTransform<Derived>
   case DeclarationName::CXXOperatorName:
   case DeclarationName::CXXLiteralOperatorName:
   case DeclarationName::CXXUsingDirective:
-  case DeclarationName::SubstUnnamed:
+  case DeclarationName::SubstTemplatedName:
     return NameInfo;
 
   case DeclarationName::CXXConstructorName:
@@ -6036,6 +6036,7 @@ TreeTransform<Derived>::TransformDesignatingType(TypeLocBuilder &TLB,
 
   DeclarationName Name =
       getDerived().TransformDeclarationNameInfo(TL.getNameInfo()).getName();
+  Name = Name.getCanonicalName();
   if (!Name)
     return MasterType;
 

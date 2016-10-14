@@ -847,8 +847,7 @@ void ASTDeclWriter::VisitFieldDecl(FieldDecl *D) {
     Record.push_back(D->InitStorage.getInt() + 1);
     Record.AddStmt(static_cast<Expr *>(D->InitStorage.getPointer()));
   }
-  if (!D->getDeclName())
-    Record.AddDeclRef(Context.getInstantiatedFromUnnamedFieldDecl(D));
+  Record.AddDeclRef(D->getInstantiatedFromMemberField());
 
   if (D->getDeclContext() == D->getLexicalDeclContext() &&
       !D->hasAttrs() &&

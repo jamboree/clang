@@ -29,6 +29,7 @@ namespace clang {
   class CXXSpecialName;
   class CXXTemplateDeclNameParmName;
   class DeclarationNameExtra;
+  class DeclarationNameExtraExtended;
   class IdentifierInfo;
   class MultiKeywordSelector;
   enum OverloadedOperatorKind : int;
@@ -39,7 +40,7 @@ namespace clang {
   class UsingDirectiveDecl;
   class TemplateDeclNameParmDecl;
   class SubstTemplateDeclNameParmPackStorage;
-  class SubstUnnamedStorage;
+  class SubstTemplateDeclNameParmName;
   class TemplateArgument;
 
   template <typename> class CanQual;
@@ -67,9 +68,9 @@ public:
     CXXUsingDirective,
     CXXTemplatedName,
     SubstTemplateDeclNameParmPack,
-    SubstUnnamed
+    SubstTemplatedName
   };
-  static const unsigned NumNameKinds = SubstUnnamed + 1;
+  static const unsigned NumNameKinds = SubstTemplatedName + 1;
 
 private:
   /// StoredNameKind - The kind of name that is actually stored in the
@@ -119,6 +120,17 @@ private:
     assert(getStoredNameKind() == StoredDeclarationNameExtra &&
            "Declaration name does not store an Extra structure");
     return reinterpret_cast<DeclarationNameExtra *>(Ptr & ~PtrMask);
+  }
+
+  DeclarationNameExtraExtended *getAsExtraExtended() const {
+    if (getStoredNameKind() == StoredDeclarationNameExtra) {
+      switch (getExtra()->ExtraKindOrNumArgs) {
+      case DeclarationNameExtra::CXXTemplatedName:
+      case DeclarationNameExtra::SubstTemplatedName:
+        return reinterpret_cast<DeclarationNameExtraExtended *>(Ptr & ~PtrMask);
+      }
+    }
+    return nullptr;
   }
 
   /// getAsCXXSpecialName - If the stored pointer is actually a
@@ -189,10 +201,9 @@ public:
   // Construct a declaration name from an Objective-C selector.
   DeclarationName(Selector Sel) : Ptr(Sel.InfoPtr) { }
 
-  DeclarationName(CXXTemplateDeclNameParmName *Name)
+  DeclarationName(DeclarationNameExtraExtended *Name)
       : Ptr(reinterpret_cast<uintptr_t>(Name)) {
-    assert((Ptr & PtrMask) == 0 &&
-           "Improperly aligned CXXTemplateDeclNameParmName");
+    assert((Ptr & PtrMask) == 0 && "Improperly aligned DeclarationName");
     Ptr |= StoredDeclarationNameExtra;
   }
 
@@ -203,20 +214,13 @@ public:
     Ptr |= StoredDeclarationNameExtra;
   }
 
-  DeclarationName(SubstUnnamedStorage *Name)
-      : Ptr(reinterpret_cast<uintptr_t>(Name)) {
-    assert((Ptr & PtrMask) == 0 && "Improperly aligned SubstUnnamedStorage");
-    Ptr |= StoredDeclarationNameExtra;
-  }
-
   /// getUsingDirectiveName - Return name for all using-directives.
   static DeclarationName getUsingDirectiveName();
 
   // operator bool() - Evaluates true when this declaration name is
   // non-empty.
   explicit operator bool() const {
-    return ((Ptr & PtrMask) != 0) ||
-           (reinterpret_cast<IdentifierInfo *>(Ptr & ~PtrMask));
+    return Ptr != 0;
   }
 
   /// \brief Evaluates true when this declaration name is empty.
@@ -284,9 +288,9 @@ public:
     return nullptr;
   }
 
-  SubstUnnamedStorage *getAsSubstUnnamed() const {
-    if (getNameKind() == SubstUnnamed)
-      return reinterpret_cast<SubstUnnamedStorage *>(Ptr & ~PtrMask);
+  SubstTemplateDeclNameParmName *getAsSubstTemplateDeclNameParmName() const {
+    if (getNameKind() == SubstTemplatedName)
+      return reinterpret_cast<SubstTemplateDeclNameParmName *>(Ptr & ~PtrMask);
     return nullptr;
   }
 
@@ -404,11 +408,25 @@ inline bool operator>=(DeclarationName LHS, DeclarationName RHS) {
   return DeclarationName::compare(LHS, RHS) >= 0;
 }
 
+class DeclarationNameExtraExtended : public DeclarationNameExtra {
+protected:
+  DeclarationName CanonicalName;
+
+public:
+  DeclarationNameExtraExtended(DeclarationName Canon) : CanonicalName(Canon) {}
+
+  bool isCanonical() const {
+    return CanonicalName ==
+           DeclarationName(const_cast<DeclarationNameExtraExtended *>(this));
+  }
+
+  DeclarationName getCanonicalName() const { return CanonicalName; }
+};
+
 /// CXXTemplateDeclNameParmName - Contains the actual identifier that refers to
 /// the declname paramter.
-class CXXTemplateDeclNameParmName : public DeclarationNameExtra,
+class CXXTemplateDeclNameParmName : public DeclarationNameExtraExtended,
                                     public llvm::FoldingSetNode {
-  CXXTemplateDeclNameParmName *CanonicalName;
   TemplateDeclNameParmDecl *TDPDecl;
 
 public:
@@ -418,18 +436,12 @@ public:
 
   /// Build a non-canonical type.
   CXXTemplateDeclNameParmName(TemplateDeclNameParmDecl *TDPDecl,
-                              CXXTemplateDeclNameParmName *Canon)
-      : CanonicalName(Canon), TDPDecl(TDPDecl) {}
+                              DeclarationName Canon)
+      : DeclarationNameExtraExtended(Canon), TDPDecl(TDPDecl) {}
 
   /// Build the canonical type.
   CXXTemplateDeclNameParmName(TemplateDeclNameParmDecl *TDPDecl)
-      : CanonicalName(this), TDPDecl(TDPDecl) {}
-
-  bool isCanonical() const { return CanonicalName == this; }
-
-  CXXTemplateDeclNameParmName *getCanonicalName() const {
-    return CanonicalName;
-  }
+      : DeclarationNameExtraExtended(this), TDPDecl(TDPDecl) {}
 
   TemplateDeclNameParmDecl *getDecl() const {
     return TDPDecl;
@@ -455,17 +467,18 @@ DeclarationName::getCXXTemplatedNameParmDecl() const {
 }
 
 inline bool DeclarationName::isCanonical() const {
-  if (CXXTemplateDeclNameParmName *TN = getAsCXXTemplateDeclNameParmName())
-    return TN->isCanonical();
+  if (DeclarationNameExtraExtended *Extended = getAsExtraExtended())
+    return Extended->isCanonical();
   return true;
 }
 
 inline DeclarationName DeclarationName::getCanonicalName() const {
-  if (CXXTemplateDeclNameParmName *TN = getAsCXXTemplateDeclNameParmName())
-    return DeclarationName(TN->getCanonicalName());
+  if (DeclarationNameExtraExtended *Extended = getAsExtraExtended())
+    return Extended->getCanonicalName();
   return *this;
 }
 
+// TODO: remove this entirely.
 class SubstTemplateDeclNameParmPackStorage : public DeclarationNameExtra,
                                              public llvm::FoldingSetNode {
   unsigned Size;
@@ -496,27 +509,34 @@ public:
                       const TemplateArgument &ArgPack);
 };
 
-class SubstUnnamedStorage : public DeclarationNameExtra,
-                            public llvm::FoldingSetNode {
-  unsigned Depth;
-  unsigned Index;
+class SubstTemplateDeclNameParmName : public DeclarationNameExtraExtended,
+                                      public llvm::FoldingSetNode {
+  CXXTemplateDeclNameParmName *Replaced;
 
 public:
-  SubstUnnamedStorage(unsigned Depth, unsigned Index)
-      : Depth(Depth), Index(Index) {
-    ExtraKindOrNumArgs = SubstUnnamed;
+  SubstTemplateDeclNameParmName(CXXTemplateDeclNameParmName *Param,
+                                DeclarationName Canon)
+      : DeclarationNameExtraExtended(Canon), Replaced(Param) {
+    ExtraKindOrNumArgs = SubstTemplatedName;
+  }
+  /// Gets the template parameter that was substituted for.
+  CXXTemplateDeclNameParmName *getReplacedParameter() const {
+    return Replaced;
   }
 
-  unsigned getDepth() const { return Depth; }
+  /// Gets the type that was substituted for the template
+  /// parameter.
+  DeclarationName getReplacementName() const { return CanonicalName; }
 
-  unsigned getIndex() const { return Index; }
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(ID, Replaced, CanonicalName);
+  }
 
-  void Profile(llvm::FoldingSetNodeID &ID) { Profile(ID, Depth, Index); }
-
-  static void Profile(llvm::FoldingSetNodeID &ID, unsigned Depth,
-                      unsigned Index) {
-    ID.AddInteger(Depth);
-    ID.AddInteger(Index);
+  static void Profile(llvm::FoldingSetNodeID &ID,
+                      const CXXTemplateDeclNameParmName *Replaced,
+                      DeclarationName Replacement) {
+    ID.AddPointer(Replaced);
+    ID.AddPointer(Replacement.getAsOpaquePtr());
   }
 };
 
@@ -532,7 +552,7 @@ class DeclarationNameTable {
   CXXOperatorIdName *CXXOperatorNames; // Operator names
   void *CXXLiteralOperatorNames; // Actually a CXXOperatorIdName*
   void *CXXTemplatedNames; // FoldingSet<CXXTemplateDeclNameParmName> *
-  void *SubstUnnameds; // FoldingSet<SubstUnnamedStorage> *
+  void *SubstTemplatedNames; // FoldingSet<SubstTemplateDeclNameParmName> *
 
   DeclarationNameTable(const DeclarationNameTable&) = delete;
   void operator=(const DeclarationNameTable&) = delete;
@@ -578,7 +598,9 @@ public:
   getCXXTemplatedName(unsigned Depth, unsigned Index, bool ParameterPack,
                       TemplateDeclNameParmDecl *TDPDecl = nullptr);
 
-  DeclarationName getSubstUnnamed(unsigned Depth, unsigned Index);
+  DeclarationName
+  getSubstTemplatedName(CXXTemplateDeclNameParmName *Replaced,
+                        DeclarationName Replacement);
 };
 
 /// DeclarationNameLoc - Additional source/type location info

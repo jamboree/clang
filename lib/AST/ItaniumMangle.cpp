@@ -183,7 +183,7 @@ public:
 
     // Anonymous tags are already numbered.
     if (const TagDecl *Tag = dyn_cast<TagDecl>(ND)) {
-      if (Tag->getName().empty() && !Tag->getTypedefNameForAnonDecl())
+      if (Tag->getDeclName().isEmpty() && !Tag->getTypedefNameForAnonDecl())
         return false;
     }
 
@@ -490,7 +490,7 @@ private:
   void mangleSourceNameWithAbiTags(
       const NamedDecl *ND, const AbiTagList *AdditionalAbiTags = nullptr);
   void mangleDeclName(DeclarationName Name);
-  void mangleSubstUnnamed(unsigned D, unsigned P);
+  void mangleSubstTemplatedName(const SubstTemplateDeclNameParmName *Subst);
   void mangleLocalName(const Decl *D,
                        const AbiTagList *AdditionalAbiTags);
   void mangleBlockForPrefix(const BlockDecl *Block);
@@ -635,26 +635,23 @@ void CXXNameMangler::mangleDeclName(DeclarationName Name) {
   case DeclarationName::CXXTemplatedName:
     mangleTemplateParameter(Name.getCXXTemplatedNameParmDecl()->getIndex());
     break;
-  case DeclarationName::SubstUnnamed: {
-    const SubstUnnamedStorage *Subst = Name.getAsSubstUnnamed();
-    mangleSubstUnnamed(Subst->getDepth(), Subst->getIndex());
+  case DeclarationName::SubstTemplatedName:
+    mangleSourceName(Name.getAsSubstTemplateDeclNameParmName()
+                         ->getReplacementName()
+                         .getAsIdentifierInfo());
     break;
-  }
   default:
     llvm_unreachable("Can't mangle this declname!");
   }
 }
 
-void CXXNameMangler::mangleSubstUnnamed(unsigned D, unsigned P) {
-  if (D == 0)
-    Out << "X_";
-  else
-    Out << 'X' << (D - 1) << '_';
-
-  if (P == 0)
-    Out << "_";
-  else
-    Out << (P - 1) << '_';
+void CXXNameMangler::mangleSubstTemplatedName(
+    const SubstTemplateDeclNameParmName *Subst) {
+  const TemplateDeclNameParmDecl *TDP =
+      Subst->getReplacedParameter()->getDecl();
+  Out << 'W';
+  mangleSeqID(TDP->getDepth());
+  mangleSeqID(TDP->getIndex());
 }
 
 void CXXNameMangler::mangle(const NamedDecl *D) {
@@ -1205,8 +1202,11 @@ void CXXNameMangler::mangleUnresolvedName(NestedNameSpecifier *qualifier,
     case DeclarationName::CXXTemplatedName:
       mangleTemplateParameter(name.getCXXTemplatedNameParmDecl()->getIndex());
       break;
-    case DeclarationName::SubstUnnamed:
-      llvm_unreachable("Can't mangle a unnamed name here!");
+    case DeclarationName::SubstTemplatedName:
+      mangleSourceName(name.getAsSubstTemplateDeclNameParmName()
+                           ->getReplacementName()
+                           .getAsIdentifierInfo());
+      break;
     case DeclarationName::CXXConstructorName:
       llvm_unreachable("Can't mangle a constructor name!");
     case DeclarationName::CXXUsingDirective:
@@ -1416,9 +1416,13 @@ void CXXNameMangler::mangleUnqualifiedName(const NamedDecl *ND,
     writeAbiTags(ND, AdditionalAbiTags);
     break;
 
-  case DeclarationName::SubstUnnamed: {
-    const SubstUnnamedStorage *Subst = Name.getAsSubstUnnamed();
-    mangleSubstUnnamed(Subst->getDepth(), Subst->getIndex());
+  case DeclarationName::SubstTemplatedName: {
+    SubstTemplateDeclNameParmName *Subst =
+        Name.getAsSubstTemplateDeclNameParmName();
+    if (ND->isLocalExternDecl())
+      mangleSourceName(Subst->getReplacementName().getAsIdentifierInfo());
+    else
+      mangleSubstTemplatedName(Subst);
     writeAbiTags(ND, AdditionalAbiTags);
     break;
   }
@@ -1992,7 +1996,7 @@ void CXXNameMangler::mangleOperatorName(DeclarationName Name, unsigned Arity) {
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::ObjCOneArgSelector:
   case DeclarationName::ObjCZeroArgSelector:
-  case DeclarationName::SubstUnnamed:
+  case DeclarationName::SubstTemplatedName:
     llvm_unreachable("Not an operator name");
 
   case DeclarationName::CXXConversionFunctionName:
@@ -2928,10 +2932,10 @@ void CXXNameMangler::mangleType(const PackExpansionType *T) {
 }
 
 void CXXNameMangler::mangleType(const DesignatingType *T) {
-  // FIXME: define a rule
-  //Out << ??;
-  //mangleSourceName(T->getDesigName().getAsIdentifierInfo());
+  // <type>  ::= <type> Q <designator name>
   mangleType(T->getMasterType());
+  Out << "Q";
+  mangleDeclName(T->getDesigName());
 }
 
 void CXXNameMangler::mangleType(const ObjCInterfaceType *T) {
@@ -3997,6 +4001,7 @@ recurse:
       Diags.Report(E->getExprLoc(), DiagID) << DIE->getDesignatorsSourceRange();
       break;
     }
+    Out << "di";
     mangleDeclName(DIE->getDesignator(0)->getFieldName());
     mangleExpression(DIE->getInit());
     break;
@@ -4225,9 +4230,13 @@ void CXXNameMangler::mangleTemplateArg(TemplateArgument A) {
     for (const auto &P : A.pack_elements())
       mangleTemplateArg(P);
     Out << 'E';
+    break;
   }
   case TemplateArgument::DeclName:
-    mangleDeclName(A.getAsDeclName());
+    if (DeclarationName Name = A.getAsDeclName())
+      mangleDeclName(Name);
+    else
+      Out << '0';
     break;
   case TemplateArgument::DeclNameExpansion:
     Out << "Dp";

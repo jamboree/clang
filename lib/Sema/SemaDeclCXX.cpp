@@ -1913,7 +1913,7 @@ void Sema::CheckOverrideControl(NamedDecl *D) {
   // We can't check dependent instance methods.
   if (MD && MD->isInstance() &&
       (MD->getParent()->hasAnyDependentBases() ||
-       MD->getType()->isDependentType()))
+       MD->getType()->isDependentType() || MD->getDeclName().isTemplatedName()))
     return;
 
   if (MD && !MD->isVirtual()) {

@@ -3747,7 +3747,7 @@ void Sema::handleTagNumbering(const TagDecl *Tag, Scope *TagScope) {
   if (isa<CXXRecordDecl>(Tag->getParent())) {
     // If this tag is the direct child of a class, number it if
     // it is anonymous.
-    if (!Tag->getName().empty() || Tag->getTypedefNameForAnonDecl())
+    if (!Tag->getDeclName().isEmpty() || Tag->getTypedefNameForAnonDecl())
       return;
     MangleNumberingContext &MCtx =
         Context.getManglingNumberContext(Tag->getParent());
@@ -7032,7 +7032,7 @@ struct FindOverriddenMethod {
     RecordDecl *BaseRecord =
         Specifier->getType()->getAs<RecordType>()->getDecl();
 
-    DeclarationName Name = Method->getDeclName();
+    DeclarationName Name = Method->getDeclName().getCanonicalName();
 
     // FIXME: Do we care about other names here too?
     if (Name.getNameKind() == DeclarationName::CXXDestructorName) {

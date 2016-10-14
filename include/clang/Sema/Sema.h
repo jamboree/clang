@@ -1967,6 +1967,9 @@ public:
                  bool ScopedEnumUsesClassTag, TypeResult UnderlyingType,
                  bool IsTypeSpecifier, SkipBodyInfo *SkipBody = nullptr);
 
+  bool CheckLocalTemplatedName(DeclarationName Name, SourceLocation NameLoc,
+                               DeclContext *DC);
+
   void CheckNameRedeclaration(NamedDecl *NewND, LookupResult &Previous);
 
   Decl *ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,

@@ -1180,10 +1180,8 @@ void ASTDeclReader::VisitFieldDecl(FieldDecl *FD) {
       FD->InitStorage.setPointer(Reader.ReadExpr(F));
     }
   }
-  if (!FD->getDeclName()) {
-    if (FieldDecl *Tmpl = ReadDeclAs<FieldDecl>(Record, Idx))
-      Reader.getContext().setInstantiatedFromUnnamedFieldDecl(FD, Tmpl);
-  }
+  if (FieldDecl *Tmpl = ReadDeclAs<FieldDecl>(Record, Idx))
+    FD->setInstantiatedFromMemberField(Tmpl);
   mergeMergeable(FD);
 }
 

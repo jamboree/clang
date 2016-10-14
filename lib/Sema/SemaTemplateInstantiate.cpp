@@ -940,8 +940,9 @@ Decl *TemplateInstantiator::TransformDecl(SourceLocation Loc, Decl *D) {
 
 DeclarationNameInfo TemplateInstantiator::TransformDeclarationNameInfo(
     const DeclarationNameInfo &NameInfo) {
-  if (TemplateDeclNameParmDecl *TDP =
-          NameInfo.getName().getCXXTemplatedNameParmDecl()) {
+  if (CXXTemplateDeclNameParmName *TN =
+          NameInfo.getName().getAsCXXTemplateDeclNameParmName()) {
+    TemplateDeclNameParmDecl *TDP = TN->getDecl();
     if (TDP->getDepth() < TemplateArgs.getNumLevels()) {
       // If the corresponding template argument is NULL or non-existent, it's
       // because we are performing instantiation from explicitly-specified
@@ -972,8 +973,10 @@ DeclarationNameInfo TemplateInstantiator::TransformDeclarationNameInfo(
 
           Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
       }
-
-      return DeclarationNameInfo(Arg.getAsDeclName(), NameInfo.getLoc());
+      DeclarationName Name =
+          getSema().Context.DeclarationNames.getSubstTemplatedName(
+              TN, Arg.getAsDeclName().getCanonicalName());
+      return DeclarationNameInfo(Name, NameInfo.getLoc());
     }
   }
 

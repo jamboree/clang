@@ -35,6 +35,15 @@
 using namespace clang;
 using namespace CodeGen;
 
+static StringRef getName(const NamedDecl &D) {
+  DeclarationName Name = D.getDeclName();
+  if (auto Subst = Name.getAsSubstTemplateDeclNameParmName())
+    Name = Subst->getReplacementName();
+  if (IdentifierInfo *Id = Name.getAsIdentifierInfo())
+    return Id->getName();
+  return "";
+}
+
 void CodeGenFunction::EmitDecl(const Decl &D) {
   switch (D.getKind()) {
   case Decl::BuiltinTemplate:
@@ -1041,7 +1050,7 @@ CodeGenFunction::EmitAutoVarAlloca(const VarDecl &D) {
       // building the instruction so that it's there even in no-asserts
       // builds.
       address = CreateTempAlloca(allocaTy, allocaAlignment);
-      address.getPointer()->setName(D.getName());
+      address.getPointer()->setName(getName(D));
 
       // Don't emit lifetime markers for MSVC catch parameters. The lifetime of
       // the catch parameter starts in the catchpad instruction, and we can't
@@ -1750,7 +1759,7 @@ void CodeGenFunction::EmitParmDecl(const VarDecl &D, ParamValue Arg,
   assert((isa<ParmVarDecl>(D) || isa<ImplicitParamDecl>(D)) &&
          "Invalid argument to EmitParmDecl");
 
-  Arg.getAnyValue()->setName(D.getName());
+  Arg.getAnyValue()->setName(getName(D));
 
   QualType Ty = D.getType();
 
@@ -1774,7 +1783,7 @@ void CodeGenFunction::EmitParmDecl(const VarDecl &D, ParamValue Arg,
     unsigned AS = DeclPtr.getType()->getAddressSpace();
     llvm::Type *IRTy = ConvertTypeForMem(Ty)->getPointerTo(AS);
     if (DeclPtr.getType() != IRTy)
-      DeclPtr = Builder.CreateBitCast(DeclPtr, IRTy, D.getName());
+      DeclPtr = Builder.CreateBitCast(DeclPtr, IRTy, getName(D));
 
     // Push a destructor cleanup for this parameter if the ABI requires it.
     // Don't push a cleanup in a thunk for a method that will also emit a
@@ -1788,7 +1797,7 @@ void CodeGenFunction::EmitParmDecl(const VarDecl &D, ParamValue Arg,
   } else {
     // Otherwise, create a temporary to hold the value.
     DeclPtr = CreateMemTemp(Ty, getContext().getDeclAlign(&D),
-                            D.getName() + ".addr");
+                            getName(D) + ".addr");
     DoStore = true;
   }
 

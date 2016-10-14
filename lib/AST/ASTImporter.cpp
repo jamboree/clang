@@ -2077,7 +2077,7 @@ ASTNodeImporter::ImportDeclarationNameLoc(const DeclarationNameInfo &From,
   case DeclarationName::ObjCMultiArgSelector:
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXTemplatedName:
-  case DeclarationName::SubstUnnamed:
+  case DeclarationName::SubstTemplatedName:
     return;
 
   case DeclarationName::CXXOperatorName: {
@@ -6640,10 +6640,13 @@ DeclarationName ASTImporter::Import(DeclarationName FromName) {
 
     return ToContext.getSubstTemplateDeclNameParmPack(Param, ArgPack);
   }
-  case DeclarationName::SubstUnnamed: {
-    SubstUnnamedStorage *Subst = FromName.getAsSubstUnnamed();
-    return ToContext.DeclarationNames.getSubstUnnamed(Subst->getDepth(),
-                                                      Subst->getIndex());
+  case DeclarationName::SubstTemplatedName: {
+    SubstTemplateDeclNameParmName *Subst =
+        FromName.getAsSubstTemplateDeclNameParmName();
+    return ToContext.DeclarationNames.getSubstTemplatedName(
+        Import(Subst->getReplacedParameter())
+            .getAsCXXTemplateDeclNameParmName(),
+        Import(Subst->getReplacementName()));
   }
   }
 

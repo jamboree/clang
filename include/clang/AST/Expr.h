@@ -2383,7 +2383,8 @@ public:
         MemberLoc(NameInfo.getLoc()), OperatorLoc(operatorloc),
         IsArrow(isarrow), HasQualifierOrFoundDecl(false),
         HasTemplateKWAndArgsInfo(false), HadMultipleCandidates(false) {
-    assert(memberdecl->getDeclName() == NameInfo.getName());
+    assert(memberdecl->getDeclName().getCanonicalName() ==
+           NameInfo.getName().getCanonicalName());
   }
 
   // NOTE: this constructor should be used only when it is known that
