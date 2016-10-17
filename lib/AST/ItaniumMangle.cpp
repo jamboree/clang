@@ -490,7 +490,8 @@ private:
   void mangleSourceNameWithAbiTags(
       const NamedDecl *ND, const AbiTagList *AdditionalAbiTags = nullptr);
   void mangleDeclName(DeclarationName Name);
-  void mangleSubstTemplatedName(const SubstTemplateDeclNameParmName *Subst);
+  void mangleSubstTemplatedName(const NamedDecl *ND,
+                                const SubstTemplateDeclNameParmName *Subst);
   void mangleLocalName(const Decl *D,
                        const AbiTagList *AdditionalAbiTags);
   void mangleBlockForPrefix(const BlockDecl *Block);
@@ -646,7 +647,15 @@ void CXXNameMangler::mangleDeclName(DeclarationName Name) {
 }
 
 void CXXNameMangler::mangleSubstTemplatedName(
-    const SubstTemplateDeclNameParmName *Subst) {
+    const NamedDecl *ND, const SubstTemplateDeclNameParmName *Subst) {
+  if (const IdentifierInfo *Id =
+          Subst->getReplacementName().getAsIdentifierInfo()) {
+    if (ND->isLocalExternDecl() ||
+        !isLocalContainerContext(getEffectiveDeclContext(ND))) {
+      mangleSourceName(Id);
+      return;
+    }
+  }
   const TemplateDeclNameParmDecl *TDP =
       Subst->getReplacedParameter()->getDecl();
   Out << 'W';
@@ -1416,16 +1425,10 @@ void CXXNameMangler::mangleUnqualifiedName(const NamedDecl *ND,
     writeAbiTags(ND, AdditionalAbiTags);
     break;
 
-  case DeclarationName::SubstTemplatedName: {
-    SubstTemplateDeclNameParmName *Subst =
-        Name.getAsSubstTemplateDeclNameParmName();
-    if (ND->isLocalExternDecl())
-      mangleSourceName(Subst->getReplacementName().getAsIdentifierInfo());
-    else
-      mangleSubstTemplatedName(Subst);
+  case DeclarationName::SubstTemplatedName:
+    mangleSubstTemplatedName(ND, Name.getAsSubstTemplateDeclNameParmName());
     writeAbiTags(ND, AdditionalAbiTags);
     break;
-  }
   }
 }
 

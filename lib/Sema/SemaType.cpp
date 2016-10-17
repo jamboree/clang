@@ -4555,6 +4555,10 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
     T.addConst();
   }
 
+  if (AllowDesignator && D.hasDot())
+    T = S.BuildDesignatingType(T, S.getPossiblyTemplatedName(D.getIdentifier()),
+                               D.getIdentifierLoc());
+
   // If there was an ellipsis in the declarator, the declaration declares a
   // parameter pack whose type may be a pack expansion type.
   if (D.hasEllipsis()) {
@@ -4629,10 +4633,6 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
       break;
     }
   }
-
-  if (AllowDesignator && D.hasDot())
-    T = S.BuildDesignatingType(T, S.getPossiblyTemplatedName(D.getIdentifier()),
-                               D.getIdentifierLoc());
 
   assert(!T.isNull() && "T must not be null at the end of this function");
   if (D.isInvalidType())

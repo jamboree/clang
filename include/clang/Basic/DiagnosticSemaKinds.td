@@ -3658,6 +3658,8 @@ def err_template_name_depends_on_own_param : Error<
 def err_templated_name_on_undeclared_elaborated_type : Error<
   "declname parameter cannot name an undeclared elaborated type">;
 
+def err_empty_local_extern_name : Error<"%select{function|variable}0 name is empty">;
+
 // C++ Template Argument Lists
 def err_template_missing_args : Error<
   "use of class template %0 requires template arguments">;

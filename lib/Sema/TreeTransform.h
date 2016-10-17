@@ -8981,7 +8981,7 @@ TreeTransform<Derived>::TransformDesignatedInitExpr(DesignatedInitExpr *E) {
   // If the designator is rendered to unnamed, it becomes a positional init.
   if (Desig.getNumDesignators() == 1) {
     const Designator &D = Desig.getDesignator(0);
-    if (D.isFieldDesignator() && !D.getField())
+    if (D.isFieldDesignator() && !D.getField().getCanonicalName())
       return Init;
   }
 

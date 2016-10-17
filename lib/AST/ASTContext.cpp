@@ -4270,7 +4270,7 @@ CanQualType ASTContext::getCanonicalDesigFunctionType(
   for (const ParmVarDecl *Parm : ArgArray) {
     QualType T = getCanonicalParamType(Parm->getType());
     if (Parm->isDesignatable()) {
-      T = getDesignatingType(T, Parm->getDeclName());
+      T = getDesignatingType(T, Parm->getDeclName().getCanonicalName());
       AnyDesig = true;
     }
     CanonicalArgs.push_back(T);

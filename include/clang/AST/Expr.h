@@ -4067,9 +4067,9 @@ public:
     Designator(DeclarationName Name, SourceLocation DotLoc,
                SourceLocation FieldLoc)
         : Kind(FieldDesignator) {
-      if (CXXTemplateDeclNameParmName *TN =
-              Name.getAsCXXTemplateDeclNameParmName())
-        Field.NameOrField = reinterpret_cast<uintptr_t>(TN) | 0x03;
+      if (DeclarationNameExtraExtended *Ex =
+              Name.getAsExtraExtended())
+        Field.NameOrField = reinterpret_cast<uintptr_t>(Ex) | 0x03;
       else {
         const IdentifierInfo *Id = Name.getAsIdentifierInfo();
         Field.NameOrField = reinterpret_cast<uintptr_t>(Id) | 0x01;

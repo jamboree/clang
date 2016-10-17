@@ -122,17 +122,6 @@ private:
     return reinterpret_cast<DeclarationNameExtra *>(Ptr & ~PtrMask);
   }
 
-  DeclarationNameExtraExtended *getAsExtraExtended() const {
-    if (getStoredNameKind() == StoredDeclarationNameExtra) {
-      switch (getExtra()->ExtraKindOrNumArgs) {
-      case DeclarationNameExtra::CXXTemplatedName:
-      case DeclarationNameExtra::SubstTemplatedName:
-        return reinterpret_cast<DeclarationNameExtraExtended *>(Ptr & ~PtrMask);
-      }
-    }
-    return nullptr;
-  }
-
   /// getAsCXXSpecialName - If the stored pointer is actually a
   /// CXXSpecialName, returns a pointer to it. Otherwise, returns
   /// a NULL pointer.
@@ -263,9 +252,16 @@ public:
   /// getAsIdentifierInfo - Retrieve the IdentifierInfo * stored in
   /// this declaration name, or NULL if this declaration name isn't a
   /// simple identifier.
-  IdentifierInfo *getAsIdentifierInfo() const {
-    if (isIdentifier())
-      return reinterpret_cast<IdentifierInfo *>(Ptr);
+  IdentifierInfo *getAsIdentifierInfo() const;
+
+  DeclarationNameExtraExtended *getAsExtraExtended() const {
+    if (getStoredNameKind() == StoredDeclarationNameExtra) {
+      switch (getExtra()->ExtraKindOrNumArgs) {
+      case DeclarationNameExtra::CXXTemplatedName:
+      case DeclarationNameExtra::SubstTemplatedName:
+        return reinterpret_cast<DeclarationNameExtraExtended *>(Ptr & ~PtrMask);
+      }
+    }
     return nullptr;
   }
 
@@ -466,18 +462,6 @@ DeclarationName::getCXXTemplatedNameParmDecl() const {
   return nullptr;
 }
 
-inline bool DeclarationName::isCanonical() const {
-  if (DeclarationNameExtraExtended *Extended = getAsExtraExtended())
-    return Extended->isCanonical();
-  return true;
-}
-
-inline DeclarationName DeclarationName::getCanonicalName() const {
-  if (DeclarationNameExtraExtended *Extended = getAsExtraExtended())
-    return Extended->getCanonicalName();
-  return *this;
-}
-
 // TODO: remove this entirely.
 class SubstTemplateDeclNameParmPackStorage : public DeclarationNameExtra,
                                              public llvm::FoldingSetNode {
@@ -539,6 +523,32 @@ public:
     ID.AddPointer(Replacement.getAsOpaquePtr());
   }
 };
+
+inline bool DeclarationName::isCanonical() const {
+  if (DeclarationNameExtraExtended *Extended = getAsExtraExtended())
+    return Extended->isCanonical();
+  return true;
+}
+
+inline DeclarationName DeclarationName::getCanonicalName() const {
+  if (DeclarationNameExtraExtended *Extended = getAsExtraExtended())
+    return Extended->getCanonicalName();
+  return *this;
+}
+
+inline IdentifierInfo *DeclarationName::getAsIdentifierInfo() const {
+  switch (getStoredNameKind()) {
+  case StoredIdentifier:
+    return reinterpret_cast<IdentifierInfo *>(Ptr);
+  case StoredDeclarationNameExtra:
+    if (getExtra()->ExtraKindOrNumArgs ==
+        DeclarationNameExtra::SubstTemplatedName)
+      return reinterpret_cast<SubstTemplateDeclNameParmName *>(Ptr & ~PtrMask)
+          ->getReplacementName()
+          .getAsIdentifierInfo();
+  }
+  return nullptr;
+}
 
 /// DeclarationNameTable - Used to store and retrieve DeclarationName
 /// instances for the various kinds of declaration names, e.g., normal

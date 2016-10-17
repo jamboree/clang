@@ -634,11 +634,15 @@ Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D,
   }
 
   DeclContext *DC = Owner;
-  if (D->isLocalExternDecl())
-    SemaRef.adjustContextForLocalExternDecl(DC);
-
   DeclarationNameInfo NameInfo =
       SemaRef.SubstDeclarationNameInfo(D->getNameInfo(), TemplateArgs);
+  if (D->isLocalExternDecl()) {
+    if (NameInfo.getName().getCanonicalName().isEmpty()) {
+      SemaRef.Diag(NameInfo.getLoc(), diag::err_empty_local_extern_name) << 1;
+      return nullptr;
+    }
+    SemaRef.adjustContextForLocalExternDecl(DC);
+  }
 
   // Build the instantiated declaration.
   VarDecl *Var = VarDecl::Create(SemaRef.Context, DC, D->getInnerLocStart(),
@@ -1609,8 +1613,14 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
     DC = SemaRef.FindInstantiatedContext(D->getLocation(), D->getDeclContext(),
                                          TemplateArgs);
   }
-  DeclarationNameInfo NameInfo
-    = SemaRef.SubstDeclarationNameInfo(D->getNameInfo(), TemplateArgs);
+
+  DeclarationNameInfo NameInfo =
+      SemaRef.SubstDeclarationNameInfo(D->getNameInfo(), TemplateArgs);
+  if (NameInfo.getName().getCanonicalName().isEmpty()) {
+    SemaRef.Diag(NameInfo.getLoc(), diag::err_empty_local_extern_name) << 0;
+    return nullptr;
+  }
+
   FunctionDecl *Function =
       FunctionDecl::Create(SemaRef.Context, DC, D->getInnerLocStart(),
                            NameInfo, T, TInfo,

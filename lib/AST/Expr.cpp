@@ -3525,7 +3525,7 @@ DeclarationName DesignatedInitExpr::Designator::getFieldName() const {
   if (auto Mask = Field.NameOrField & 0x03) {
     auto Ptr = Field.NameOrField & ~0x03;
     if (Mask == 0x03)
-      return reinterpret_cast<CXXTemplateDeclNameParmName *>(Ptr);
+      return reinterpret_cast<DeclarationNameExtraExtended *>(Ptr);
     return reinterpret_cast<IdentifierInfo *>(Ptr);
   }
   return getField()->getDeclName();
