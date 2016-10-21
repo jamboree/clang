@@ -438,6 +438,8 @@ DeclarationNameTable::DeclarationNameTable(const ASTContext &C) : Ctx(C) {
   for (unsigned Op = 0; Op < NUM_OVERLOADED_OPERATORS; ++Op) {
     CXXOperatorNames[Op].ExtraKindOrNumArgs
       = Op + DeclarationNameExtra::CXXConversionFunction;
+    CXXOperatorNames[Op].CanonicalPtr =
+        DeclarationName(CXXOperatorNames + Op).getAsOpaqueInteger();
     CXXOperatorNames[Op].FETokenInfo = nullptr;
   }
 }
@@ -513,6 +515,7 @@ DeclarationNameTable::getCXXSpecialName(DeclarationName::NameKind Kind,
 
   CXXSpecialName *SpecialName = new (Ctx) CXXSpecialName;
   SpecialName->ExtraKindOrNumArgs = EKind;
+  SpecialName->CanonicalPtr = DeclarationName(SpecialName).getAsOpaqueInteger();
   SpecialName->Type = Ty;
   SpecialName->FETokenInfo = nullptr;
 
@@ -541,6 +544,7 @@ DeclarationNameTable::getCXXLiteralOperatorName(IdentifierInfo *II) {
   
   CXXLiteralOperatorIdName *LiteralName = new (Ctx) CXXLiteralOperatorIdName;
   LiteralName->ExtraKindOrNumArgs = DeclarationNameExtra::CXXLiteralOperator;
+  LiteralName->CanonicalPtr = DeclarationName(LiteralName).getAsOpaqueInteger();
   LiteralName->ID = II;
   LiteralName->FETokenInfo = nullptr;
 
@@ -582,7 +586,6 @@ DeclarationNameTable::getCXXTemplatedName(unsigned Depth, unsigned Index,
             Ctx, Ctx.getTranslationUnitDecl(), SourceLocation(),
             SourceLocation(), Depth, Index, ParameterPack, nullptr));
 
-  NameParm->ExtraKindOrNumArgs = DeclarationNameExtra::CXXTemplatedName;
   NameParm->FETokenInfo = nullptr;
 
   TemplatedNames->InsertNode(NameParm, InsertPos);
@@ -778,7 +781,8 @@ SourceLocation DeclarationNameInfo::getEndLoc() const {
 
 void CXXTemplateDeclNameParmName::Profile(llvm::FoldingSetNodeID &ID) {
   Profile(ID, TDPDecl->getDepth(), TDPDecl->getIndex(),
-          TDPDecl->isParameterPack(), isCanonical() ? nullptr : TDPDecl);
+          TDPDecl->isParameterPack(),
+          DeclarationName(this).isCanonical() ? nullptr : TDPDecl);
 }
 
 TemplateArgument SubstTemplateDeclNameParmPackStorage::getArgumentPack() const {

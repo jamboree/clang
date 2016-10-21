@@ -2935,10 +2935,10 @@ void CXXNameMangler::mangleType(const PackExpansionType *T) {
 }
 
 void CXXNameMangler::mangleType(const DesignatingType *T) {
-  // <type>  ::= <type> Q <designator name>
-  mangleType(T->getMasterType());
+  // <type>  ::= Q <designator name> <type>
   Out << "Q";
   mangleDeclName(T->getDesigName());
+  mangleType(T->getMasterType());
 }
 
 void CXXNameMangler::mangleType(const ObjCInterfaceType *T) {

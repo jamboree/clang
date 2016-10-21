@@ -1300,8 +1300,10 @@ DEF_TRAVERSE_TYPELOC(DependentTemplateSpecializationType, {
 DEF_TRAVERSE_TYPELOC(PackExpansionType,
                      { TRY_TO(TraverseTypeLoc(TL.getPatternLoc())); })
 
-DEF_TRAVERSE_TYPELOC(DesignatingType,
-                     { TRY_TO(TraverseTypeLoc(TL.getMasterLoc())); })
+DEF_TRAVERSE_TYPELOC(DesignatingType, {
+  TRY_TO(TraverseTypeLoc(TL.getMasterLoc()));
+  TRY_TO(TraverseDeclarationNameInfo(TL.getNameInfo()));
+})
 
 DEF_TRAVERSE_TYPELOC(ObjCInterfaceType, {})
 

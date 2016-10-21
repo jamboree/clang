@@ -4067,8 +4067,8 @@ public:
     Designator(DeclarationName Name, SourceLocation DotLoc,
                SourceLocation FieldLoc)
         : Kind(FieldDesignator) {
-      if (DeclarationNameExtraExtended *Ex =
-              Name.getAsExtraExtended())
+      if (DeclarationNameExtra *Ex =
+              Name.getAsExtra())
         Field.NameOrField = reinterpret_cast<uintptr_t>(Ex) | 0x03;
       else {
         const IdentifierInfo *Id = Name.getAsIdentifierInfo();

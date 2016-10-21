@@ -9596,9 +9596,11 @@ static void DiagnoseDesignatorNotFound(Sema &S, NamedDecl *Found,
                                        const DesignationFailureInfo &Info) {
   auto DIE = dyn_cast<DesignatedInitExpr>(Info.Arg);
   assert(DIE && "must be a DesignatedInitExpr");
-  auto Id = DIE->getDesignator(0)->getFieldName();
+  IdentifierInfo *Id =
+      DIE->getDesignator(0)->getFieldName().getAsIdentifierInfo();
   std::string Description;
-  OverloadCandidateKind FnKind = ClassifyOverloadCandidate(S, Found, Fn, Description);
+  OverloadCandidateKind FnKind =
+      ClassifyOverloadCandidate(S, Found, Fn, Description);
   SourceLocation Loc = Fn->getLocation();
   unsigned mode = 0;
   for (auto Param : Fn->parameters()) {
@@ -9617,18 +9619,19 @@ static void DiagnoseBadArgumentPos(Sema &S, NamedDecl *Found, FunctionDecl *Fn,
                                    const DesignationFailureInfo &Info,
                                    unsigned mode) {
   std::string Description;
-  OverloadCandidateKind FnKind = ClassifyOverloadCandidate(S, Found, Fn, Description);
-  S.Diag(Fn->getLocation(),
-         diag::note_ovl_bad_argument_pos)
+  OverloadCandidateKind FnKind =
+      ClassifyOverloadCandidate(S, Found, Fn, Description);
+  S.Diag(Fn->getLocation(), diag::note_ovl_bad_argument_pos)
       << (unsigned)FnKind << (Fn->getDescribedFunctionTemplate() != nullptr)
       << mode << (Info.ParamIndex + 1);
 }
 
-static void DiagnoseArgumentOutOfBound(Sema &S, NamedDecl *Found,
-                                       FunctionDecl *Fn,
-                                       const DesignationFailureInfo &Info) {
+static void DiagnoseArgumentOutOfBounds(Sema &S, NamedDecl *Found,
+                                        FunctionDecl *Fn,
+                                        const DesignationFailureInfo &Info) {
   std::string Description;
-  OverloadCandidateKind FnKind = ClassifyOverloadCandidate(S, Found, Fn, Description);
+  OverloadCandidateKind FnKind =
+      ClassifyOverloadCandidate(S, Found, Fn, Description);
   S.Diag(Fn->getLocation(), diag::note_ovl_argument_out_of_bounds)
       << (unsigned)FnKind << (Fn->getDescribedFunctionTemplate() != nullptr)
       << Info.ParamIndex << Fn->getNumParams();
@@ -9919,7 +9922,7 @@ static void DiagnoseBadDeduction(Sema &S, NamedDecl *Found, Decl *Templated,
     break;
 
   case Sema::TDK_ArgumentOutOfBounds:
-    DiagnoseArgumentOutOfBound(S, Found, dyn_cast<FunctionDecl>(Templated),
+    DiagnoseArgumentOutOfBounds(S, Found, dyn_cast<FunctionDecl>(Templated),
                                DeductionFailure.DesignationFailure);
     break;
 
@@ -10110,7 +10113,7 @@ static void NoteFunctionCandidate(Sema &S, OverloadCandidate *Cand,
     break;
 
   case ovl_fail_argument_out_of_bounds:
-    DiagnoseArgumentOutOfBound(S, Cand->FoundDecl, Cand->Function,
+    DiagnoseArgumentOutOfBounds(S, Cand->FoundDecl, Cand->Function,
                                Cand->DesignationFailure);
     break;
   }

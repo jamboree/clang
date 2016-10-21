@@ -29,7 +29,6 @@ namespace clang {
   class CXXSpecialName;
   class CXXTemplateDeclNameParmName;
   class DeclarationNameExtra;
-  class DeclarationNameExtraExtended;
   class IdentifierInfo;
   class MultiKeywordSelector;
   enum OverloadedOperatorKind : int;
@@ -145,28 +144,6 @@ private:
     return nullptr;
   }
 
-  // Construct a declaration name from the name of a C++ constructor,
-  // destructor, or conversion function.
-  DeclarationName(CXXSpecialName *Name)
-    : Ptr(reinterpret_cast<uintptr_t>(Name)) {
-    assert((Ptr & PtrMask) == 0 && "Improperly aligned CXXSpecialName");
-    Ptr |= StoredDeclarationNameExtra;
-  }
-
-  // Construct a declaration name from the name of a C++ overloaded
-  // operator.
-  DeclarationName(CXXOperatorIdName *Name)
-    : Ptr(reinterpret_cast<uintptr_t>(Name)) {
-    assert((Ptr & PtrMask) == 0 && "Improperly aligned CXXOperatorId");
-    Ptr |= StoredDeclarationNameExtra;
-  }
-
-  DeclarationName(CXXLiteralOperatorIdName *Name)
-    : Ptr(reinterpret_cast<uintptr_t>(Name)) {
-    assert((Ptr & PtrMask) == 0 && "Improperly aligned CXXLiteralOperatorId");
-    Ptr |= StoredDeclarationNameExtra;
-  }
-
   /// Construct a declaration name from a raw pointer.
   DeclarationName(uintptr_t Ptr) : Ptr(Ptr) { }
 
@@ -190,7 +167,7 @@ public:
   // Construct a declaration name from an Objective-C selector.
   DeclarationName(Selector Sel) : Ptr(Sel.InfoPtr) { }
 
-  DeclarationName(DeclarationNameExtraExtended *Name)
+  DeclarationName(DeclarationNameExtra *Name)
       : Ptr(reinterpret_cast<uintptr_t>(Name)) {
     assert((Ptr & PtrMask) == 0 && "Improperly aligned DeclarationName");
     Ptr |= StoredDeclarationNameExtra;
@@ -254,14 +231,9 @@ public:
   /// simple identifier.
   IdentifierInfo *getAsIdentifierInfo() const;
 
-  DeclarationNameExtraExtended *getAsExtraExtended() const {
-    if (getStoredNameKind() == StoredDeclarationNameExtra) {
-      switch (getExtra()->ExtraKindOrNumArgs) {
-      case DeclarationNameExtra::CXXTemplatedName:
-      case DeclarationNameExtra::SubstTemplatedName:
-        return reinterpret_cast<DeclarationNameExtraExtended *>(Ptr & ~PtrMask);
-      }
-    }
+  DeclarationNameExtra *getAsExtra() const {
+    if (getStoredNameKind() == StoredDeclarationNameExtra)
+      return reinterpret_cast<DeclarationNameExtra *>(Ptr & ~PtrMask);
     return nullptr;
   }
 
@@ -404,24 +376,9 @@ inline bool operator>=(DeclarationName LHS, DeclarationName RHS) {
   return DeclarationName::compare(LHS, RHS) >= 0;
 }
 
-class DeclarationNameExtraExtended : public DeclarationNameExtra {
-protected:
-  DeclarationName CanonicalName;
-
-public:
-  DeclarationNameExtraExtended(DeclarationName Canon) : CanonicalName(Canon) {}
-
-  bool isCanonical() const {
-    return CanonicalName ==
-           DeclarationName(const_cast<DeclarationNameExtraExtended *>(this));
-  }
-
-  DeclarationName getCanonicalName() const { return CanonicalName; }
-};
-
 /// CXXTemplateDeclNameParmName - Contains the actual identifier that refers to
 /// the declname paramter.
-class CXXTemplateDeclNameParmName : public DeclarationNameExtraExtended,
+class CXXTemplateDeclNameParmName : public DeclarationNameExtra,
                                     public llvm::FoldingSetNode {
   TemplateDeclNameParmDecl *TDPDecl;
 
@@ -433,11 +390,17 @@ public:
   /// Build a non-canonical type.
   CXXTemplateDeclNameParmName(TemplateDeclNameParmDecl *TDPDecl,
                               DeclarationName Canon)
-      : DeclarationNameExtraExtended(Canon), TDPDecl(TDPDecl) {}
+      : TDPDecl(TDPDecl) {
+    ExtraKindOrNumArgs = CXXTemplatedName;
+    CanonicalPtr = Canon.getAsOpaqueInteger();
+  }
 
   /// Build the canonical type.
   CXXTemplateDeclNameParmName(TemplateDeclNameParmDecl *TDPDecl)
-      : DeclarationNameExtraExtended(this), TDPDecl(TDPDecl) {}
+      : TDPDecl(TDPDecl) {
+      ExtraKindOrNumArgs = CXXTemplatedName;
+    CanonicalPtr = DeclarationName(this).getAsOpaqueInteger();
+  }
 
   TemplateDeclNameParmDecl *getDecl() const {
     return TDPDecl;
@@ -493,15 +456,16 @@ public:
                       const TemplateArgument &ArgPack);
 };
 
-class SubstTemplateDeclNameParmName : public DeclarationNameExtraExtended,
+class SubstTemplateDeclNameParmName : public DeclarationNameExtra,
                                       public llvm::FoldingSetNode {
   CXXTemplateDeclNameParmName *Replaced;
 
 public:
   SubstTemplateDeclNameParmName(CXXTemplateDeclNameParmName *Param,
                                 DeclarationName Canon)
-      : DeclarationNameExtraExtended(Canon), Replaced(Param) {
+      : Replaced(Param) {
     ExtraKindOrNumArgs = SubstTemplatedName;
+    CanonicalPtr = Canon.getAsOpaqueInteger();
   }
   /// Gets the template parameter that was substituted for.
   CXXTemplateDeclNameParmName *getReplacedParameter() const {
@@ -510,10 +474,12 @@ public:
 
   /// Gets the type that was substituted for the template
   /// parameter.
-  DeclarationName getReplacementName() const { return CanonicalName; }
+  DeclarationName getReplacementName() const {
+    return DeclarationName::getFromOpaqueInteger(CanonicalPtr);
+  }
 
   void Profile(llvm::FoldingSetNodeID &ID) {
-    Profile(ID, Replaced, CanonicalName);
+    Profile(ID, Replaced, getReplacementName());
   }
 
   static void Profile(llvm::FoldingSetNodeID &ID,
@@ -525,14 +491,14 @@ public:
 };
 
 inline bool DeclarationName::isCanonical() const {
-  if (DeclarationNameExtraExtended *Extended = getAsExtraExtended())
-    return Extended->isCanonical();
+  if (getStoredNameKind() == StoredDeclarationNameExtra)
+    return getExtra()->CanonicalPtr == Ptr;
   return true;
 }
 
 inline DeclarationName DeclarationName::getCanonicalName() const {
-  if (DeclarationNameExtraExtended *Extended = getAsExtraExtended())
-    return Extended->getCanonicalName();
+  if (getStoredNameKind() == StoredDeclarationNameExtra)
+    return DeclarationName(getExtra()->CanonicalPtr);
   return *this;
 }
 
@@ -546,8 +512,9 @@ inline IdentifierInfo *DeclarationName::getAsIdentifierInfo() const {
       return reinterpret_cast<SubstTemplateDeclNameParmName *>(Ptr & ~PtrMask)
           ->getReplacementName()
           .getAsIdentifierInfo();
+  default:
+    return nullptr;
   }
-  return nullptr;
 }
 
 /// DeclarationNameTable - Used to store and retrieve DeclarationName

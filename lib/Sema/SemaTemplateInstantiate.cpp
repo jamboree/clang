@@ -959,12 +959,13 @@ DeclarationNameInfo TemplateInstantiator::TransformDeclarationNameInfo(
               "Missing argument pack");
 
           if (getSema().ArgumentPackSubstitutionIndex == -1) {
+              return NameInfo;
               // We have the template argument pack to substitute, but we're not
               // actually expanding the enclosing pack expansion yet. So, just
               // keep the entire argument pack.
-              return DeclarationNameInfo(
-                  getSema().Context.getSubstTemplateDeclNameParmPack(TDP, Arg),
-                  NameInfo.getLoc());
+              //return DeclarationNameInfo(
+              //    getSema().Context.getSubstTemplateDeclNameParmPack(TDP, Arg),
+              //    NameInfo.getLoc());
           }
 
           if (unsigned(getSema().ArgumentPackSubstitutionIndex) >=
@@ -980,15 +981,15 @@ DeclarationNameInfo TemplateInstantiator::TransformDeclarationNameInfo(
     }
   }
 
-  if (SubstTemplateDeclNameParmPackStorage *SubstPack =
-          NameInfo.getName().getAsSubstTemplateDeclNameParmPack()) {
-    if (getSema().ArgumentPackSubstitutionIndex == -1)
-      return NameInfo;
+  //if (SubstTemplateDeclNameParmPackStorage *SubstPack =
+  //        NameInfo.getName().getAsSubstTemplateDeclNameParmPack()) {
+  //  if (getSema().ArgumentPackSubstitutionIndex == -1)
+  //    return NameInfo;
 
-    TemplateArgument Arg = SubstPack->getArgumentPack();
-    Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
-    return DeclarationNameInfo(Arg.getAsDeclName(), NameInfo.getLoc());
-  }
+  //  TemplateArgument Arg = SubstPack->getArgumentPack();
+  //  Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
+  //  return DeclarationNameInfo(Arg.getAsDeclName(), NameInfo.getLoc());
+  //}
 
   return inherited::TransformDeclarationNameInfo(NameInfo);
 }
