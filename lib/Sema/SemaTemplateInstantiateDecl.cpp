@@ -113,7 +113,7 @@ static void instantiateDependentAlignedAttr(
   assert(!Unexpanded.empty() && "Pack expansion without parameter packs?");
 
   // Determine whether we can expand this attribute pack yet.
-  bool Expand = true;
+  bool Expand = false;
   Sema::RetainExpansionMode RetainExpansion = Sema::REM_None;
   Optional<unsigned> NumExpansions;
   // FIXME: Use the actual location of the ellipsis.
@@ -2165,7 +2165,7 @@ Decl *TemplateDeclInstantiator::VisitNonTypeTemplateParmDecl(
 
     // Determine whether the set of unexpanded parameter packs can and should
     // be expanded.
-    bool Expand = true;
+    bool Expand = false;
     Sema::RetainExpansionMode RetainExpansion = Sema::REM_None;
     Optional<unsigned> OrigNumExpansions
       = Expansion.getTypePtr()->getNumExpansions();
@@ -2322,7 +2322,7 @@ TemplateDeclInstantiator::VisitTemplateTemplateParmDecl(
 
     // Determine whether the set of unexpanded parameter packs can and should
     // be expanded.
-    bool Expand = true;
+    bool Expand = false;
     Sema::RetainExpansionMode RetainExpansion = Sema::REM_None;
     Optional<unsigned> NumExpansions;
     if (SemaRef.CheckParameterPacksForExpansion(D->getLocation(),

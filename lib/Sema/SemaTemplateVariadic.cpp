@@ -599,6 +599,7 @@ bool Sema::CheckParameterPacksForExpansion(
     ArrayRef<UnexpandedParameterPack> Unexpanded,
     const MultiLevelTemplateArgumentList &TemplateArgs, bool &ShouldExpand,
     RetainExpansionMode &RetainExpansion, Optional<unsigned> &NumExpansions) {
+  bool AllowPartialExpansion = ShouldExpand;
   ShouldExpand = true;
   RetainExpansion = REM_None;
   std::pair<IdentifierInfo *, SourceLocation> FirstPack;
@@ -653,9 +654,12 @@ bool Sema::CheckParameterPacksForExpansion(
       // want to check any parameter packs we *do* have arguments for.
       if (Depth >= TemplateArgs.getNumLevels() ||
           !TemplateArgs.hasTemplateArgument(Depth, Index)) {
-        //ShouldExpand = false;
-        if (!RetainExpansion)
-          RetainExpansion = REM_NoExpand;
+        if (AllowPartialExpansion) {
+          if (!RetainExpansion)
+            RetainExpansion = REM_NoExpand;
+        } else
+          ShouldExpand = false;
+
         continue;
       }
 
