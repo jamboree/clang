@@ -36,13 +36,16 @@ class ClassTemplatePartialSpecializationDecl;
 class TemplateTypeParmDecl;
 class NonTypeTemplateParmDecl;
 class TemplateTemplateParmDecl;
+class TemplateDeclNameParmDecl;
 class TypeAliasTemplateDecl;
 class VarTemplateDecl;
 class VarTemplatePartialSpecializationDecl;
 
 /// \brief Stores a template parameter of any kind.
-typedef llvm::PointerUnion3<TemplateTypeParmDecl*, NonTypeTemplateParmDecl*,
-                            TemplateTemplateParmDecl*> TemplateParameter;
+typedef llvm::PointerUnion4<TemplateTypeParmDecl *, NonTypeTemplateParmDecl *,
+                            TemplateTemplateParmDecl *,
+                            TemplateDeclNameParmDecl *>
+    TemplateParameter;
 
 /// \brief Stores a list of template parameters for a TemplateDecl and its
 /// derived classes.
@@ -1204,9 +1207,7 @@ public:
                                                      unsigned NumExpandedTypes);
     
   using TemplateParmPosition::getDepth;
-  using TemplateParmPosition::setDepth;
   using TemplateParmPosition::getPosition;
-  using TemplateParmPosition::setPosition;
   using TemplateParmPosition::getIndex;
 
   SourceRange getSourceRange() const override LLVM_READONLY;
@@ -1482,6 +1483,92 @@ public:
   friend class ASTDeclReader;
   friend class ASTDeclWriter;
   friend TrailingObjects;
+};
+
+/// \brief Declaration of a template declname parameter.
+///
+/// For example, "D" in
+/// \code
+/// template<declname D> class S;
+/// \endcode
+class TemplateDeclNameParmDecl final : public NamedDecl,
+                                       protected TemplateParmPosition {
+  /// \brief The default template argument, if any.
+  typedef DefaultArgStorage<TemplateDeclNameParmDecl, TemplateArgumentLoc *>
+      DefArgStorage;
+  DefArgStorage DefaultArgument;
+
+  /// LocStart - The start of the source range for this declaration.
+  SourceLocation LocStart;
+
+  /// \brief Whether this declname template parameter is a parameter pack.
+  bool ParameterPack;
+
+  explicit TemplateDeclNameParmDecl(DeclContext *DC, SourceLocation KeyLoc,
+                                    SourceLocation IdLoc, unsigned D,
+                                    unsigned P, bool ParameterPack,
+                                    IdentifierInfo *Id)
+      : NamedDecl(TemplateDeclNameParm, DC, IdLoc, Id),
+        TemplateParmPosition(D, P), DefaultArgument(), LocStart(KeyLoc),
+        ParameterPack(ParameterPack) {}
+
+public:
+  static TemplateDeclNameParmDecl *Create(const ASTContext &C, DeclContext *DC,
+                                          SourceLocation KeyLoc,
+                                          SourceLocation IdLoc, unsigned D,
+                                          unsigned P, bool ParameterPack,
+                                          IdentifierInfo *Id);
+
+  using TemplateParmPosition::getDepth;
+  using TemplateParmPosition::getPosition;
+  using TemplateParmPosition::getIndex;
+
+  SourceLocation getLocStart() const LLVM_READONLY { return LocStart; }
+  void setLocStart(SourceLocation L) { LocStart = L; }
+
+  /// \brief Returns whether this is a parameter pack.
+  bool isParameterPack() const { return ParameterPack; }
+
+  const DefArgStorage &getDefaultArgStorage() const { return DefaultArgument; }
+
+  /// \brief Determine whether this template parameter has a default
+  /// argument.
+  bool hasDefaultArgument() const { return DefaultArgument.isSet(); }
+
+  /// \brief Retrieve the default argument, if any.
+  const TemplateArgumentLoc &getDefaultArgument() const {
+    static const TemplateArgumentLoc None;
+    return DefaultArgument.isSet() ? *DefaultArgument.get() : None;
+  }
+
+  /// \brief Retrieves the location of the default argument declaration.
+  SourceLocation getDefaultArgumentLoc() const;
+
+  /// \brief Determines whether the default argument was inherited
+  /// from a previous declaration of this template.
+  bool defaultArgumentWasInherited() const {
+    return DefaultArgument.isInherited();
+  }
+
+  /// \brief Set the default argument for this template parameter.
+  void setDefaultArgument(const ASTContext &C,
+                          const TemplateArgumentLoc &DefArg);
+
+  /// \brief Set that this default argument was inherited from another
+  /// parameter.
+  void setInheritedDefaultArgument(const ASTContext &C,
+                                   TemplateDeclNameParmDecl *Prev) {
+    DefaultArgument.setInherited(C, Prev);
+  }
+
+  /// \brief Removes the default argument of this template parameter.
+  void removeDefaultArgument() { DefaultArgument.clear(); }
+
+  SourceRange getSourceRange() const override LLVM_READONLY;
+
+  // Implement isa/cast/dyncast/etc.
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == TemplateDeclNameParm; }
 };
 
 /// \brief Represents the builtin template declaration which is used to

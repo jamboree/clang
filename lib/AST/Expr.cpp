@@ -3520,12 +3520,15 @@ GenericSelectionExpr::GenericSelectionExpr(const ASTContext &Context,
 //  DesignatedInitExpr
 //===----------------------------------------------------------------------===//
 
-IdentifierInfo *DesignatedInitExpr::Designator::getFieldName() const {
+DeclarationName DesignatedInitExpr::Designator::getFieldName() const {
   assert(Kind == FieldDesignator && "Only valid on a field designator");
-  if (Field.NameOrField & 0x01)
-    return reinterpret_cast<IdentifierInfo *>(Field.NameOrField&~0x01);
-  else
-    return getField()->getIdentifier();
+  if (auto Mask = Field.NameOrField & 0x03) {
+    auto Ptr = Field.NameOrField & ~0x03;
+    if (Mask == 0x03)
+      return reinterpret_cast<DeclarationNameExtra *>(Ptr);
+    return reinterpret_cast<IdentifierInfo *>(Ptr);
+  }
+  return getField()->getDeclName();
 }
 
 DesignatedInitExpr::DesignatedInitExpr(const ASTContext &C, QualType Ty,
@@ -3553,7 +3556,15 @@ DesignatedInitExpr::DesignatedInitExpr(const ASTContext &C, QualType Ty,
   for (unsigned I = 0; I != NumDesignators; ++I) {
     this->Designators[I] = Designators[I];
 
-    if (this->Designators[I].isArrayDesignator()) {
+    if (this->Designators[I].isFieldDesignator()) {
+      DeclarationName Name = this->Designators[I].getFieldName();
+      if (Name.isTemplatedName()) {
+        ExprBits.TypeDependent = true;
+        ExprBits.InstantiationDependent = true;
+        if (Name.containsUnexpandedParameterPack())
+          ExprBits.ContainsUnexpandedParameterPack = true;
+      }
+    } else if (this->Designators[I].isArrayDesignator()) {
       // Compute type- and value-dependence.
       Expr *Index = IndexExprs[IndexIdx];
       if (Index->isTypeDependent() || Index->isValueDependent())

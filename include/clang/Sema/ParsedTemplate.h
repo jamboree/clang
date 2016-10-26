@@ -36,7 +36,9 @@ namespace clang {
       /// \brief A non-type template parameter, stored as an expression.
       NonType,
       /// \brief A template template argument, stored as a template name.
-      Template
+      Template,
+      /// \brief A template declname argument, stored as a declaration name.
+      DeclName
     };
 
     /// \brief Build an empty template argument. 
@@ -66,9 +68,14 @@ namespace clang {
       : Kind(ParsedTemplateArgument::Template),
         Arg(Template.getAsOpaquePtr()), 
         SS(SS), Loc(TemplateLoc), EllipsisLoc() { }
-    
+
+    /// \brief Create a template declname argument.
+    ParsedTemplateArgument(ParsedDeclNameTy Name, SourceLocation NameLoc)
+        : Kind(ParsedTemplateArgument::DeclName), Arg(Name.getAsOpaquePtr()),
+          Loc(NameLoc), EllipsisLoc() {}
+
     /// \brief Determine whether the given template argument is invalid.
-    bool isInvalid() const { return Arg == nullptr; }
+    bool isInvalid() const { return Arg == nullptr && Kind != DeclName; }
     
     /// \brief Determine what kind of template argument we have.
     KindType getKind() const { return Kind; }
@@ -90,7 +97,12 @@ namespace clang {
       assert(Kind == Template && "Not a template template argument");
       return ParsedTemplateTy::getFromOpaquePtr(Arg);
     }
-    
+
+    ParsedDeclNameTy getAsDeclName() const {
+      assert(Kind == DeclName && "Not a template declname argument");
+      return ParsedDeclNameTy::getFromOpaquePtr(Arg);
+    }
+
     /// \brief Retrieve the location of the template argument.
     SourceLocation getLocation() const { return Loc; }
     
@@ -103,10 +115,10 @@ namespace clang {
     }
     
     /// \brief Retrieve the location of the ellipsis that makes a template
-    /// template argument into a pack expansion.
+    /// template/declname argument into a pack expansion.
     SourceLocation getEllipsisLoc() const {
-      assert(Kind == Template && 
-             "Only template template arguments can have an ellipsis");
+      assert((Kind == Template || Kind == DeclName) &&
+             "Only template template/declname arguments can have an ellipsis");
       return EllipsisLoc;
     }
     
@@ -116,7 +128,12 @@ namespace clang {
     /// \param EllipsisLoc The location of the ellipsis.
     ParsedTemplateArgument getTemplatePackExpansion(
                                               SourceLocation EllipsisLoc) const;
-    
+
+    /// \brief Retrieve a pack expansion of the given template declname
+    /// argument.
+    ParsedTemplateArgument
+    getDeclNamePackExpansion(SourceLocation EllipsisLoc) const;
+
   private:
     KindType Kind;
     

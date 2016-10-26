@@ -15,6 +15,7 @@
 #define LLVM_CLANG_AST_NESTEDNAMESPECIFIER_H
 
 #include "clang/Basic/Diagnostic.h"
+#include "clang/AST/DeclarationName.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/Support/Compiler.h"
@@ -45,7 +46,7 @@ class NestedNameSpecifier : public llvm::FoldingSetNode {
 
   /// \brief Enumeration describing
   enum StoredSpecifierKind {
-    StoredIdentifier = 0,
+    StoredDeclName = 0,
     StoredDecl = 1,
     StoredTypeSpec = 2,
     StoredTypeSpecWithTemplate = 3
@@ -72,8 +73,8 @@ public:
   /// \brief The kind of specifier that completes this nested name
   /// specifier.
   enum SpecifierKind {
-    /// \brief An identifier, stored as an IdentifierInfo*.
-    Identifier,
+    /// \brief An declname, stored as an DeclarationName
+    DeclName,
     /// \brief A namespace, stored as a NamespaceDecl*.
     Namespace,
     /// \brief A namespace alias, stored as a NamespaceAliasDecl*.
@@ -93,7 +94,7 @@ public:
 private:
   /// \brief Builds the global specifier.
   NestedNameSpecifier()
-    : Prefix(nullptr, StoredIdentifier), Specifier(nullptr) {}
+    : Prefix(nullptr, StoredDeclName), Specifier(nullptr) {}
 
   /// \brief Copy constructor used internally to clone nested name
   /// specifiers.
@@ -110,14 +111,14 @@ private:
                                            const NestedNameSpecifier &Mockup);
 
 public:
-  /// \brief Builds a specifier combining a prefix and an identifier.
+  /// \brief Builds a specifier combining a prefix and an declname.
   ///
   /// The prefix must be dependent, since nested name specifiers
-  /// referencing an identifier are only permitted when the identifier
+  /// referencing an declname are only permitted when the declname
   /// cannot be resolved.
   static NestedNameSpecifier *Create(const ASTContext &Context,
                                      NestedNameSpecifier *Prefix,
-                                     IdentifierInfo *II);
+                                     DeclarationName Name);
 
   /// \brief Builds a nested name specifier that names a namespace.
   static NestedNameSpecifier *Create(const ASTContext &Context,
@@ -141,7 +142,7 @@ public:
   /// nested name specifier, e.g., in "x->Base::f", the "x" has a dependent
   /// type.
   static NestedNameSpecifier *Create(const ASTContext &Context,
-                                     IdentifierInfo *II);
+                                     DeclarationName Name);
 
   /// \brief Returns the nested name specifier representing the global
   /// scope.
@@ -166,11 +167,11 @@ public:
 
   /// \brief Retrieve the identifier stored in this nested name
   /// specifier.
-  IdentifierInfo *getAsIdentifier() const {
-    if (Prefix.getInt() == StoredIdentifier)
-      return (IdentifierInfo *)Specifier;
+  DeclarationName getAsDeclName() const {
+    if (Prefix.getInt() == StoredDeclName)
+      return DeclarationName::getFromOpaquePtr(Specifier);
 
-    return nullptr;
+    return DeclarationName();
   }
 
   /// \brief Retrieve the namespace stored in this nested name
@@ -205,6 +206,10 @@ public:
   /// \brief Whether this nested-name-specifier contains an unexpanded
   /// parameter pack (for C++11 variadic templates).
   bool containsUnexpandedParameterPack() const;
+
+  /// \brief Whether this nested-name-specifier can be a prefix of a templated
+  /// name.
+  bool isValidTemplatedNamePrefix() const;
 
   /// \brief Print this nested name specifier to the given output
   /// stream.
@@ -395,13 +400,13 @@ public:
   /// \param Context The AST context in which this nested-name-specifier
   /// resides.
   ///
-  /// \param Identifier The identifier.
+  /// \param Name The declname.
   ///
-  /// \param IdentifierLoc The location of the identifier.
+  /// \param NameLoc The location of the declname.
   ///
   /// \param ColonColonLoc The location of the trailing '::'.
-  void Extend(ASTContext &Context, IdentifierInfo *Identifier,
-              SourceLocation IdentifierLoc, SourceLocation ColonColonLoc);
+  void Extend(ASTContext &Context, DeclarationName Name,
+              SourceLocation NameLoc, SourceLocation ColonColonLoc);
 
   /// \brief Extend the current nested-name-specifier by another
   /// nested-name-specifier component of the form 'namespace::'.

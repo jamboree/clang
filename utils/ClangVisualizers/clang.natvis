@@ -407,10 +407,26 @@ For later versions of Visual Studio, no setup is required-->
   </Type>
   <Type Name="clang::DeclarationNameExtra">
     <DisplayString IncludeView="cpp"
+                   Condition="ExtraKindOrNumArgs == clang::DeclarationNameExtra::CXXTemplatedName"
+                   >{*(clang::CXXTemplateDeclNameParmName *)this}</DisplayString>
+    <!--<DisplayString IncludeView="cpp"
+                   Condition="ExtraKindOrNumArgs == clang::DeclarationNameExtra::SubstTemplatedName"
+                   >{*(clang::SubstTemplateDeclNameParmName *)this}</DisplayString>-->
+    <DisplayString IncludeView="cpp"
                    Condition="ExtraKindOrNumArgs &gt;= clang::DeclarationNameExtra::CXXConstructor 
                    &amp;&amp; ExtraKindOrNumArgs &lt;= clang::DeclarationNameExtra::CXXConversionFunction"
                    >{((clang::CXXSpecialName *)this)-&gt;Type,view(cpp)}</DisplayString>
     <DisplayString>{(clang::DeclarationNameExtra::ExtraKind)ExtraKindOrNumArgs,en}{"  ",sb}{*this,view(cpp)}</DisplayString>
+  </Type>
+  <Type Name="clang::CXXTemplateDeclNameParmName">
+    <DisplayString>&lt;declname-{TDPDecl-&gt;Depth,view(cpp)}-{TDPDecl-&gt;Position,view(cpp)}&gt;</DisplayString>
+  </Type>
+  <Type Name="clang::SubstTemplateDeclNameParmName">
+    <DisplayString>{*Replaced,view(cpp)} &lt;= {CanonicalName,view(cpp)}</DisplayString>
+    <Expand>
+      <ExpandedItem>*(clang::DeclarationNameExtra *)this, view(cmn)</ExpandedItem>
+      <Item Name="Replaced">*Replaced</Item>
+    </Expand>
   </Type>
   <Type Name="clang::Token">
     <DisplayString Condition="Kind != clang::tok::identifier">{(clang::tok::TokenKind)Kind,en}</DisplayString>

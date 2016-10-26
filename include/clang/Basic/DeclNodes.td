@@ -33,6 +33,7 @@ def Named : Decl<1>;
             def ClassTemplatePartialSpecialization
               : DDecl<ClassTemplateSpecialization>;
     def TemplateTypeParm : DDecl<Type>;
+  def TemplateDeclNameParm : DDecl<Named>;
   def Value : DDecl<Named, 1>;
     def EnumConstant : DDecl<Value>;
     def UnresolvedUsingValue : DDecl<Value>;

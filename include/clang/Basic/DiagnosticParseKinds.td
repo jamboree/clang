@@ -682,6 +682,10 @@ def err_explicit_spec_non_template : Error<
 def err_default_template_template_parameter_not_template : Error<
   "default template argument for a template template parameter must be a class "
   "template">;
+  
+def err_default_template_declname_parameter_not_declname : Error<
+  "default declname argument for a template declname parameter must be a "
+  "declaration name">;
 
 def ext_fold_expression : ExtWarn<
   "pack fold expression is a C++1z extension">,
@@ -794,6 +798,8 @@ def warn_cxx14_compat_constexpr_on_lambda : Warning<
   InGroup<CXXPre1zCompat>, DefaultIgnore;
 def ext_constexpr_on_lambda_cxx1z : ExtWarn<
   "'constexpr' on lambda expressions is a C++1z extension">, InGroup<CXX1z>;
+
+def err_expected_declname_name : Error<"expected a declaration name">;
 
 // Availability attribute
 def err_expected_version : Error<

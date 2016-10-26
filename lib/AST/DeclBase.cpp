@@ -175,6 +175,9 @@ bool Decl::isTemplateParameterPack() const {
   if (const TemplateTemplateParmDecl *TTP
                                     = dyn_cast<TemplateTemplateParmDecl>(this))
     return TTP->isParameterPack();
+  if (const TemplateDeclNameParmDecl *TTP =
+          dyn_cast<TemplateDeclNameParmDecl>(this))
+    return TTP->isParameterPack();
   return false;
 }
 
@@ -660,6 +663,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
 
     case ClassTemplate:
     case TemplateTemplateParm:
+    case TemplateDeclNameParm: // FIXME: add another NS?
       return IDNS_Ordinary | IDNS_Tag | IDNS_Type;
 
     case OMPDeclareReduction:
@@ -1652,7 +1656,8 @@ void DeclContext::makeDeclVisibleInContextImpl(NamedDecl *D, bool Internal) {
         Source->FindExternalVisibleDeclsByName(this, D->getDeclName());
 
   // Insert this declaration into the map.
-  StoredDeclsList &DeclNameEntries = (*Map)[D->getDeclName()];
+  StoredDeclsList &DeclNameEntries =
+      (*Map)[D->getDeclName().getCanonicalName()];
 
   if (Internal) {
     // If this is being added as part of loading an external declaration,

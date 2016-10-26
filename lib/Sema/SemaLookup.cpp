@@ -833,7 +833,8 @@ static bool LookupDirect(Sema &S, LookupResult &R, const DeclContext *DC) {
     DeclareImplicitMemberFunctionsWithName(S, R.getLookupName(), DC);
 
   // Perform lookup into this declaration context.
-  DeclContext::lookup_result DR = DC->lookup(R.getLookupName());
+  DeclContext::lookup_result DR =
+      DC->lookup(R.getLookupName().getCanonicalName());
   for (DeclContext::lookup_iterator I = DR.begin(), E = DR.end(); I != E;
        ++I) {
     NamedDecl *D = *I;
@@ -1031,6 +1032,26 @@ struct FindLocalExternScope {
   bool OldFindLocalExtern;
 };
 } // end anonymous namespace
+
+TemplateDeclNameParmDecl *
+Sema::LookupTemplateDeclNameParm(const IdentifierInfo *Id) {
+  if (Id) {
+    IdentifierResolver::iterator I = IdResolver.begin(Id),
+                                 IEnd = IdResolver.end();
+
+    if (I != IEnd)
+      return dyn_cast<TemplateDeclNameParmDecl>(*I);
+  }
+
+  return nullptr;
+}
+
+DeclarationName Sema::getPossiblyTemplatedName(const IdentifierInfo *Id) {
+  if (TemplateDeclNameParmDecl *TDP = LookupTemplateDeclNameParm(Id))
+    return Context.DeclarationNames.getCXXTemplatedName(
+        TDP->getDepth(), TDP->getIndex(), TDP->isParameterPack(), TDP);
+  return DeclarationName(Id);
+}
 
 bool Sema::CppLookupName(LookupResult &R, Scope *S) {
   assert(getLangOpts().CPlusPlus && "Can perform only C++ lookup");
@@ -1477,7 +1498,9 @@ bool Sema::hasVisibleDefaultArgument(const NamedDecl *D,
     return ::hasVisibleDefaultArgument(*this, P, Modules);
   if (auto *P = dyn_cast<NonTypeTemplateParmDecl>(D))
     return ::hasVisibleDefaultArgument(*this, P, Modules);
-  return ::hasVisibleDefaultArgument(*this, cast<TemplateTemplateParmDecl>(D),
+  if (auto *P = dyn_cast<TemplateTemplateParmDecl>(D))
+      return ::hasVisibleDefaultArgument(*this, P, Modules);
+  return ::hasVisibleDefaultArgument(*this, cast<TemplateDeclNameParmDecl>(D),
                                      Modules);
 }
 
@@ -2449,6 +2472,8 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result,
     case TemplateArgument::Integral:
     case TemplateArgument::Expression:
     case TemplateArgument::NullPtr:
+    case TemplateArgument::DeclName:
+    case TemplateArgument::DeclNameExpansion:
       // [Note: non-type template arguments do not contribute to the set of
       //  associated namespaces. ]
       break;
@@ -2708,6 +2733,10 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result, QualType Ty) {
       continue;
     case Type::Pipe:
       T = cast<PipeType>(T)->getElementType().getTypePtr();
+      continue;
+
+    case Type::Designating:
+      T = cast<DesignatingType>(T)->getMasterType().getTypePtr();
       continue;
     }
 
@@ -3824,8 +3853,14 @@ static void getNestedNameSpecifierIdentifiers(
   const IdentifierInfo *II = nullptr;
 
   switch (NNS->getKind()) {
-  case NestedNameSpecifier::Identifier:
-    II = NNS->getAsIdentifier();
+  case NestedNameSpecifier::DeclName:
+    II = NNS->getAsDeclName().getAsIdentifierInfo();
+    if (!II) {
+      TemplateDeclNameParmDecl *TDP =
+          NNS->getAsDeclName().getCXXTemplatedNameParmDecl();
+      assert(TDP != nullptr && "must be a templated name");
+      II = TDP->getDeclName().getAsIdentifierInfo();
+    }
     break;
 
   case NestedNameSpecifier::Namespace:

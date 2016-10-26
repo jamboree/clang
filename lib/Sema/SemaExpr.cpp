@@ -2123,8 +2123,10 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
   const TemplateArgumentListInfo *TemplateArgs;
   DecomposeUnqualifiedId(Id, TemplateArgsBuffer, NameInfo, TemplateArgs);
 
+  IdentifierInfo *II = NameInfo.getName().getAsIdentifierInfo();
+  NameInfo.setName(getPossiblyTemplatedName(II));
+
   DeclarationName Name = NameInfo.getName();
-  IdentifierInfo *II = Name.getAsIdentifierInfo();
   SourceLocation NameLoc = NameInfo.getLoc();
 
   // C++ [temp.dep.expr]p3:
@@ -2204,6 +2206,11 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
     NamedDecl *D = ImplicitlyDefineFunction(NameLoc, *II, S);
     if (D) R.addDecl(D);
   }
+
+  if (R.empty() && Name.isTemplatedName() && SS.getScopeRep() &&
+      SS.getScopeRep()->isValidTemplatedNamePrefix())
+    return ActOnDependentIdExpression(SS, TemplateKWLoc, NameInfo,
+                                      IsAddressOfOperand, TemplateArgs);
 
   // Determine whether this name might be a candidate for
   // argument-dependent lookup.
@@ -3855,6 +3862,7 @@ static void captureVariablyModifiedType(ASTContext &Context, QualType T,
     case Type::ObjCInterface:
     case Type::ObjCObjectPointer:
     case Type::Pipe:
+    case Type::Designating:
       llvm_unreachable("type class is never variably-modified!");
     case Type::Adjusted:
       T = cast<AdjustedType>(Ty)->getOriginalType();
@@ -3900,7 +3908,7 @@ static void captureVariablyModifiedType(ASTContext &Context, QualType T,
             // Build the non-static data member.
             auto Field =
                 FieldDecl::Create(Context, CapRecord, ExprLoc, ExprLoc,
-                                  /*Id*/ nullptr, SizeType, /*TInfo*/ nullptr,
+                                  /*Id*/ {}, SizeType, /*TInfo*/ nullptr,
                                   /*BW*/ nullptr, /*Mutable*/ false,
                                   /*InitStyle*/ ICIS_NoInit);
             Field->setImplicit(true);
@@ -5012,7 +5020,7 @@ static bool isPlaceholderToRemoveAsArg(QualType type) {
 /// Check an argument list for placeholders that we won't try to
 /// handle later.
 static bool checkDuplicateArgsAndPlaceholders(Sema &S, MultiExprArg args) {
-  llvm::DenseMap<IdentifierInfo *, DesignatedInitExpr *> Desigs;
+  llvm::DenseMap<DeclarationName, DesignatedInitExpr *> Desigs;
   // Apply this processing to all the arguments at once instead of
   // dying at the first failure.
   bool hasInvalid = false;
@@ -5109,7 +5117,7 @@ static FunctionDecl *rewriteBuiltinFunctionDecl(Sema *Sema, ASTContext &Context,
     QualType ParamType = FT->getParamType(i);
     ParmVarDecl *Parm =
         ParmVarDecl::Create(Context, OverloadDecl, SourceLocation(),
-                                SourceLocation(), nullptr, ParamType,
+                                SourceLocation(), {}, ParamType,
                                 /*TInfo=*/nullptr, SC_None, nullptr);
     Parm->setScopeInfo(0, i);
     Params.push_back(Parm);
@@ -5168,6 +5176,16 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
       Dependent = true;
     else if (Expr::hasAnyTypeDependentArguments(ArgExprs))
       Dependent = true;
+    else if (UnresolvedLookupExpr *ULE = dyn_cast<UnresolvedLookupExpr>(Fn)) {
+      if (!ArgExprs.empty() && ULE->getName().isTemplatedName()) {
+        AssociatedNamespaceSet AssociatedNamespaces;
+        AssociatedClassSet AssociatedClasses;
+        FindAssociatedClassesAndNamespaces(SourceLocation(), ArgExprs,
+                                           AssociatedNamespaces,
+                                           AssociatedClasses);
+        Dependent = !AssociatedNamespaces.empty();
+      }
+    }
 
     if (Dependent) {
       if (ExecConfig) {
@@ -5257,14 +5275,9 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
       if (!checkAddressOfFunctionIsAvailable(FD, /*Complain=*/true,
                                              Fn->getLocStart()))
         return ExprError();
-      if (auto Arg = AnyDesignated(ArgExprs)) {
-        Diag(Arg->getLocStart(), diag::err_designated_arguments_indirect_callee)
-            << 0 << Arg->getSourceRange();
-        return ExprError();
-      }
-    } else if (DesignateArgumentsForCall(FD, Fn, ArgExprs, MappedArgs))
+    }
+    if (DesignateArgumentsForCall(FD, Fn, ArgExprs, MappedArgs))
       return ExprError();
-
     if (!MappedArgs.empty()) {
       SyntacticArgs = ArgExprs;
       ArgExprs = MappedArgs;
@@ -5289,10 +5302,18 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
             << Attr->getCond()->getSourceRange() << Attr->getMessage();
       }
     }
-  } else if (auto Arg = AnyDesignated(ArgExprs)) {
-    Diag(Arg->getLocStart(), diag::err_designated_arguments_indirect_callee)
-        << 0 << Arg->getSourceRange();
-    return ExprError();
+  } else {
+    QualType FT = Fn->getType().IgnoreParens();
+    if (const PointerType *Indirect = FT->getAs<PointerType>())
+      FT = Indirect->getPointeeType();
+    if (const FunctionProtoType *Proto = FT->getAs<FunctionProtoType>()) {
+      if (DesignateArgumentsForCall(Proto, Fn, ArgExprs, MappedArgs))
+        return ExprError();
+      if (!MappedArgs.empty()) {
+        SyntacticArgs = ArgExprs;
+        ArgExprs = MappedArgs;
+      }
+    }
   }
 
   return BuildResolvedCallExpr(Fn, NDecl, LParenLoc, ArgExprs, SyntacticArgs,
@@ -5402,7 +5423,11 @@ Sema::BuildResolvedCallExpr(Expr *Fn, NamedDecl *NDecl,
   if (const PointerType *PT = Fn->getType()->getAs<PointerType>()) {
     // C99 6.5.2.2p1 - "The expression that denotes the called function shall
     // have type pointer to function".
-    FuncT = PT->getPointeeType()->getAs<FunctionType>();
+    QualType NonDesig = PT->getPointeeType();
+    if (const FunctionProtoType *SrcProto =
+            NonDesig->getAs<FunctionProtoType>())
+      NonDesig = SrcProto->getCanonicalNonDesigProto();
+    FuncT = NonDesig->getAs<FunctionType>();
     if (!FuncT)
       return ExprError(Diag(LParenLoc, diag::err_typecheck_call_not_function)
                          << Fn->getType() << Fn->getSourceRange());
@@ -5606,7 +5631,7 @@ ExprResult
 Sema::ActOnInitList(SourceLocation LBraceLoc, MultiExprArg InitArgList,
                     SourceLocation RBraceLoc) {
   bool HasDuplicates = false;
-  llvm::DenseMap<IdentifierInfo *, DesignatedInitExpr *> Desigs;
+  llvm::DenseMap<DeclarationName, DesignatedInitExpr *> Desigs;
   // Immediately handle non-overload placeholders.  Overloads can be
   // resolved contextually, but everything else here can't.
   for (unsigned I = 0, E = InitArgList.size(); I != E; ++I) {
@@ -6171,15 +6196,13 @@ Sema::MaybeConvertParenListExprToParenExpr(Scope *S, Expr *OrigExpr) {
 
 bool Sema::CheckDuplicateDesignators(MultiExprArg Args) {
   bool HasDuplicates = false;
-  llvm::DenseMap<IdentifierInfo *, DesignatedInitExpr *> Desigs;
+  llvm::DenseMap<DeclarationName, DesignatedInitExpr *> Desigs;
   for (unsigned I = 0, E = Args.size(); I != E; ++I) {
     if (auto DIE = dyn_cast<DesignatedInitExpr>(Args[I])) {
-      auto name = DIE->getDesignator(0)->getFieldName();
-      auto Prev = Desigs[name];
-      Desigs[name] = DIE;
-      if (Prev) {
+      auto Name = DIE->getDesignator(0)->getFieldName();
+      if (auto Prev = std::exchange(Desigs[Name], DIE)) {
         HasDuplicates = true;
-        Diag(DIE->getLocStart(), diag::err_duplicate_designators) << name;
+        Diag(DIE->getLocStart(), diag::err_duplicate_designators) << Name;
         Diag(Prev->getLocStart(), diag::note_previous_designator);
       }
     }
@@ -13486,7 +13509,7 @@ static bool captureInCapturedRegion(CapturedRegionScopeInfo *RSI,
     RecordDecl *RD = RSI->TheRecordDecl;
 
     FieldDecl *Field
-      = FieldDecl::Create(S.Context, RD, Loc, Loc, nullptr, CaptureType,
+      = FieldDecl::Create(S.Context, RD, Loc, Loc, {}, CaptureType,
                           S.Context.getTrivialTypeSourceInfo(CaptureType, Loc),
                           nullptr, false, ICIS_NoInit);
     Field->setImplicit(true);
@@ -13518,7 +13541,7 @@ static void addAsFieldToClosureType(Sema &S, LambdaScopeInfo *LSI,
 
   // Build the non-static data member.
   FieldDecl *Field
-    = FieldDecl::Create(S.Context, Lambda, Loc, Loc, nullptr, FieldType,
+    = FieldDecl::Create(S.Context, Lambda, Loc, Loc, {}, FieldType,
                         S.Context.getTrivialTypeSourceInfo(FieldType, Loc),
                         nullptr, false, ICIS_NoInit);
   Field->setImplicit(true);

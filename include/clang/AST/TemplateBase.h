@@ -17,6 +17,7 @@
 
 #include "clang/AST/TemplateName.h"
 #include "clang/AST/Type.h"
+#include "clang/AST/DeclarationName.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/iterator_range.h"
@@ -69,7 +70,12 @@ public:
     Expression,
     /// The template argument is actually a parameter pack. Arguments are stored
     /// in the Args struct.
-    Pack
+    Pack,
+    /// The template argument is a declaration name.
+    DeclName,
+    /// The template argument is a pack expansion of a declaration name that was
+    /// provided for a template declname parameter.
+    DeclNameExpansion
   };
 
 private:
@@ -205,6 +211,22 @@ public:
     this->Args.NumArgs = Args.size();
   }
 
+  /// \brief Construct a template declname argument.
+  TemplateArgument(DeclarationName Name) {
+    TemplateArg.Kind = DeclName;
+    TemplateArg.Name = Name.getAsOpaquePtr();
+  }
+
+  /// \brief Construct a template argument that is a declname pack expansion.
+  TemplateArgument(DeclarationName Name, Optional<unsigned> NumExpansions) {
+      TemplateArg.Kind = DeclNameExpansion;
+      TemplateArg.Name = Name.getAsOpaquePtr();
+    if (NumExpansions)
+        TemplateArg.NumExpansions = *NumExpansions + 1;
+    else
+        TemplateArg.NumExpansions = 0;
+  }
+
   static TemplateArgument getEmptyPack() { return TemplateArgument(None); }
 
   /// \brief Create a new template argument pack by copying the given set of
@@ -307,6 +329,21 @@ public:
     return reinterpret_cast<Expr *>(TypeOrValue.V);
   }
 
+  DeclarationName getAsDeclName() const {
+    assert(getKind() == DeclName && "Unexpected kind");
+    return DeclarationName::getFromOpaquePtr(TemplateArg.Name);
+  }
+
+  DeclarationName getAsDeclNameOrDeclNamePattern() const {
+    assert((getKind() == DeclName || getKind() == DeclNameExpansion) &&
+           "Unexpected kind");
+    return DeclarationName::getFromOpaquePtr(TemplateArg.Name);
+  }
+
+  /// \brief Retrieve the number of expansions that a template declname argument
+  /// expansion will produce, if known.
+  Optional<unsigned> getNumDeclNameExpansions() const;
+
   /// \brief Iterator that traverses the elements of a template argument pack.
   typedef const TemplateArgument * pack_iterator;
 
@@ -351,6 +388,8 @@ public:
   /// the pattern of the pack expansion.
   TemplateArgument getPackExpansionPattern() const;
 
+  Optional<unsigned> getNumExpansions() const;
+
   /// \brief Print this template argument to the given output stream.
   void print(const PrintingPolicy &Policy, raw_ostream &Out) const;
              
@@ -377,10 +416,16 @@ private:
     unsigned EllipsisLoc;
   };
 
+  struct D {
+    unsigned DeclNameLoc;
+    unsigned EllipsisLoc;
+  };
+
   union {
     struct T Template;
     Expr *Expression;
     TypeSourceInfo *Declarator;
+    struct D DeclName;
   };
 
 public:
@@ -398,6 +443,12 @@ public:
     Template.QualifierLocData = QualifierLoc.getOpaqueData();
     Template.TemplateNameLoc = TemplateNameLoc.getRawEncoding();
     Template.EllipsisLoc = EllipsisLoc.getRawEncoding();
+  }
+
+  TemplateArgumentLocInfo(SourceLocation DeclNameLoc,
+                          SourceLocation EllipsisLoc) {
+    DeclName.DeclNameLoc = DeclNameLoc.getRawEncoding();
+    DeclName.EllipsisLoc = EllipsisLoc.getRawEncoding();
   }
 
   TypeSourceInfo *getAsTypeSourceInfo() const {
@@ -420,6 +471,15 @@ public:
   SourceLocation getTemplateEllipsisLoc() const {
     return SourceLocation::getFromRawEncoding(Template.EllipsisLoc);
   }
+  
+  SourceLocation getDeclNameLoc() const {
+    return SourceLocation::getFromRawEncoding(DeclName.DeclNameLoc);
+  }
+  
+  SourceLocation getDeclNameEllipsisLoc() const {
+    return SourceLocation::getFromRawEncoding(DeclName.EllipsisLoc);
+  }
+  
 };
 
 /// Location wrapper for a TemplateArgument.  TemplateArgument is to
@@ -454,7 +514,15 @@ public:
     assert(Argument.getKind() == TemplateArgument::Template ||
            Argument.getKind() == TemplateArgument::TemplateExpansion);
   }
-  
+
+  TemplateArgumentLoc(const TemplateArgument &Argument,
+                      SourceLocation DeclNameLoc,
+                      SourceLocation EllipsisLoc = SourceLocation())
+      : Argument(Argument), LocInfo(DeclNameLoc, EllipsisLoc) {
+    assert(Argument.getKind() == TemplateArgument::DeclName ||
+           Argument.getKind() == TemplateArgument::DeclNameExpansion);
+  }
+
   /// \brief - Fetches the primary location of the argument.
   SourceLocation getLocation() const {
     if (Argument.getKind() == TemplateArgument::Template ||
@@ -516,6 +584,18 @@ public:
     assert(Argument.getKind() == TemplateArgument::TemplateExpansion);
     return LocInfo.getTemplateEllipsisLoc();
   }
+
+  SourceLocation getDeclNameLoc() const {
+    assert(Argument.getKind() == TemplateArgument::DeclName ||
+           Argument.getKind() == TemplateArgument::DeclNameExpansion);
+    return LocInfo.getDeclNameLoc();
+  }
+  
+  SourceLocation getDeclNameEllipsisLoc() const {
+    assert(Argument.getKind() == TemplateArgument::DeclNameExpansion);
+    return LocInfo.getDeclNameEllipsisLoc();
+  }
+
 };
 
 /// A convenient class for passing around template argument

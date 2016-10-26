@@ -794,8 +794,7 @@ void TypePrinter::printFunctionNoProtoAfter(const FunctionNoProtoType *T,
 }
 
 void TypePrinter::printTypeSpec(const NamedDecl *D, raw_ostream &OS) {
-  IdentifierInfo *II = D->getIdentifier();
-  OS << II->getName();
+  OS << D->getDeclName();
   spaceBeforePlaceHolder(OS);
 }
 
@@ -961,8 +960,8 @@ void TypePrinter::printTag(TagDecl *D, raw_ostream &OS) {
   if (!Policy.SuppressScope)
     AppendScope(D->getDeclContext(), OS);
 
-  if (const IdentifierInfo *II = D->getIdentifier())
-    OS << II->getName();
+  if (DeclarationName Name = D->getDeclName())
+    OS << Name;
   else if (TypedefNameDecl *Typedef = D->getTypedefNameForAnonDecl()) {
     assert(Typedef->getIdentifier() && "Typedef without identifier?");
     OS << Typedef->getIdentifier()->getName();
@@ -1130,7 +1129,7 @@ void TypePrinter::printDependentNameBefore(const DependentNameType *T,
   
   T->getQualifier()->print(OS, Policy);
   
-  OS << T->getIdentifier()->getName();
+  OS << T->getDeclName();
   spaceBeforePlaceHolder(OS);
 }
 void TypePrinter::printDependentNameAfter(const DependentNameType *T,
@@ -1163,6 +1162,17 @@ void TypePrinter::printPackExpansionAfter(const PackExpansionType *T,
                                           raw_ostream &OS) {
   printAfter(T->getPattern(), OS);
   OS << "...";
+}
+
+void TypePrinter::printDesignatingBefore(const DesignatingType *T,
+                                         raw_ostream &OS) {
+  printBefore(T->getMasterType(), OS);
+  OS << "." << T->getDesigName();
+}
+
+void TypePrinter::printDesignatingAfter(const DesignatingType *T,
+                                        raw_ostream &OS) {
+  printAfter(T->getMasterType(), OS);
 }
 
 void TypePrinter::printAttributedBefore(const AttributedType *T,

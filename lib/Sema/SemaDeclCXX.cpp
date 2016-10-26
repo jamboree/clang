@@ -1302,8 +1302,16 @@ bool Sema::isCurrentClassName(const IdentifierInfo &II, Scope *,
   } else
     CurDecl = dyn_cast_or_null<CXXRecordDecl>(CurContext);
 
-  if (CurDecl && CurDecl->getIdentifier())
-    return &II == CurDecl->getIdentifier();
+  if (CurDecl) {
+    if (DeclarationName Name = CurDecl->getDeclName()) {
+      if (IdentifierInfo *Id = Name.getAsIdentifierInfo())
+        return &II == Id;
+
+      if (TemplateDeclNameParmDecl *TDP = Name.getCXXTemplatedNameParmDecl())
+        return TDP->getIdentifier() == &II;
+    }
+  }
+
   return false;
 }
 
@@ -1905,7 +1913,7 @@ void Sema::CheckOverrideControl(NamedDecl *D) {
   // We can't check dependent instance methods.
   if (MD && MD->isInstance() &&
       (MD->getParent()->hasAnyDependentBases() ||
-       MD->getType()->isDependentType()))
+       MD->getType()->isDependentType() || MD->getDeclName().isTemplatedName()))
     return;
 
   if (MD && !MD->isVirtual()) {
@@ -2214,7 +2222,8 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
     } else {
       Member = HandleField(S, cast<CXXRecordDecl>(CurContext), Loc, D,
                                 BitWidth, InitStyle, AS);
-      assert(Member && "HandleField never returns null");
+      if (!Member)
+        return nullptr;
     }
   } else {
     Member = HandleDeclarator(S, D, TemplateParameterLists);
@@ -2817,9 +2826,9 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
                           SourceLocation IdLoc,
                           Expr *InitList,
                           SourceLocation EllipsisLoc) {
-  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, TemplateTypeTy,
-                             DS, IdLoc, InitList,
-                             EllipsisLoc);
+  return BuildMemInitializer(ConstructorD, S, SS,
+                             getPossiblyTemplatedName(MemberOrBase),
+                             TemplateTypeTy, DS, IdLoc, InitList, EllipsisLoc);
 }
 
 /// \brief Handle a C++ member initializer using parentheses syntax.
@@ -2837,8 +2846,9 @@ Sema::ActOnMemInitializer(Decl *ConstructorD,
                           SourceLocation EllipsisLoc) {
   Expr *List = new (Context) ParenListExpr(Context, LParenLoc,
                                            Args, RParenLoc);
-  return BuildMemInitializer(ConstructorD, S, SS, MemberOrBase, TemplateTypeTy,
-                             DS, IdLoc, List, EllipsisLoc);
+  return BuildMemInitializer(ConstructorD, S, SS,
+                             getPossiblyTemplatedName(MemberOrBase),
+                             TemplateTypeTy, DS, IdLoc, List, EllipsisLoc);
 }
 
 namespace {
@@ -2870,7 +2880,7 @@ MemInitResult
 Sema::BuildMemInitializer(Decl *ConstructorD,
                           Scope *S,
                           CXXScopeSpec &SS,
-                          IdentifierInfo *MemberOrBase,
+                          DeclarationName MemberOrBase,
                           ParsedType TemplateTypeTy,
                           const DeclSpec &DS,
                           SourceLocation IdLoc,
@@ -2910,7 +2920,8 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
   //   using a qualified name. ]
   if (!SS.getScopeRep() && !TemplateTypeTy) {
     // Look for a member, first.
-    DeclContext::lookup_result Result = ClassDecl->lookup(MemberOrBase);
+    DeclContext::lookup_result Result =
+        ClassDecl->lookup(MemberOrBase.getCanonicalName());
     if (!Result.empty()) {
       ValueDecl *Member;
       if ((Member = dyn_cast<FieldDecl>(Result.front())) ||
@@ -2954,7 +2965,7 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
           // specialization, we take it as a type name.
           BaseType = CheckTypenameType(ETK_None, SourceLocation(),
                                        SS.getWithLocInContext(Context),
-                                       *MemberOrBase, IdLoc);
+                                       MemberOrBase, IdLoc);
           if (BaseType.isNull())
             return true;
 
@@ -7865,6 +7876,8 @@ Decl *Sema::ActOnUsingDeclaration(Scope *S,
   }
 
   DeclarationNameInfo TargetNameInfo = GetNameFromUnqualifiedId(Name);
+  if (Name.Identifier)
+    TargetNameInfo.setName(getPossiblyTemplatedName(Name.Identifier));
   DeclarationName TargetName = TargetNameInfo.getName();
   if (!TargetName)
     return nullptr;
@@ -8319,7 +8332,8 @@ NamedDecl *Sema::BuildUsingDeclaration(Scope *S, AccessSpecifier AS,
   DeclContext *LookupContext = computeDeclContext(SS);
   NamedDecl *D;
   NestedNameSpecifierLoc QualifierLoc = SS.getWithLocInContext(Context);
-  if (!LookupContext) {
+  if (!LookupContext || (NameInfo.getName().isDependentName() &&
+                         SS.getScopeRep()->isValidTemplatedNamePrefix())) {
     if (HasTypenameKeyword) {
       // FIXME: not all declaration name kinds are legal here
       D = UnresolvedUsingTypenameDecl::Create(Context, CurContext,
@@ -8778,9 +8792,16 @@ Decl *Sema::ActOnAliasDeclaration(Scope *S,
     return nullptr;
 
   bool Invalid = false;
-  DeclarationNameInfo NameInfo = GetNameFromUnqualifiedId(Name);
+
+  assert(Name.Kind == UnqualifiedId::IK_Identifier &&
+      "name in alias declaration must be an identifier");
+  DeclarationNameInfo NameInfo(getPossiblyTemplatedName(Name.Identifier),
+                               Name.StartLocation);
   TypeSourceInfo *TInfo = nullptr;
   GetTypeFromParser(Type.get(), &TInfo);
+
+  if (DiagnoseUnexpandedParameterPack(NameInfo, UPPC_DeclarationName))
+    return nullptr;
 
   if (DiagnoseClassNameShadow(CurContext, NameInfo))
     return nullptr;
@@ -8802,11 +8823,9 @@ Decl *Sema::ActOnAliasDeclaration(Scope *S,
     Previous.clear();
   }
 
-  assert(Name.Kind == UnqualifiedId::IK_Identifier &&
-         "name in alias declaration must be an identifier");
   TypeAliasDecl *NewTD = TypeAliasDecl::Create(Context, CurContext, UsingLoc,
-                                               Name.StartLocation,
-                                               Name.Identifier, TInfo);
+                                               NameInfo.getLoc(),
+                                               NameInfo.getName(), TInfo);
 
   NewTD->setAccess(AS);
 
@@ -9320,7 +9339,7 @@ Sema::findInheritingConstructor(SourceLocation Loc,
     TypeSourceInfo *TInfo =
         Context.getTrivialTypeSourceInfo(FPT->getParamType(I), UsingLoc);
     ParmVarDecl *PD = ParmVarDecl::Create(
-        Context, DerivedCtor, UsingLoc, UsingLoc, /*IdentifierInfo=*/nullptr,
+        Context, DerivedCtor, UsingLoc, UsingLoc, /*DeclarationName=*/{},
         FPT->getParamType(I), TInfo, SC_None, /*DefaultArg=*/nullptr);
     PD->setScopeInfo(0, I);
     PD->setImplicit();
@@ -10217,7 +10236,7 @@ CXXMethodDecl *Sema::DeclareImplicitCopyAssignment(CXXRecordDecl *ClassDecl) {
   // Add the parameter to the operator.
   ParmVarDecl *FromParam = ParmVarDecl::Create(Context, CopyAssignment,
                                                ClassLoc, ClassLoc,
-                                               /*Id=*/nullptr, ArgType,
+                                               /*DeclarationName=*/{}, ArgType,
                                                /*TInfo=*/nullptr, SC_None,
                                                nullptr);
   CopyAssignment->setParams(FromParam);
@@ -10609,7 +10628,7 @@ CXXMethodDecl *Sema::DeclareImplicitMoveAssignment(CXXRecordDecl *ClassDecl) {
   // Add the parameter to the operator.
   ParmVarDecl *FromParam = ParmVarDecl::Create(Context, MoveAssignment,
                                                ClassLoc, ClassLoc,
-                                               /*Id=*/nullptr, ArgType,
+                                               /*DeclarationName=*/{}, ArgType,
                                                /*TInfo=*/nullptr, SC_None,
                                                nullptr);
   MoveAssignment->setParams(FromParam);
@@ -11046,7 +11065,7 @@ CXXConstructorDecl *Sema::DeclareImplicitCopyConstructor(
   // Add the parameter to the constructor.
   ParmVarDecl *FromParam = ParmVarDecl::Create(Context, CopyConstructor,
                                                ClassLoc, ClassLoc,
-                                               /*IdentifierInfo=*/nullptr,
+                                               /*DeclarationName=*/{},
                                                ArgType, /*TInfo=*/nullptr,
                                                SC_None, nullptr);
   CopyConstructor->setParams(FromParam);
@@ -11226,7 +11245,7 @@ CXXConstructorDecl *Sema::DeclareImplicitMoveConstructor(
   // Add the parameter to the constructor.
   ParmVarDecl *FromParam = ParmVarDecl::Create(Context, MoveConstructor,
                                                ClassLoc, ClassLoc,
-                                               /*IdentifierInfo=*/nullptr,
+                                               /*DeclarationName=*/{},
                                                ArgType, /*TInfo=*/nullptr,
                                                SC_None, nullptr);
   MoveConstructor->setParams(FromParam);
@@ -12515,12 +12534,12 @@ FriendDecl *Sema::CheckFriendTypeDecl(SourceLocation LocStart,
 Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
                                     unsigned TagSpec, SourceLocation TagLoc,
                                     CXXScopeSpec &SS,
-                                    IdentifierInfo *Name,
+                                    IdentifierInfo *II,
                                     SourceLocation NameLoc,
                                     AttributeList *Attr,
                                     MultiTemplateParamsArg TempParamLists) {
   TagTypeKind Kind = TypeWithKeyword::getTagTypeKindForTypeSpec(TagSpec);
-
+  DeclarationName Name = getPossiblyTemplatedName(II);
   bool isExplicitSpecialization = false;
   bool Invalid = false;
 
@@ -12565,7 +12584,7 @@ Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
     if (SS.isEmpty()) {
       bool Owned = false;
       bool IsDependent = false;
-      return ActOnTag(S, TagSpec, TUK_Friend, TagLoc, SS, Name, NameLoc,
+      return ActOnTag(S, TagSpec, TUK_Friend, TagLoc, SS, II, NameLoc,
                       Attr, AS_public,
                       /*ModulePrivateLoc=*/SourceLocation(),
                       MultiTemplateParamsArg(), Owned, IsDependent,
@@ -12579,7 +12598,7 @@ Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
     ElaboratedTypeKeyword Keyword
       = TypeWithKeyword::getKeywordForTagTypeKind(Kind);
     QualType T = CheckTypenameType(Keyword, TagLoc, QualifierLoc,
-                                   *Name, NameLoc);
+                                   Name, NameLoc);
     if (T.isNull())
       return nullptr;
 

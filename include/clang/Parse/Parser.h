@@ -2606,10 +2606,15 @@ private:
   bool ParseTemplateParameterList(unsigned Depth,
                                   SmallVectorImpl<Decl*> &TemplateParams);
   bool isStartOfTemplateTypeParameter();
+  bool ParseTypeOrNameParameter(SourceLocation &KeyLoc,
+                                SourceLocation &EllipsisLoc,
+                                SourceLocation &NameLoc,
+                                IdentifierInfo *&ParamName);
   Decl *ParseTemplateParameter(unsigned Depth, unsigned Position);
   Decl *ParseTypeParameter(unsigned Depth, unsigned Position);
   Decl *ParseTemplateTemplateParameter(unsigned Depth, unsigned Position);
   Decl *ParseNonTypeTemplateParameter(unsigned Depth, unsigned Position);
+  Decl *ParseTemplateDeclNameParameter(unsigned Depth, unsigned Position);
   void DiagnoseMisplacedEllipsis(SourceLocation EllipsisLoc,
                                  SourceLocation CorrectLoc,
                                  bool AlreadyHasEllipsis,
@@ -2639,6 +2644,7 @@ private:
   bool IsTemplateArgumentList(unsigned Skip = 0);
   bool ParseTemplateArgumentList(TemplateArgList &TemplateArgs);
   ParsedTemplateArgument ParseTemplateTemplateArgument();
+  ParsedTemplateArgument ParseTemplateDeclNameArgument(unsigned &SoftError);
   ParsedTemplateArgument ParseTemplateArgument();
   Decl *ParseExplicitInstantiation(unsigned Context,
                                    SourceLocation ExternLoc,

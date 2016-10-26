@@ -15,6 +15,7 @@
 
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/PartialDiagnostic.h"
+#include "llvm/ADT/FoldingSet.h"
 #include "llvm/Support/Compiler.h"
 
 namespace llvm {
@@ -26,6 +27,7 @@ namespace clang {
   class CXXLiteralOperatorIdName;
   class CXXOperatorIdName;
   class CXXSpecialName;
+  class CXXTemplateDeclNameParmName;
   class DeclarationNameExtra;
   class IdentifierInfo;
   class MultiKeywordSelector;
@@ -35,6 +37,10 @@ namespace clang {
   class Type;
   class TypeSourceInfo;
   class UsingDirectiveDecl;
+  class TemplateDeclNameParmDecl;
+  class SubstTemplateDeclNameParmPackStorage;
+  class SubstTemplateDeclNameParmName;
+  class TemplateArgument;
 
   template <typename> class CanQual;
   typedef CanQual<Type> CanQualType;
@@ -58,9 +64,12 @@ public:
     CXXConversionFunctionName,
     CXXOperatorName,
     CXXLiteralOperatorName,
-    CXXUsingDirective
+    CXXUsingDirective,
+    CXXTemplatedName,
+    SubstTemplateDeclNameParmPack,
+    SubstTemplatedName
   };
-  static const unsigned NumNameKinds = CXXUsingDirective + 1;
+  static const unsigned NumNameKinds = SubstTemplatedName + 1;
 
 private:
   /// StoredNameKind - The kind of name that is actually stored in the
@@ -135,28 +144,6 @@ private:
     return nullptr;
   }
 
-  // Construct a declaration name from the name of a C++ constructor,
-  // destructor, or conversion function.
-  DeclarationName(CXXSpecialName *Name)
-    : Ptr(reinterpret_cast<uintptr_t>(Name)) {
-    assert((Ptr & PtrMask) == 0 && "Improperly aligned CXXSpecialName");
-    Ptr |= StoredDeclarationNameExtra;
-  }
-
-  // Construct a declaration name from the name of a C++ overloaded
-  // operator.
-  DeclarationName(CXXOperatorIdName *Name)
-    : Ptr(reinterpret_cast<uintptr_t>(Name)) {
-    assert((Ptr & PtrMask) == 0 && "Improperly aligned CXXOperatorId");
-    Ptr |= StoredDeclarationNameExtra;
-  }
-
-  DeclarationName(CXXLiteralOperatorIdName *Name)
-    : Ptr(reinterpret_cast<uintptr_t>(Name)) {
-    assert((Ptr & PtrMask) == 0 && "Improperly aligned CXXLiteralOperatorId");
-    Ptr |= StoredDeclarationNameExtra;
-  }
-
   /// Construct a declaration name from a raw pointer.
   DeclarationName(uintptr_t Ptr) : Ptr(Ptr) { }
 
@@ -180,14 +167,26 @@ public:
   // Construct a declaration name from an Objective-C selector.
   DeclarationName(Selector Sel) : Ptr(Sel.InfoPtr) { }
 
+  DeclarationName(DeclarationNameExtra *Name)
+      : Ptr(reinterpret_cast<uintptr_t>(Name)) {
+    assert((Ptr & PtrMask) == 0 && "Improperly aligned DeclarationName");
+    Ptr |= StoredDeclarationNameExtra;
+  }
+
+  DeclarationName(SubstTemplateDeclNameParmPackStorage *Name)
+      : Ptr(reinterpret_cast<uintptr_t>(Name)) {
+    assert((Ptr & PtrMask) == 0 &&
+           "Improperly aligned SubstTemplateDeclNameParmPackStorage");
+    Ptr |= StoredDeclarationNameExtra;
+  }
+
   /// getUsingDirectiveName - Return name for all using-directives.
   static DeclarationName getUsingDirectiveName();
 
   // operator bool() - Evaluates true when this declaration name is
   // non-empty.
   explicit operator bool() const {
-    return ((Ptr & PtrMask) != 0) ||
-           (reinterpret_cast<IdentifierInfo *>(Ptr & ~PtrMask));
+    return Ptr != 0;
   }
 
   /// \brief Evaluates true when this declaration name is empty.
@@ -214,6 +213,15 @@ public:
   /// because an identifier can be a dependent name if it is used as the 
   /// callee in a call expression with dependent arguments.
   bool isDependentName() const;
+
+  /// \brief Determines whether the name itself refers to a template declname
+  /// parameter, in which case it's also a dependent name (i.e.
+  /// isDependentName() == true).
+  bool isTemplatedName() const;
+
+  /// \brief Determines whether this declaration name contains an
+  /// unexpanded parameter pack when it refers to a template declname parameter.
+  bool containsUnexpandedParameterPack() const;
   
   /// getNameAsString - Retrieve the human-readable string for this name.
   std::string getAsString() const;
@@ -221,9 +229,36 @@ public:
   /// getAsIdentifierInfo - Retrieve the IdentifierInfo * stored in
   /// this declaration name, or NULL if this declaration name isn't a
   /// simple identifier.
-  IdentifierInfo *getAsIdentifierInfo() const {
-    if (isIdentifier())
-      return reinterpret_cast<IdentifierInfo *>(Ptr);
+  IdentifierInfo *getAsIdentifierInfo() const;
+
+  DeclarationNameExtra *getAsExtra() const {
+    if (getStoredNameKind() == StoredDeclarationNameExtra)
+      return reinterpret_cast<DeclarationNameExtra *>(Ptr & ~PtrMask);
+    return nullptr;
+  }
+
+  CXXTemplateDeclNameParmName *getAsCXXTemplateDeclNameParmName() const {
+    if (getNameKind() == CXXTemplatedName)
+      return reinterpret_cast<CXXTemplateDeclNameParmName *>(Ptr & ~PtrMask);
+    return nullptr;
+  }
+
+  /// \brief Retrieve the substituted template declname parameter pack, if
+  /// known.
+  ///
+  /// \returns The storage for the substituted template declname parameter pack,
+  /// if known. Otherwise, returns NULL.
+  SubstTemplateDeclNameParmPackStorage *
+  getAsSubstTemplateDeclNameParmPack() const {
+    if (getNameKind() == SubstTemplateDeclNameParmPack)
+      return reinterpret_cast<SubstTemplateDeclNameParmPackStorage *>(Ptr &
+                                                                      ~PtrMask);
+    return nullptr;
+  }
+
+  SubstTemplateDeclNameParmName *getAsSubstTemplateDeclNameParmName() const {
+    if (getNameKind() == SubstTemplatedName)
+      return reinterpret_cast<SubstTemplateDeclNameParmName *>(Ptr & ~PtrMask);
     return nullptr;
   }
 
@@ -261,6 +296,8 @@ public:
   /// operator, retrieve the identifier associated with it.
   IdentifierInfo *getCXXLiteralIdentifier() const;
 
+  TemplateDeclNameParmDecl *getCXXTemplatedNameParmDecl() const;
+
   /// getObjCSelector - Get the Objective-C selector stored in this
   /// declaration name.
   Selector getObjCSelector() const {
@@ -283,6 +320,10 @@ public:
   }
 
   void setFETokenInfo(void *T);
+
+  bool isCanonical() const;
+
+  DeclarationName getCanonicalName() const;
 
   /// operator== - Determine whether the specified names are identical..
   friend bool operator==(DeclarationName LHS, DeclarationName RHS) {
@@ -335,6 +376,147 @@ inline bool operator>=(DeclarationName LHS, DeclarationName RHS) {
   return DeclarationName::compare(LHS, RHS) >= 0;
 }
 
+/// CXXTemplateDeclNameParmName - Contains the actual identifier that refers to
+/// the declname paramter.
+class CXXTemplateDeclNameParmName : public DeclarationNameExtra,
+                                    public llvm::FoldingSetNode {
+  TemplateDeclNameParmDecl *TDPDecl;
+
+public:
+  /// FETokenInfo - Extra information associated with this operator
+  /// name that can be used by the front end.
+  void *FETokenInfo;
+
+  /// Build a non-canonical type.
+  CXXTemplateDeclNameParmName(TemplateDeclNameParmDecl *TDPDecl,
+                              DeclarationName Canon)
+      : TDPDecl(TDPDecl) {
+    ExtraKindOrNumArgs = CXXTemplatedName;
+    CanonicalPtr = Canon.getAsOpaqueInteger();
+  }
+
+  /// Build the canonical type.
+  CXXTemplateDeclNameParmName(TemplateDeclNameParmDecl *TDPDecl)
+      : TDPDecl(TDPDecl) {
+      ExtraKindOrNumArgs = CXXTemplatedName;
+    CanonicalPtr = DeclarationName(this).getAsOpaqueInteger();
+  }
+
+  TemplateDeclNameParmDecl *getDecl() const {
+    return TDPDecl;
+  }
+
+  void Profile(llvm::FoldingSetNodeID &ID);
+
+  static void Profile(llvm::FoldingSetNodeID &ID, unsigned Depth,
+                      unsigned Index, bool ParameterPack,
+                      TemplateDeclNameParmDecl *TDPDecl) {
+    ID.AddInteger(Depth);
+    ID.AddInteger(Index);
+    ID.AddBoolean(ParameterPack);
+    ID.AddPointer(TDPDecl);
+  }
+};
+
+inline TemplateDeclNameParmDecl *
+DeclarationName::getCXXTemplatedNameParmDecl() const {
+  if (CXXTemplateDeclNameParmName *TN = getAsCXXTemplateDeclNameParmName())
+    return TN->getDecl();
+  return nullptr;
+}
+
+// TODO: remove this entirely.
+class SubstTemplateDeclNameParmPackStorage : public DeclarationNameExtra,
+                                             public llvm::FoldingSetNode {
+  unsigned Size;
+  TemplateDeclNameParmDecl *Parameter;
+  const TemplateArgument *Arguments;
+
+public:
+  SubstTemplateDeclNameParmPackStorage(TemplateDeclNameParmDecl *Parameter,
+                                       unsigned Size,
+                                       const TemplateArgument *Arguments)
+      : Size(Size), Parameter(Parameter), Arguments(Arguments) {
+    ExtraKindOrNumArgs = SubstTemplateDeclNameParmPack;
+  }
+
+  unsigned size() const { return Size; }
+
+  /// \brief Retrieve the template declname parameter pack being substituted.
+  TemplateDeclNameParmDecl *getParameterPack() const { return Parameter; }
+
+  /// \brief Retrieve the template declname argument pack with which this
+  /// parameter was substituted.
+  TemplateArgument getArgumentPack() const;
+
+  void Profile(llvm::FoldingSetNodeID &ID, ASTContext &Context);
+
+  static void Profile(llvm::FoldingSetNodeID &ID, ASTContext &Context,
+                      TemplateDeclNameParmDecl *Parameter,
+                      const TemplateArgument &ArgPack);
+};
+
+class SubstTemplateDeclNameParmName : public DeclarationNameExtra,
+                                      public llvm::FoldingSetNode {
+  CXXTemplateDeclNameParmName *Replaced;
+
+public:
+  SubstTemplateDeclNameParmName(CXXTemplateDeclNameParmName *Param,
+                                DeclarationName Canon)
+      : Replaced(Param) {
+    ExtraKindOrNumArgs = SubstTemplatedName;
+    CanonicalPtr = Canon.getAsOpaqueInteger();
+  }
+  /// Gets the template parameter that was substituted for.
+  CXXTemplateDeclNameParmName *getReplacedParameter() const {
+    return Replaced;
+  }
+
+  /// Gets the type that was substituted for the template
+  /// parameter.
+  DeclarationName getReplacementName() const {
+    return DeclarationName::getFromOpaqueInteger(CanonicalPtr);
+  }
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(ID, Replaced, getReplacementName());
+  }
+
+  static void Profile(llvm::FoldingSetNodeID &ID,
+                      const CXXTemplateDeclNameParmName *Replaced,
+                      DeclarationName Replacement) {
+    ID.AddPointer(Replaced);
+    ID.AddPointer(Replacement.getAsOpaquePtr());
+  }
+};
+
+inline bool DeclarationName::isCanonical() const {
+  if (getStoredNameKind() == StoredDeclarationNameExtra)
+    return getExtra()->CanonicalPtr == Ptr;
+  return true;
+}
+
+inline DeclarationName DeclarationName::getCanonicalName() const {
+  if (getStoredNameKind() == StoredDeclarationNameExtra)
+    return DeclarationName(getExtra()->CanonicalPtr);
+  return *this;
+}
+
+inline IdentifierInfo *DeclarationName::getAsIdentifierInfo() const {
+  switch (getStoredNameKind()) {
+  case StoredIdentifier:
+    return reinterpret_cast<IdentifierInfo *>(Ptr);
+  case StoredDeclarationNameExtra:
+    if (getExtra()->ExtraKindOrNumArgs ==
+        DeclarationNameExtra::SubstTemplatedName)
+      return reinterpret_cast<SubstTemplateDeclNameParmName *>(Ptr & ~PtrMask)
+          ->getReplacementName()
+          .getAsIdentifierInfo();
+  default:
+    return nullptr;
+  }
+}
+
 /// DeclarationNameTable - Used to store and retrieve DeclarationName
 /// instances for the various kinds of declaration names, e.g., normal
 /// identifiers, C++ constructor names, etc. This class contains
@@ -346,6 +528,8 @@ class DeclarationNameTable {
   void *CXXSpecialNamesImpl; // Actually a FoldingSet<CXXSpecialName> *
   CXXOperatorIdName *CXXOperatorNames; // Operator names
   void *CXXLiteralOperatorNames; // Actually a CXXOperatorIdName*
+  void *CXXTemplatedNames; // FoldingSet<CXXTemplateDeclNameParmName> *
+  void *SubstTemplatedNames; // FoldingSet<SubstTemplateDeclNameParmName> *
 
   DeclarationNameTable(const DeclarationNameTable&) = delete;
   void operator=(const DeclarationNameTable&) = delete;
@@ -385,6 +569,15 @@ public:
   /// getCXXLiteralOperatorName - Get the name of the literal operator function
   /// with II as the identifier.
   DeclarationName getCXXLiteralOperatorName(IdentifierInfo *II);
+
+  /// getCXXTemplatedName - Get the name of the template declname parameter.
+  DeclarationName
+  getCXXTemplatedName(unsigned Depth, unsigned Index, bool ParameterPack,
+                      TemplateDeclNameParmDecl *TDPDecl = nullptr);
+
+  DeclarationName
+  getSubstTemplatedName(CXXTemplateDeclNameParmName *Replaced,
+                        DeclarationName Replacement);
 };
 
 /// DeclarationNameLoc - Additional source/type location info
@@ -595,6 +788,21 @@ struct DenseMapInfo<clang::DeclarationName> {
 
 template <>
 struct isPodLike<clang::DeclarationName> { static const bool value = true; };
+
+/// \brief The clang::DeclarationName class is effectively a pointer.
+template <> class PointerLikeTypeTraits<clang::DeclarationName> {
+public:
+  static inline void *getAsVoidPointer(clang::DeclarationName DN) {
+    return DN.getAsOpaquePtr();
+  }
+
+  static inline clang::DeclarationName getFromVoidPointer(void *Ptr) {
+    return clang::DeclarationName::getFromOpaquePtr(Ptr);
+  }
+
+  // No bits are available!
+  enum { NumLowBitsAvailable = 0 };
+};
 
 }  // end namespace llvm
 

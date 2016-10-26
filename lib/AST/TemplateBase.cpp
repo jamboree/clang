@@ -109,7 +109,11 @@ bool TemplateArgument::isDependent() const {
   case Template:
     return getAsTemplate().isDependent();
 
+  case DeclName:
+    return getAsDeclName().isDependentName();
+
   case TemplateExpansion:
+  case DeclNameExpansion:
     return true;
 
   case Declaration:
@@ -148,8 +152,12 @@ bool TemplateArgument::isInstantiationDependent() const {
     
   case Template:
     return getAsTemplate().isInstantiationDependent();
+
+  case DeclName:
+    return getAsDeclName().isDependentName();
     
   case TemplateExpansion:
+  case DeclNameExpansion:
     return true;
     
   case Declaration:
@@ -184,10 +192,12 @@ bool TemplateArgument::isPackExpansion() const {
   case Integral:
   case Pack:    
   case Template:
+  case DeclName:
   case NullPtr:
     return false;
       
   case TemplateExpansion:
+  case DeclNameExpansion:
     return true;
       
   case Type:
@@ -206,6 +216,7 @@ bool TemplateArgument::containsUnexpandedParameterPack() const {
   case Declaration:
   case Integral:
   case TemplateExpansion:
+  case DeclNameExpansion:
   case NullPtr:
     break;
 
@@ -218,7 +229,12 @@ bool TemplateArgument::containsUnexpandedParameterPack() const {
     if (getAsTemplate().containsUnexpandedParameterPack())
       return true;
     break;
-        
+
+  case DeclName:
+    if (getAsDeclName().containsUnexpandedParameterPack())
+      return true;
+    break;
+
   case Expression:
     if (getAsExpr()->containsUnexpandedParameterPack())
       return true;
@@ -237,6 +253,14 @@ bool TemplateArgument::containsUnexpandedParameterPack() const {
 
 Optional<unsigned> TemplateArgument::getNumTemplateExpansions() const {
   assert(getKind() == TemplateExpansion);
+  if (TemplateArg.NumExpansions)
+    return TemplateArg.NumExpansions - 1;
+  
+  return None; 
+}
+
+Optional<unsigned> TemplateArgument::getNumDeclNameExpansions() const {
+  assert(getKind() == DeclNameExpansion);
   if (TemplateArg.NumExpansions)
     return TemplateArg.NumExpansions - 1;
   
@@ -279,7 +303,23 @@ void TemplateArgument::Profile(llvm::FoldingSetNodeID &ID,
     }
     break;
   }
-      
+
+  case DeclName:
+  case DeclNameExpansion: {
+    DeclarationName Name = getAsDeclNameOrDeclNamePattern();
+    if (TemplateDeclNameParmDecl *TDP = Name.getCXXTemplatedNameParmDecl()) {
+      ID.AddBoolean(true);
+      ID.AddInteger(TDP->getDepth());
+      ID.AddInteger(TDP->getIndex());
+      ID.AddBoolean(TDP->isParameterPack());
+      // FIXME: should we differentiate it from TemplateTemplateParmDecl above?
+    } else {
+      ID.AddBoolean(false);
+      ID.AddPointer(Name.getAsIdentifierInfo());
+    }
+    break;
+  }
+
   case Integral:
     getAsIntegral().Profile(ID);
     getIntegralType().Profile(ID);
@@ -293,6 +333,7 @@ void TemplateArgument::Profile(llvm::FoldingSetNodeID &ID,
     ID.AddInteger(Args.NumArgs);
     for (unsigned I = 0; I != Args.NumArgs; ++I)
       Args.Args[I].Profile(ID, Context);
+    break;
   }
 }
 
@@ -307,6 +348,11 @@ bool TemplateArgument::structurallyEquals(const TemplateArgument &Other) const {
   case TemplateExpansion:
   case NullPtr:
     return TypeOrValue.V == Other.TypeOrValue.V;
+
+  case DeclName:
+  case DeclNameExpansion:
+    return getAsDeclNameOrDeclNamePattern() ==
+           Other.getAsDeclNameOrDeclNamePattern();
 
   case Declaration:
     return getAsDecl() == Other.getAsDecl();
@@ -339,13 +385,46 @@ TemplateArgument TemplateArgument::getPackExpansionPattern() const {
   case TemplateExpansion:
     return TemplateArgument(getAsTemplateOrTemplatePattern());
 
+  case DeclNameExpansion:
+    return TemplateArgument(getAsDeclNameOrDeclNamePattern());
+
   case Declaration:
   case Integral:
   case Pack:
   case Null:
   case Template:
+  case DeclName:
   case NullPtr:
     return TemplateArgument();
+  }
+
+  llvm_unreachable("Invalid TemplateArgument Kind!");
+}
+
+Optional<unsigned> TemplateArgument::getNumExpansions() const {
+  assert(isPackExpansion());
+
+  switch (getKind()) {
+  case Type:
+    return getAsType()->getAs<PackExpansionType>()->getNumExpansions();
+
+  case Expression:
+    return cast<PackExpansionExpr>(getAsExpr())->getNumExpansions();
+
+  case TemplateExpansion:
+    return getNumTemplateExpansions();
+
+  case DeclNameExpansion:
+    return getNumDeclNameExpansions();
+
+  case Declaration:
+  case Integral:
+  case Pack:
+  case Null:
+  case Template:
+  case DeclName:
+  case NullPtr:
+    return None;
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");
@@ -389,7 +468,16 @@ void TemplateArgument::print(const PrintingPolicy &Policy,
     getAsTemplateOrTemplatePattern().print(Out, Policy);
     Out << "...";
     break;
-      
+
+  case DeclName:
+    getAsDeclName().print(Out, Policy);
+    break;
+
+  case DeclNameExpansion:
+    getAsDeclNameOrDeclNamePattern().print(Out, Policy);
+    Out << "...";
+    break;
+
   case Integral: {
     printIntegral(*this, Out, Policy);
     break;
@@ -398,8 +486,8 @@ void TemplateArgument::print(const PrintingPolicy &Policy,
   case Expression:
     getAsExpr()->printPretty(Out, nullptr, Policy);
     break;
-    
-  case Pack:
+
+  case Pack: {
     Out << "<";
     bool First = true;
     for (const auto &P : pack_elements()) {
@@ -407,11 +495,12 @@ void TemplateArgument::print(const PrintingPolicy &Policy,
         First = false;
       else
         Out << ", ";
-      
+
       P.print(Policy, Out);
     }
     Out << ">";
-    break;        
+    break;
+  }
   }
 }
 
@@ -461,6 +550,12 @@ SourceRange TemplateArgumentLoc::getSourceRange() const {
                          getTemplateEllipsisLoc());
     return SourceRange(getTemplateNameLoc(), getTemplateEllipsisLoc());
 
+  case TemplateArgument::DeclName:
+    return SourceRange(getDeclNameLoc());
+
+  case TemplateArgument::DeclNameExpansion:
+    return SourceRange(getDeclNameLoc(), getDeclNameEllipsisLoc());
+
   case TemplateArgument::Integral:
     return getSourceIntegralExpression()->getSourceRange();
 
@@ -497,6 +592,12 @@ const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
 
   case TemplateArgument::TemplateExpansion:
     return DB << Arg.getAsTemplateOrTemplatePattern() << "...";
+
+  case TemplateArgument::DeclName:
+    return DB << Arg.getAsDeclName();
+
+  case TemplateArgument::DeclNameExpansion:
+    return DB << Arg.getAsDeclNameOrDeclNamePattern();
 
   case TemplateArgument::Expression: {
     // This shouldn't actually ever happen, so it's okay that we're

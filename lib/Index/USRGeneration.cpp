@@ -739,7 +739,7 @@ void USRGenerator::VisitType(QualType T) {
       PO.ConstantArraySizeAsWritten = false;
       PO.AnonymousTagLocations = false;
       DNT->getQualifier()->print(Out, PO);
-      Out << ':' << DNT->getIdentifier()->getName();
+      Out << ':' << DNT->getDeclName()->getName();
       return;
     }
     if (const InjectedClassNameType *InjT = T->getAs<InjectedClassNameType>()) {

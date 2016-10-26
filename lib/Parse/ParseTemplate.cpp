@@ -484,15 +484,55 @@ Decl *Parser::ParseTemplateParameter(unsigned Depth, unsigned Position) {
   if (Tok.is(tok::kw_template))
     return ParseTemplateTemplateParameter(Depth, Position);
 
+  if (Tok.is(tok::kw_declname))
+      return ParseTemplateDeclNameParameter(Depth, Position);
+
   // If it's none of the above, then it must be a parameter declaration.
   // NOTE: This will pick up errors in the closure of the template parameter
   // list (e.g., template < ; Check here to implement >> style closures.
   return ParseNonTypeTemplateParameter(Depth, Position);
 }
 
+bool Parser::ParseTypeOrNameParameter(SourceLocation &KeyLoc,
+                                      SourceLocation &EllipsisLoc,
+                                      SourceLocation &NameLoc,
+                                      IdentifierInfo *&ParamName) {
+  KeyLoc = ConsumeToken();
+
+  // Grab the ellipsis (if given).
+  if (TryConsumeToken(tok::ellipsis, EllipsisLoc)) {
+    Diag(EllipsisLoc,
+         getLangOpts().CPlusPlus11
+           ? diag::warn_cxx98_compat_variadic_templates
+           : diag::ext_variadic_templates);
+  }
+
+  // Grab the template parameter name (if given)
+  ParamName = nullptr;
+  if (Tok.is(tok::identifier)) {
+    ParamName = Tok.getIdentifierInfo();
+    NameLoc = ConsumeToken();
+  } else if (Tok.isOneOf(tok::equal, tok::comma, tok::greater,
+                         tok::greatergreater)) {
+    // Unnamed template parameter. Don't have to do anything here, just
+    // don't consume this token.
+  } else {
+    Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
+    return true;
+  }
+
+  // Recover from misplaced ellipsis.
+  bool AlreadyHasEllipsis = EllipsisLoc.isValid();
+  if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
+    DiagnoseMisplacedEllipsis(EllipsisLoc, NameLoc, AlreadyHasEllipsis, true);
+
+  return false;
+}
+
 /// ParseTypeParameter - Parse a template type parameter (C++ [temp.param]).
 /// Other kinds of template parameters are parsed in
-/// ParseTemplateTemplateParameter and ParseNonTypeTemplateParameter.
+/// ParseTemplateTemplateParameter, ParseNonTypeTemplateParameter
+/// and ParseDeclNameParameter.
 ///
 ///       type-parameter:     [C++ temp.param]
 ///         'class' ...[opt][C++0x] identifier[opt]
@@ -505,36 +545,12 @@ Decl *Parser::ParseTypeParameter(unsigned Depth, unsigned Position) {
 
   // Consume the 'class' or 'typename' keyword.
   bool TypenameKeyword = Tok.is(tok::kw_typename);
-  SourceLocation KeyLoc = ConsumeToken();
-
-  // Grab the ellipsis (if given).
+  SourceLocation KeyLoc;
   SourceLocation EllipsisLoc;
-  if (TryConsumeToken(tok::ellipsis, EllipsisLoc)) {
-    Diag(EllipsisLoc,
-         getLangOpts().CPlusPlus11
-           ? diag::warn_cxx98_compat_variadic_templates
-           : diag::ext_variadic_templates);
-  }
-
-  // Grab the template parameter name (if given)
   SourceLocation NameLoc;
   IdentifierInfo *ParamName = nullptr;
-  if (Tok.is(tok::identifier)) {
-    ParamName = Tok.getIdentifierInfo();
-    NameLoc = ConsumeToken();
-  } else if (Tok.isOneOf(tok::equal, tok::comma, tok::greater,
-                         tok::greatergreater)) {
-    // Unnamed template parameter. Don't have to do anything here, just
-    // don't consume this token.
-  } else {
-    Diag(Tok.getLocation(), diag::err_expected) << tok::identifier;
+  if (ParseTypeOrNameParameter(KeyLoc, EllipsisLoc, NameLoc, ParamName))
     return nullptr;
-  }
-
-  // Recover from misplaced ellipsis.
-  bool AlreadyHasEllipsis = EllipsisLoc.isValid();
-  if (TryConsumeToken(tok::ellipsis, EllipsisLoc))
-    DiagnoseMisplacedEllipsis(EllipsisLoc, NameLoc, AlreadyHasEllipsis, true);
 
   // Grab a default argument (if available).
   // Per C++0x [basic.scope.pdecl]p9, we parse the default argument before
@@ -711,6 +727,45 @@ Parser::ParseNonTypeTemplateParameter(unsigned Depth, unsigned Position) {
   return Actions.ActOnNonTypeTemplateParameter(getCurScope(), ParamDecl, 
                                                Depth, Position, EqualLoc, 
                                                DefaultArg.get());
+}
+
+/// ParseTemplateDeclNameParameter - Handle the parsing of template declname
+/// parameters.
+///
+///       declname-parameter:
+///         'declname' ...[opt] identifier[opt]
+///         'declname' identifier[opt] '=' declname-id
+Decl *Parser::ParseTemplateDeclNameParameter(unsigned Depth,
+                                             unsigned Position) {
+  assert(Tok.is(tok::kw_declname) &&
+         "A declname-parameter starts with 'declname'");
+
+  SourceLocation KeyLoc;
+  SourceLocation EllipsisLoc;
+  SourceLocation NameLoc;
+  IdentifierInfo *ParamName = nullptr;
+  if (ParseTypeOrNameParameter(KeyLoc, EllipsisLoc, NameLoc, ParamName))
+    return nullptr;
+
+  // Grab a default argument (if available).
+  // Per C++0x [basic.scope.pdecl]p9, we parse the default argument before
+  // we introduce the type parameter into the local scope.
+  SourceLocation EqualLoc;
+  ParsedTemplateArgument DefaultArg;
+  if (TryConsumeToken(tok::equal, EqualLoc)) {
+    unsigned SoftError = 0;
+    DefaultArg = ParseTemplateDeclNameArgument(SoftError);
+    if (SoftError)
+      Diag(Tok, SoftError);
+    if (DefaultArg.isInvalid()) {
+      SkipUntil(tok::comma, tok::greater, tok::greatergreater,
+                StopAtSemi | StopBeforeMatch);
+    }
+  }
+
+  return Actions.ActOnTemplateDeclNameParameter(
+      getCurScope(), EllipsisLoc, KeyLoc, ParamName, NameLoc, Depth, Position,
+      EqualLoc, DefaultArg);
 }
 
 void Parser::DiagnoseMisplacedEllipsis(SourceLocation EllipsisLoc,
@@ -1176,6 +1231,53 @@ ParsedTemplateArgument Parser::ParseTemplateTemplateArgument() {
   return Result;
 }
 
+/// ParseTemplateDeclNameArgument
+///       decl-name:
+///         '?'[opt] identifier
+///         '?'
+ParsedTemplateArgument
+Parser::ParseTemplateDeclNameArgument(unsigned &SoftError) {
+  ParsedTemplateArgument Result;
+  IdentifierInfo *Name = nullptr;
+  SourceLocation NameLoc;
+  SourceLocation QuestionLoc;
+  if (Tok.is(tok::question))
+    QuestionLoc = ConsumeToken();
+  else if (Tok.is(tok::kw_declname))
+    ConsumeToken();
+  if (Tok.is(tok::identifier)) {
+    Name = Tok.getIdentifierInfo();
+    NameLoc = ConsumeToken();
+  } else {
+    if (QuestionLoc.isInvalid()) {
+      SoftError = diag::err_expected_declname_name;
+      return Result;
+    }
+    if (!isEndOfTemplateArgument(Tok)) {
+      Diag(Tok, diag::err_expected_unqualified_id) << 0;
+      return Result;
+    }
+  }
+
+  SourceLocation EllipsisLoc;
+  TryConsumeToken(tok::ellipsis, EllipsisLoc);
+
+  if (isEndOfTemplateArgument(Tok)) {
+    DeclNameResult DName =
+        Actions.ActOnDeclName(getCurScope(), QuestionLoc, NameLoc, Name);
+    if (DName.isInvalid())
+      SoftError = diag::err_default_template_declname_parameter_not_declname;
+    else {
+      Result = ParsedTemplateArgument(DName.get(), NameLoc);
+      // If this is a pack expansion, build it as such.
+      if (EllipsisLoc.isValid())
+        Result = Actions.ActOnPackExpansion(Result, EllipsisLoc);
+    }
+  }
+
+  return Result;
+}
+
 /// ParseTemplateArgument - Parse a C++ template argument (C++ [temp.names]).
 ///
 ///       template-argument: [C++ 14.2]
@@ -1212,6 +1314,23 @@ ParsedTemplateArgument Parser::ParseTemplateArgument() {
       return TemplateTemplateArgument;
     }
     
+    // Revert this tentative parse to parse a non-type template argument.
+    TPA.Revert();
+  }
+  
+  // Try to parse a template declname argument.
+  {
+    TentativeParsingAction TPA(*this);
+
+    unsigned SoftError = 0;
+    ParsedTemplateArgument TemplateTemplateArgument
+      = ParseTemplateDeclNameArgument(SoftError);
+    // Commit if we get a valid result or a hard error.
+    if (!TemplateTemplateArgument.isInvalid() || !SoftError) {
+      TPA.Commit();
+      return TemplateTemplateArgument;
+    }
+
     // Revert this tentative parse to parse a non-type template argument.
     TPA.Revert();
   }

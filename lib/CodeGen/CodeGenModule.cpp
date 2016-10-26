@@ -3278,7 +3278,7 @@ CodeGenModule::GetAddrOfConstantString(const StringLiteral *Literal) {
     for (unsigned i = 0; i < 3; ++i) {
       FieldDecl *Field = FieldDecl::Create(Context, D,
                                            SourceLocation(),
-                                           SourceLocation(), nullptr,
+                                           SourceLocation(), {},
                                            FieldTypes[i], /*TInfo=*/nullptr,
                                            /*BitWidth=*/nullptr,
                                            /*Mutable=*/false,
@@ -3356,7 +3356,7 @@ QualType CodeGenModule::getObjCFastEnumerationStateType() {
       FieldDecl *Field = FieldDecl::Create(Context,
                                            D,
                                            SourceLocation(),
-                                           SourceLocation(), nullptr,
+                                           SourceLocation(), {},
                                            FieldTypes[i], /*TInfo=*/nullptr,
                                            /*BitWidth=*/nullptr,
                                            /*Mutable=*/false,

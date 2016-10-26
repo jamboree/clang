@@ -495,6 +495,13 @@ void TemplateSpecializationTypeLoc::initializeArgLocs(ASTContext &Context,
     case TemplateArgument::Pack:
       ArgInfos[i] = TemplateArgumentLocInfo();
       break;
+
+    case TemplateArgument::DeclName:
+      ArgInfos[i] = TemplateArgumentLocInfo(Loc, SourceLocation());
+      break;
+    case TemplateArgument::DeclNameExpansion:
+      ArgInfos[i] = TemplateArgumentLocInfo(Loc, Loc);
+      break;
     }
   }
 }

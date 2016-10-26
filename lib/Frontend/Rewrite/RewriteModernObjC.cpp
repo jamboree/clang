@@ -2990,7 +2990,7 @@ QualType RewriteModernObjC::getSuperStructType() {
     for (unsigned i = 0; i < 2; ++i) {
       SuperStructDecl->addDecl(FieldDecl::Create(*Context, SuperStructDecl,
                                                  SourceLocation(),
-                                                 SourceLocation(), nullptr,
+                                                 SourceLocation(), {},
                                                  FieldTypes[i], nullptr,
                                                  /*BitWidth=*/nullptr,
                                                  /*Mutable=*/false,
@@ -3023,7 +3023,7 @@ QualType RewriteModernObjC::getConstantStringStructType() {
       ConstantStringDecl->addDecl(FieldDecl::Create(*Context,
                                                     ConstantStringDecl,
                                                     SourceLocation(),
-                                                    SourceLocation(), nullptr,
+                                                    SourceLocation(), {},
                                                     FieldTypes[i], nullptr,
                                                     /*BitWidth=*/nullptr,
                                                     /*Mutable=*/true,

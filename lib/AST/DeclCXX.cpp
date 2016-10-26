@@ -84,20 +84,20 @@ CXXBaseSpecifier *CXXRecordDecl::DefinitionData::getVBasesSlowCase() const {
 
 CXXRecordDecl::CXXRecordDecl(Kind K, TagKind TK, const ASTContext &C,
                              DeclContext *DC, SourceLocation StartLoc,
-                             SourceLocation IdLoc, IdentifierInfo *Id,
+                             SourceLocation IdLoc, DeclarationName N,
                              CXXRecordDecl *PrevDecl)
-    : RecordDecl(K, TK, C, DC, StartLoc, IdLoc, Id, PrevDecl),
+    : RecordDecl(K, TK, C, DC, StartLoc, IdLoc, N, PrevDecl),
       DefinitionData(PrevDecl ? PrevDecl->DefinitionData
                               : nullptr),
       TemplateOrInstantiation() {}
 
 CXXRecordDecl *CXXRecordDecl::Create(const ASTContext &C, TagKind TK,
                                      DeclContext *DC, SourceLocation StartLoc,
-                                     SourceLocation IdLoc, IdentifierInfo *Id,
+                                     SourceLocation IdLoc, DeclarationName N,
                                      CXXRecordDecl* PrevDecl,
                                      bool DelayTypeCreation) {
   CXXRecordDecl *R = new (C, DC) CXXRecordDecl(CXXRecord, TK, C, DC, StartLoc,
-                                               IdLoc, Id, PrevDecl);
+                                               IdLoc, N, PrevDecl);
   R->MayHaveOutOfDateDef = C.getLangOpts().Modules;
 
   // FIXME: DelayTypeCreation seems like such a hack
@@ -113,7 +113,7 @@ CXXRecordDecl::CreateLambda(const ASTContext &C, DeclContext *DC,
                             LambdaCaptureDefault CaptureDefault) {
   CXXRecordDecl *R =
       new (C, DC) CXXRecordDecl(CXXRecord, TTK_Class, C, DC, Loc, Loc,
-                                nullptr, nullptr);
+                                {}, nullptr);
   R->IsBeingDefined = true;
   R->DefinitionData =
       new (C) struct LambdaDefinitionData(R, Info, Dependent, IsGeneric,
@@ -128,7 +128,7 @@ CXXRecordDecl *
 CXXRecordDecl::CreateDeserialized(const ASTContext &C, unsigned ID) {
   CXXRecordDecl *R = new (C, ID) CXXRecordDecl(
       CXXRecord, TTK_Struct, C, nullptr, SourceLocation(), SourceLocation(),
-      nullptr, nullptr);
+      {}, nullptr);
   R->MayHaveOutOfDateDef = false;
   return R;
 }
@@ -2278,14 +2278,14 @@ UnresolvedUsingTypenameDecl::Create(ASTContext &C, DeclContext *DC,
                                     DeclarationName TargetName) {
   return new (C, DC) UnresolvedUsingTypenameDecl(
       DC, UsingLoc, TypenameLoc, QualifierLoc, TargetNameLoc,
-      TargetName.getAsIdentifierInfo());
+      TargetName);
 }
 
 UnresolvedUsingTypenameDecl *
 UnresolvedUsingTypenameDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) UnresolvedUsingTypenameDecl(
       nullptr, SourceLocation(), SourceLocation(), NestedNameSpecifierLoc(),
-      SourceLocation(), nullptr);
+      SourceLocation(), {});
 }
 
 void StaticAssertDecl::anchor() { }

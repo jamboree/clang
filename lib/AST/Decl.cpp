@@ -249,6 +249,10 @@ getLVForTemplateParameterList(const TemplateParameterList *Params,
     if (isa<TemplateTypeParmDecl>(P))
       continue;
 
+    // Template declname parameters never contribute to visibility, pack or not.
+    if (isa<TemplateDeclNameParmDecl>(P))
+        continue;
+
     // Non-type template parameters can be restricted by the value type, e.g.
     //   template <enum X> class A { ... };
     // We have to be careful here, though, because we can be dealing with
@@ -322,6 +326,8 @@ static LinkageInfo getLVForTemplateArgumentList(ArrayRef<TemplateArgument> Args,
     case TemplateArgument::Null:
     case TemplateArgument::Integral:
     case TemplateArgument::Expression:
+    case TemplateArgument::DeclName:
+    case TemplateArgument::DeclNameExpansion:
       continue;
 
     case TemplateArgument::Type:
@@ -1512,7 +1518,9 @@ static bool isRedeclarable(Decl::Kind K) {
 }
 
 bool NamedDecl::declarationReplaces(NamedDecl *OldD, bool IsKnownNewer) const {
-  assert(getDeclName() == OldD->getDeclName() && "Declaration name mismatch");
+  assert(getDeclName().getCanonicalName() ==
+             OldD->getDeclName().getCanonicalName() &&
+         "Declaration name mismatch");
 
   // Never replace one imported declaration with another; we need both results
   // when re-exporting.
@@ -1782,9 +1790,9 @@ const char *VarDecl::getStorageClassSpecifierString(StorageClass SC) {
 
 VarDecl::VarDecl(Kind DK, ASTContext &C, DeclContext *DC,
                  SourceLocation StartLoc, SourceLocation IdLoc,
-                 IdentifierInfo *Id, QualType T, TypeSourceInfo *TInfo,
+                 DeclarationName N, QualType T, TypeSourceInfo *TInfo,
                  StorageClass SC)
-    : DeclaratorDecl(DK, DC, IdLoc, Id, T, TInfo, StartLoc),
+    : DeclaratorDecl(DK, DC, IdLoc, N, T, TInfo, StartLoc),
       redeclarable_base(C), Init() {
   static_assert(sizeof(VarDeclBitfields) <= sizeof(unsigned),
                 "VarDeclBitfields too large!");
@@ -1799,14 +1807,14 @@ VarDecl::VarDecl(Kind DK, ASTContext &C, DeclContext *DC,
 
 VarDecl *VarDecl::Create(ASTContext &C, DeclContext *DC,
                          SourceLocation StartL, SourceLocation IdL,
-                         IdentifierInfo *Id, QualType T, TypeSourceInfo *TInfo,
+                         DeclarationName N, QualType T, TypeSourceInfo *TInfo,
                          StorageClass S) {
-  return new (C, DC) VarDecl(Var, C, DC, StartL, IdL, Id, T, TInfo, S);
+  return new (C, DC) VarDecl(Var, C, DC, StartL, IdL, N, T, TInfo, S);
 }
 
 VarDecl *VarDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID)
-      VarDecl(Var, C, nullptr, SourceLocation(), SourceLocation(), nullptr,
+      VarDecl(Var, C, nullptr, SourceLocation(), SourceLocation(), {},
               QualType(), nullptr, SC_None);
 }
 
@@ -2327,10 +2335,10 @@ VarDecl::setInstantiationOfStaticDataMember(VarDecl *VD,
 
 ParmVarDecl *ParmVarDecl::Create(ASTContext &C, DeclContext *DC,
                                  SourceLocation StartLoc,
-                                 SourceLocation IdLoc, IdentifierInfo *Id,
+                                 SourceLocation IdLoc, DeclarationName N,
                                  QualType T, TypeSourceInfo *TInfo,
                                  StorageClass S, Expr *DefArg) {
-  return new (C, DC) ParmVarDecl(ParmVar, C, DC, StartLoc, IdLoc, Id, T, TInfo,
+  return new (C, DC) ParmVarDecl(ParmVar, C, DC, StartLoc, IdLoc, N, T, TInfo,
                                  S, DefArg);
 }
 
@@ -2345,7 +2353,7 @@ QualType ParmVarDecl::getOriginalType() const {
 ParmVarDecl *ParmVarDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID)
       ParmVarDecl(ParmVar, C, nullptr, SourceLocation(), SourceLocation(),
-                  nullptr, QualType(), nullptr, SC_None, nullptr);
+                  {}, QualType(), nullptr, SC_None, nullptr);
 }
 
 SourceRange ParmVarDecl::getSourceRange() const {
@@ -2753,6 +2761,11 @@ void FunctionDecl::setParams(ASTContext &C,
   if (!NewParamInfo.empty()) {
     ParamInfo = new (C) ParmVarDecl*[NewParamInfo.size()];
     std::copy(NewParamInfo.begin(), NewParamInfo.end(), ParamInfo);
+    if (const FunctionProtoType *Proto = getType()->getAs<FunctionProtoType>())
+      DesigProto =
+          C.getCanonicalDesigFunctionType(Proto->getReturnType(), parameters(),
+                                          Proto->getExtProtoInfo())
+              ->getAs<FunctionProtoType>();
   }
 }
 
@@ -2787,9 +2800,20 @@ unsigned FunctionDecl::getMinRequiredArguments() const {
     return getNumParams();
 
   unsigned NumRequiredArgs = 0;
-  for (auto *Param : parameters())
-    if (!Param->isParameterPack() && !Param->hasDefaultArg())
+  ArrayRef<ParmVarDecl *> Parms = parameters();
+  param_const_iterator I = Parms.begin(), E = Parms.end();
+  for (; I != E; ++I) {
+    ParmVarDecl *Parm = *I;
+    if (const PackExpansionType *Expansion =
+            dyn_cast<PackExpansionType>(Parm->getType())) {
+      if (Optional<unsigned> NumExpansions = Expansion->getNumExpansions()) {
+        NumRequiredArgs += *NumExpansions;
+        I += *NumExpansions;
+        continue;
+      }
+    } else if (!Parm->hasDefaultArg())
       ++NumRequiredArgs;
+  }
   return NumRequiredArgs;
 }
 
@@ -3442,16 +3466,16 @@ unsigned FunctionDecl::getMemoryFunctionKind() const {
 
 FieldDecl *FieldDecl::Create(const ASTContext &C, DeclContext *DC,
                              SourceLocation StartLoc, SourceLocation IdLoc,
-                             IdentifierInfo *Id, QualType T,
+                             DeclarationName N, QualType T,
                              TypeSourceInfo *TInfo, Expr *BW, bool Mutable,
                              InClassInitStyle InitStyle) {
-  return new (C, DC) FieldDecl(Decl::Field, DC, StartLoc, IdLoc, Id, T, TInfo,
+  return new (C, DC) FieldDecl(Decl::Field, DC, StartLoc, IdLoc, N, T, TInfo,
                                BW, Mutable, InitStyle);
 }
 
 FieldDecl *FieldDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) FieldDecl(Field, nullptr, SourceLocation(),
-                               SourceLocation(), nullptr, QualType(), nullptr,
+                               SourceLocation(), {}, QualType(), nullptr,
                                nullptr, false, ICIS_NoInit);
 }
 
@@ -3625,10 +3649,10 @@ void EnumDecl::anchor() { }
 
 EnumDecl *EnumDecl::Create(ASTContext &C, DeclContext *DC,
                            SourceLocation StartLoc, SourceLocation IdLoc,
-                           IdentifierInfo *Id,
+                           DeclarationName N,
                            EnumDecl *PrevDecl, bool IsScoped,
                            bool IsScopedUsingClassTag, bool IsFixed) {
-  auto *Enum = new (C, DC) EnumDecl(C, DC, StartLoc, IdLoc, Id, PrevDecl,
+  auto *Enum = new (C, DC) EnumDecl(C, DC, StartLoc, IdLoc, N, PrevDecl,
                                     IsScoped, IsScopedUsingClassTag, IsFixed);
   Enum->MayHaveOutOfDateDef = C.getLangOpts().Modules;
   C.getTypeDeclType(Enum, PrevDecl);
@@ -3638,7 +3662,7 @@ EnumDecl *EnumDecl::Create(ASTContext &C, DeclContext *DC,
 EnumDecl *EnumDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   EnumDecl *Enum =
       new (C, ID) EnumDecl(C, nullptr, SourceLocation(), SourceLocation(),
-                           nullptr, nullptr, false, false, false);
+                           {}, nullptr, false, false, false);
   Enum->MayHaveOutOfDateDef = C.getLangOpts().Modules;
   return Enum;
 }
@@ -3714,9 +3738,9 @@ void EnumDecl::setInstantiationOfMemberEnum(ASTContext &C, EnumDecl *ED,
 
 RecordDecl::RecordDecl(Kind DK, TagKind TK, const ASTContext &C,
                        DeclContext *DC, SourceLocation StartLoc,
-                       SourceLocation IdLoc, IdentifierInfo *Id,
+                       SourceLocation IdLoc, DeclarationName N,
                        RecordDecl *PrevDecl)
-    : TagDecl(DK, TK, C, DC, IdLoc, Id, PrevDecl, StartLoc) {
+    : TagDecl(DK, TK, C, DC, IdLoc, N, PrevDecl, StartLoc) {
   HasFlexibleArrayMember = false;
   AnonymousStructOrUnion = false;
   HasObjectMember = false;
@@ -3727,9 +3751,9 @@ RecordDecl::RecordDecl(Kind DK, TagKind TK, const ASTContext &C,
 
 RecordDecl *RecordDecl::Create(const ASTContext &C, TagKind TK, DeclContext *DC,
                                SourceLocation StartLoc, SourceLocation IdLoc,
-                               IdentifierInfo *Id, RecordDecl* PrevDecl) {
+                               DeclarationName N, RecordDecl* PrevDecl) {
   RecordDecl *R = new (C, DC) RecordDecl(Record, TK, C, DC,
-                                         StartLoc, IdLoc, Id, PrevDecl);
+                                         StartLoc, IdLoc, N, PrevDecl);
   R->MayHaveOutOfDateDef = C.getLangOpts().Modules;
 
   C.getTypeDeclType(R, PrevDecl);
@@ -3739,7 +3763,7 @@ RecordDecl *RecordDecl::Create(const ASTContext &C, TagKind TK, DeclContext *DC,
 RecordDecl *RecordDecl::CreateDeserialized(const ASTContext &C, unsigned ID) {
   RecordDecl *R =
       new (C, ID) RecordDecl(Record, TTK_Struct, C, nullptr, SourceLocation(),
-                             SourceLocation(), nullptr, nullptr);
+                             SourceLocation(), {}, nullptr);
   R->MayHaveOutOfDateDef = C.getLangOpts().Modules;
   return R;
 }
@@ -4078,14 +4102,14 @@ void CapturedDecl::setNothrow(bool Nothrow) { BodyAndNothrow.setInt(Nothrow); }
 
 EnumConstantDecl *EnumConstantDecl::Create(ASTContext &C, EnumDecl *CD,
                                            SourceLocation L,
-                                           IdentifierInfo *Id, QualType T,
+                                           DeclarationName N, QualType T,
                                            Expr *E, const llvm::APSInt &V) {
-  return new (C, CD) EnumConstantDecl(CD, L, Id, T, E, V);
+  return new (C, CD) EnumConstantDecl(CD, L, N, T, E, V);
 }
 
 EnumConstantDecl *
 EnumConstantDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
-  return new (C, ID) EnumConstantDecl(nullptr, SourceLocation(), nullptr,
+  return new (C, ID) EnumConstantDecl(nullptr, SourceLocation(), {},
                                       QualType(), nullptr, llvm::APSInt());
 }
 
@@ -4127,8 +4151,8 @@ void TypeDecl::anchor() { }
 
 TypedefDecl *TypedefDecl::Create(ASTContext &C, DeclContext *DC,
                                  SourceLocation StartLoc, SourceLocation IdLoc,
-                                 IdentifierInfo *Id, TypeSourceInfo *TInfo) {
-  return new (C, DC) TypedefDecl(C, DC, StartLoc, IdLoc, Id, TInfo);
+                                 DeclarationName N, TypeSourceInfo *TInfo) {
+  return new (C, DC) TypedefDecl(C, DC, StartLoc, IdLoc, N, TInfo);
 }
 
 void TypedefNameDecl::anchor() { }
@@ -4150,19 +4174,19 @@ TagDecl *TypedefNameDecl::getAnonDeclWithTypedefName(bool AnyRedecl) const {
 
 TypedefDecl *TypedefDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) TypedefDecl(C, nullptr, SourceLocation(), SourceLocation(),
-                                 nullptr, nullptr);
+                                 {}, nullptr);
 }
 
 TypeAliasDecl *TypeAliasDecl::Create(ASTContext &C, DeclContext *DC,
                                      SourceLocation StartLoc,
-                                     SourceLocation IdLoc, IdentifierInfo *Id,
+                                     SourceLocation IdLoc, DeclarationName N,
                                      TypeSourceInfo *TInfo) {
-  return new (C, DC) TypeAliasDecl(C, DC, StartLoc, IdLoc, Id, TInfo);
+  return new (C, DC) TypeAliasDecl(C, DC, StartLoc, IdLoc, N, TInfo);
 }
 
 TypeAliasDecl *TypeAliasDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) TypeAliasDecl(C, nullptr, SourceLocation(),
-                                   SourceLocation(), nullptr, nullptr);
+                                   SourceLocation(), {}, nullptr);
 }
 
 SourceRange TypedefDecl::getSourceRange() const {

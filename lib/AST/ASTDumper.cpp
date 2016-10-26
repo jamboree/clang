@@ -470,6 +470,7 @@ namespace  {
     void VisitTemplateTypeParmDecl(const TemplateTypeParmDecl *D);
     void VisitNonTypeTemplateParmDecl(const NonTypeTemplateParmDecl *D);
     void VisitTemplateTemplateParmDecl(const TemplateTemplateParmDecl *D);
+    void VisitTemplateDeclNameParmDecl(const TemplateDeclNameParmDecl *D);
     void VisitUsingDecl(const UsingDecl *D);
     void VisitUnresolvedUsingTypenameDecl(const UnresolvedUsingTypenameDecl *D);
     void VisitUnresolvedUsingValueDecl(const UnresolvedUsingValueDecl *D);
@@ -987,6 +988,14 @@ void ASTDumper::dumpTemplateArgument(const TemplateArgument &A, SourceRange R) {
            I != E; ++I)
         dumpTemplateArgument(*I);
       break;
+    case TemplateArgument::DeclName:
+      OS << " declname ";
+      OS << A.getAsDeclName();
+      break;
+    case TemplateArgument::DeclNameExpansion:
+      OS << " declname expansion ";
+      OS << A.getAsDeclNameOrDeclNamePattern();
+      break;
     }
   });
 }
@@ -1467,6 +1476,15 @@ void ASTDumper::VisitTemplateTemplateParmDecl(
     OS << " ...";
   dumpName(D);
   dumpTemplateParameters(D->getTemplateParameters());
+  if (D->hasDefaultArgument())
+    dumpTemplateArgumentLoc(D->getDefaultArgument());
+}
+
+void ASTDumper::VisitTemplateDeclNameParmDecl(
+    const TemplateDeclNameParmDecl *D) {
+  if (D->isParameterPack())
+    OS << " ...";
+  dumpName(D);
   if (D->hasDefaultArgument())
     dumpTemplateArgumentLoc(D->getDefaultArgument());
 }

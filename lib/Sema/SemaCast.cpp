@@ -1106,6 +1106,7 @@ static TryCastResult TryStaticCast(Sema &Self, ExprResult &SrcExpr,
       }
     }
   }
+
   // Allow arbitray objective-c pointer conversion with static casts.
   if (SrcType->isObjCObjectPointerType() &&
       DestType->isObjCObjectPointerType()) {
@@ -1148,9 +1149,6 @@ TryLValueToRValueCast(Sema &Self, Expr *SrcExpr, QualType DestType,
   // Because we try the reference downcast before this function, from now on
   // this is the only cast possibility, so we issue an error if we fail now.
   // FIXME: Should allow casting away constness if CStyle.
-  bool DerivedToBase;
-  bool ObjCConversion;
-  bool ObjCLifetimeConversion;
   QualType FromType = SrcExpr->getType();
   QualType ToType = R->getPointeeType();
   if (CStyle) {
@@ -1158,10 +1156,9 @@ TryLValueToRValueCast(Sema &Self, Expr *SrcExpr, QualType DestType,
     ToType = ToType.getUnqualifiedType();
   }
   
+  unsigned RCF;
   if (Self.CompareReferenceRelationship(SrcExpr->getLocStart(),
-                                        ToType, FromType,
-                                        DerivedToBase, ObjCConversion,
-                                        ObjCLifetimeConversion) 
+                                        ToType, FromType, RCF) 
         < Sema::Ref_Compatible_With_Added_Qualification) {
     if (CStyle)
       return TC_NotApplicable;
@@ -1169,7 +1166,7 @@ TryLValueToRValueCast(Sema &Self, Expr *SrcExpr, QualType DestType,
     return TC_Failed;
   }
 
-  if (DerivedToBase) {
+  if (RCF & Sema::RCF_DerivedToBase) {
     Kind = CK_DerivedToBase;
     CXXBasePaths Paths(/*FindAmbiguities=*/true, /*RecordPaths=*/true,
                        /*DetectVirtual=*/true);
@@ -1262,6 +1259,20 @@ TryStaticDowncast(Sema &Self, CanQualType SrcType, CanQualType DestType,
                   bool CStyle, SourceRange OpRange, QualType OrigSrcType,
                   QualType OrigDestType, unsigned &msg, 
                   CastKind &Kind, CXXCastPath &BasePath) {
+  // FunctionProtoType cast: R(T.a) -> R(T.b)
+  if (const FunctionProtoType *DestProto =
+          DestType->getAs<FunctionProtoType>()) {
+    if (const FunctionProtoType *SrcProto =
+            SrcType->getAs<FunctionProtoType>()) {
+      if (DestProto->hasDesignators() &&
+          DestProto->getCanonicalNonDesigProto() ==
+              SrcProto->getCanonicalNonDesigProto()) {
+        Kind = CK_NoOp;
+        return TC_Success;
+      }
+    }
+  }
+
   // We can only work with complete types. But don't complain if it doesn't work
   if (!Self.isCompleteType(OpRange.getBegin(), SrcType) ||
       !Self.isCompleteType(OpRange.getBegin(), DestType))
@@ -1705,6 +1716,38 @@ void Sema::CheckCompatibleReinterpretCast(QualType SrcType, QualType DestType,
   }
 
   Diag(Range.getBegin(), DiagID) << SrcType << DestType << Range;
+}
+
+bool Sema::areCompatibleFunctionProtoTypes(QualType TypeL, QualType TypeR) {
+  const FunctionProtoType *L =
+      Context.getCanonicalType(TypeL)->getAs<FunctionProtoType>();
+  const FunctionProtoType *R =
+      Context.getCanonicalType(TypeR)->getAs<FunctionProtoType>();
+
+  if (!L || !R)
+    return false;
+  if (L->getNumParams() != R->getNumParams())
+    return false;
+
+  QualType RetL = L->getReturnType();
+  QualType RetR = R->getReturnType();
+  if (RetL != RetR)
+    return false;
+
+  for (unsigned I = 0, N = L->getNumParams(); I != N; ++I) {
+    QualType ParmL = L->getParamType(I);
+    QualType ParmR = R->getParamType(I);
+
+    if (const DesignatingType *Desig = ParmL->getAs<DesignatingType>())
+      ParmL = Desig->getMasterType();
+    if (const DesignatingType *Desig = ParmR->getAs<DesignatingType>())
+      ParmR = Desig->getMasterType();
+
+    // Self.Context.typesAreCompatible()
+    if (ParmL != ParmR)
+      return false;
+  }
+  return true;
 }
 
 static void DiagnoseCastOfObjCSEL(Sema &Self, const ExprResult &SrcExpr,

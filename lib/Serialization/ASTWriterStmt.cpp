@@ -757,7 +757,7 @@ void ASTStmtWriter::VisitDesignatedInitExpr(DesignatedInitExpr *E) {
         Record.AddDeclRef(Field);
       } else {
         Record.push_back(serialization::DESIG_FIELD_NAME);
-        Record.AddIdentifierRef(D.getFieldName());
+        Record.AddDeclarationName(D.getFieldName());
       }
       Record.AddSourceLocation(D.getDotLoc());
       Record.AddSourceLocation(D.getFieldLoc());

@@ -82,7 +82,10 @@ unsigned TemplateParameterList::getMinRequiredArguments() const {
     } else if (const auto *NTTP = dyn_cast<NonTypeTemplateParmDecl>(P)) {
       if (NTTP->hasDefaultArgument())
         break;
-    } else if (cast<TemplateTemplateParmDecl>(P)->hasDefaultArgument())
+    } else if (const auto *TMP = dyn_cast<TemplateTemplateParmDecl>(P)) {
+      if (TMP->hasDefaultArgument())
+        break;
+    } else if (cast<TemplateDeclNameParmDecl>(P)->hasDefaultArgument())
       break;
 
     ++NumRequiredArgs;
@@ -102,8 +105,10 @@ unsigned TemplateParameterList::getDepth() const {
   else if (const NonTypeTemplateParmDecl *NTTP 
              = dyn_cast<NonTypeTemplateParmDecl>(FirstParm))
     return NTTP->getDepth();
+  else if (const auto *TMP = dyn_cast<TemplateTemplateParmDecl>(FirstParm))
+    return TMP->getDepth();
   else
-    return cast<TemplateTemplateParmDecl>(FirstParm)->getDepth();
+    return cast<TemplateDeclNameParmDecl>(FirstParm)->getDepth();
 }
 
 static void AdoptTemplateParameterList(TemplateParameterList *Params,
@@ -220,12 +225,19 @@ static void GenerateInjectedTemplateArgs(ASTContext &Context,
         E = new (Context) PackExpansionExpr(Context.DependentTy, E,
                                             NTTP->getLocation(), None);
       Arg = TemplateArgument(E);
-    } else {
-      auto *TTP = cast<TemplateTemplateParmDecl>(Param);
+    } else if (auto *TTP = dyn_cast<TemplateTemplateParmDecl>(Param)) {
       if (TTP->isParameterPack())
         Arg = TemplateArgument(TemplateName(TTP), Optional<unsigned>());
       else
         Arg = TemplateArgument(TemplateName(TTP));
+    } else {
+      auto *TDP = cast<TemplateDeclNameParmDecl>(Param);
+      DeclarationName Name = Context.DeclarationNames.getCXXTemplatedName(
+          TDP->getDepth(), TDP->getIndex(), TDP->isParameterPack(), TDP);
+      if (TDP->isParameterPack())
+        Arg = TemplateArgument(Name, Optional<unsigned>());
+      else
+        Arg = TemplateArgument(Name);
     }
 
     if (Param->isTemplateParameterPack())
@@ -658,6 +670,38 @@ void TemplateTemplateParmDecl::setDefaultArgument(
 }
 
 //===----------------------------------------------------------------------===//
+// TemplateDeclNameParmDecl Method Implementations
+//===----------------------------------------------------------------------===//
+TemplateDeclNameParmDecl *
+TemplateDeclNameParmDecl::Create(const ASTContext &C, DeclContext *DC,
+                                 SourceLocation KeyLoc, SourceLocation IdLoc,
+                                 unsigned D, unsigned P, bool ParameterPack,
+                                 IdentifierInfo *Id) {
+  return new (C, DC)
+      TemplateDeclNameParmDecl(DC, KeyLoc, IdLoc, D, P, ParameterPack, Id);
+}
+
+SourceLocation TemplateDeclNameParmDecl::getDefaultArgumentLoc() const {
+  return hasDefaultArgument() ? getDefaultArgument().getLocation()
+                              : SourceLocation();
+}
+
+void TemplateDeclNameParmDecl::setDefaultArgument(
+    const ASTContext &C, const TemplateArgumentLoc &DefArg) {
+  if (DefArg.getArgument().isNull())
+    DefaultArgument.set(nullptr);
+  else
+    DefaultArgument.set(new (C) TemplateArgumentLoc(DefArg));
+}
+
+SourceRange TemplateDeclNameParmDecl::getSourceRange() const {
+  SourceLocation End = getLocation();
+  if (hasDefaultArgument() && !defaultArgumentWasInherited())
+    End = getDefaultArgument().getSourceRange().getEnd();
+  return SourceRange(getLocStart(), End);
+}
+
+//===----------------------------------------------------------------------===//
 // TemplateArgumentList Implementation
 //===----------------------------------------------------------------------===//
 TemplateArgumentList::TemplateArgumentList(ArrayRef<TemplateArgument> Args)
@@ -720,7 +764,7 @@ ClassTemplateSpecializationDecl(ASTContext &Context, Kind DK, TagKind TK,
 ClassTemplateSpecializationDecl::ClassTemplateSpecializationDecl(ASTContext &C,
                                                                  Kind DK)
     : CXXRecordDecl(DK, TTK_Struct, C, nullptr, SourceLocation(),
-                    SourceLocation(), nullptr, nullptr),
+                    SourceLocation(), {}, nullptr),
       ExplicitInfo(nullptr), SpecializationKind(TSK_Undeclared) {}
 
 ClassTemplateSpecializationDecl *
@@ -1063,7 +1107,7 @@ VarTemplateSpecializationDecl::VarTemplateSpecializationDecl(
 
 VarTemplateSpecializationDecl::VarTemplateSpecializationDecl(Kind DK,
                                                              ASTContext &C)
-    : VarDecl(DK, C, nullptr, SourceLocation(), SourceLocation(), nullptr,
+    : VarDecl(DK, C, nullptr, SourceLocation(), SourceLocation(), {},
               QualType(), nullptr, SC_None),
       ExplicitInfo(nullptr), SpecializationKind(TSK_Undeclared) {}
 

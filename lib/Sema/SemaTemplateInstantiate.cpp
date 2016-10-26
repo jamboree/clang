@@ -317,6 +317,16 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
           TemplateArgs) {}
 
 Sema::InstantiatingTemplate::InstantiatingTemplate(
+    Sema &SemaRef, SourceLocation PointOfInstantiation, NamedDecl *Template,
+    TemplateDeclNameParmDecl *Param, ArrayRef<TemplateArgument> TemplateArgs,
+    SourceRange InstantiationRange)
+    : InstantiatingTemplate(
+          SemaRef,
+          ActiveTemplateInstantiation::PriorTemplateArgumentSubstitution,
+          PointOfInstantiation, InstantiationRange, Param, Template,
+          TemplateArgs) {}
+
+Sema::InstantiatingTemplate::InstantiatingTemplate(
     Sema &SemaRef, SourceLocation PointOfInstantiation, TemplateDecl *Template,
     NamedDecl *Param, ArrayRef<TemplateArgument> TemplateArgs,
     SourceRange InstantiationRange)
@@ -610,9 +620,12 @@ getDepthAndIndex(NamedDecl *ND) {
   
   if (NonTypeTemplateParmDecl *NTTP = dyn_cast<NonTypeTemplateParmDecl>(ND))
     return std::make_pair(NTTP->getDepth(), NTTP->getIndex());
-  
-  TemplateTemplateParmDecl *TTP = cast<TemplateTemplateParmDecl>(ND);
-  return std::make_pair(TTP->getDepth(), TTP->getIndex());
+
+  if (TemplateTemplateParmDecl *TTP = dyn_cast<TemplateTemplateParmDecl>(ND))
+    return std::make_pair(TTP->getDepth(), TTP->getIndex());
+
+  TemplateDeclNameParmDecl *TDP = cast<TemplateDeclNameParmDecl>(ND);
+  return std::make_pair(TDP->getDepth(), TDP->getIndex());
 }
 
 //===----------------------------------------------------------------------===/
@@ -657,7 +670,8 @@ namespace {
     bool TryExpandParameterPacks(SourceLocation EllipsisLoc,
                                  SourceRange PatternRange,
                                  ArrayRef<UnexpandedParameterPack> Unexpanded,
-                                 bool &ShouldExpand, bool &RetainExpansion,
+                                 bool &ShouldExpand,
+                                 Sema::RetainExpansionMode &RetainExpansion,
                                  Optional<unsigned> &NumExpansions) {
       return getSema().CheckParameterPacksForExpansion(EllipsisLoc, 
                                                        PatternRange, Unexpanded,
@@ -705,6 +719,9 @@ namespace {
     /// \brief Transform the given declaration by instantiating a reference to
     /// this declaration.
     Decl *TransformDecl(SourceLocation Loc, Decl *D);
+
+    DeclarationNameInfo
+    TransformDeclarationNameInfo(const DeclarationNameInfo &NameInfo);
 
     void transformAttrs(Decl *Old, Decl *New) { 
       SemaRef.InstantiateAttrs(TemplateArgs, Old, New);
@@ -891,9 +908,90 @@ Decl *TemplateInstantiator::TransformDecl(SourceLocation Loc, Decl *D) {
 
     // Fall through to find the instantiated declaration for this template
     // template parameter.
+  } else if (TemplateDeclNameParmDecl *TDP =
+                 dyn_cast<TemplateDeclNameParmDecl>(D)) {
+    if (TDP->getDepth() < TemplateArgs.getNumLevels()) {
+      // If the corresponding template argument is NULL or non-existent, it's
+      // because we are performing instantiation from explicitly-specified
+      // template arguments in a function template, but there were some
+      // arguments left unspecified.
+      if (!TemplateArgs.hasTemplateArgument(TDP->getDepth(),
+                                            TDP->getPosition()))
+        return D;
+
+      TemplateArgument Arg = TemplateArgs(TDP->getDepth(), TDP->getPosition());
+
+      if (TDP->isParameterPack()) {
+        assert(Arg.getKind() == TemplateArgument::Pack &&
+               "Missing argument pack");
+        Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
+      }
+
+      DeclarationName Name = Arg.getAsDeclName();
+      return Name.getCXXTemplatedNameParmDecl();
+    }
+
+    // Fall through to find the instantiated declaration for this template
+    // declname parameter.
   }
 
   return SemaRef.FindInstantiatedDecl(Loc, cast<NamedDecl>(D), TemplateArgs);
+}
+
+DeclarationNameInfo TemplateInstantiator::TransformDeclarationNameInfo(
+    const DeclarationNameInfo &NameInfo) {
+  if (CXXTemplateDeclNameParmName *TN =
+          NameInfo.getName().getAsCXXTemplateDeclNameParmName()) {
+    TemplateDeclNameParmDecl *TDP = TN->getDecl();
+    if (TDP->getDepth() < TemplateArgs.getNumLevels()) {
+      // If the corresponding template argument is NULL or non-existent, it's
+      // because we are performing instantiation from explicitly-specified
+      // template arguments in a function template, but there were some
+      // arguments left unspecified.
+      if (!TemplateArgs.hasTemplateArgument(TDP->getDepth(),
+                                            TDP->getIndex()))
+        return NameInfo;
+
+      TemplateArgument Arg = TemplateArgs(TDP->getDepth(), TDP->getIndex());
+
+      if (TDP->isParameterPack()) {
+          assert(Arg.getKind() == TemplateArgument::Pack &&
+              "Missing argument pack");
+
+          if (getSema().ArgumentPackSubstitutionIndex == -1) {
+              return NameInfo;
+              // We have the template argument pack to substitute, but we're not
+              // actually expanding the enclosing pack expansion yet. So, just
+              // keep the entire argument pack.
+              //return DeclarationNameInfo(
+              //    getSema().Context.getSubstTemplateDeclNameParmPack(TDP, Arg),
+              //    NameInfo.getLoc());
+          }
+
+          if (unsigned(getSema().ArgumentPackSubstitutionIndex) >=
+              Arg.pack_size())
+            return NameInfo;
+
+          Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
+      }
+      DeclarationName Name =
+          getSema().Context.DeclarationNames.getSubstTemplatedName(
+              TN, Arg.getAsDeclName().getCanonicalName());
+      return DeclarationNameInfo(Name, NameInfo.getLoc());
+    }
+  }
+
+  //if (SubstTemplateDeclNameParmPackStorage *SubstPack =
+  //        NameInfo.getName().getAsSubstTemplateDeclNameParmPack()) {
+  //  if (getSema().ArgumentPackSubstitutionIndex == -1)
+  //    return NameInfo;
+
+  //  TemplateArgument Arg = SubstPack->getArgumentPack();
+  //  Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
+  //  return DeclarationNameInfo(Arg.getAsDeclName(), NameInfo.getLoc());
+  //}
+
+  return inherited::TransformDeclarationNameInfo(NameInfo);
 }
 
 Decl *TemplateInstantiator::TransformDefinition(SourceLocation Loc, Decl *D) {
@@ -1028,6 +1126,10 @@ TemplateName TemplateInstantiator::TransformTemplateName(CXXScopeSpec &SS,
           return getSema().Context.getSubstTemplateTemplateParmPack(TTP, Arg);
         }
 
+        if (unsigned(getSema().ArgumentPackSubstitutionIndex) >=
+            Arg.pack_size())
+          return Name;
+
         Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
       }
       
@@ -1098,7 +1200,10 @@ TemplateInstantiator::TransformTemplateParmRefExpr(DeclRefExpr *E,
                                                               E->getLocation(),
                                                                     Arg);
     }
-    
+
+    if (unsigned(getSema().ArgumentPackSubstitutionIndex) >= Arg.pack_size())
+      return E;
+
     Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
   }
 
@@ -1337,6 +1442,7 @@ TemplateInstantiator::TransformTemplateTypeParmType(TypeLocBuilder &TLB,
     // template arguments in a function template class, but there were some
     // arguments left unspecified.
     if (!TemplateArgs.hasTemplateArgument(T->getDepth(), T->getIndex())) {
+    ArgUnavailable:
       TemplateTypeParmTypeLoc NewTL
         = TLB.push<TemplateTypeParmTypeLoc>(TL.getType());
       NewTL.setNameLoc(TL.getNameLoc());
@@ -1360,7 +1466,10 @@ TemplateInstantiator::TransformTemplateTypeParmType(TypeLocBuilder &TLB,
         NewTL.setNameLoc(TL.getNameLoc());
         return Result;
       }
-      
+
+      if (unsigned(getSema().ArgumentPackSubstitutionIndex) >= Arg.pack_size())
+          goto ArgUnavailable;
+
       Arg = getPackSubstitutedTemplateArgument(getSema(), Arg);
     }
     
@@ -1648,14 +1757,40 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
     return nullptr;
   }
 
+  if (CurrentInstantiationScope->isFunctionDeclarationScope() &&
+      NewDI->getType()->isDesignatingType()) {
+    Diag(OldParm->getLocation(), diag::err_var_or_ret_designating_type)
+        << 0 << NewDI->getType();
+    return nullptr;
+  }
+
+  DeclarationNameInfo NameInfo =
+      SubstDeclarationNameInfo(OldParm->getNameInfo(), TemplateArgs);
+
+  // Diagnose duplicate designatable parameter.
+  ParmVarDecl **DesigParmEntry = nullptr;
+  if (OldParm->isDesignatable()) {
+    if (const IdentifierInfo *Id = NameInfo.getName().getAsIdentifierInfo()) {
+      DesigParmEntry = CurrentInstantiationScope->getDesignatableParmEntry(Id);
+      if (ParmVarDecl *ConflictParm = *DesigParmEntry) {
+        Diag(OldParm->getLocation(), diag::err_param_redefinition) << Id;
+        Diag(ConflictParm->getLocation(), diag::note_previous_declaration);
+        return nullptr;
+      }
+    }
+  }
+
   ParmVarDecl *NewParm = CheckParameter(Context.getTranslationUnitDecl(),
                                         OldParm->getInnerLocStart(),
-                                        OldParm->getLocation(),
-                                        OldParm->getIdentifier(),
+                                        NameInfo.getLoc(),
+                                        NameInfo.getName(),
                                         NewDI->getType(), NewDI,
                                         OldParm->getStorageClass());
   if (!NewParm)
     return nullptr;
+
+  if (DesigParmEntry)
+    *DesigParmEntry = NewParm;
 
   // Mark the (new) default argument as uninstantiated (if any).
   if (OldParm->hasUninstantiatedDefaultArg()) {
@@ -1687,9 +1822,10 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
 
   NewParm->setHasInheritedDefaultArg(OldParm->hasInheritedDefaultArg());
 
-  NewParm->setDesignatable(OldParm->isDesignatable());
-  
-  if (OldParm->isParameterPack() && !NewParm->isParameterPack()) {
+  NewParm->setDesignatable(OldParm->isDesignatable() && NameInfo.getName());
+
+  if (OldParm->isParameterPack() && !NumExpansions &&
+      !NewParm->isParameterPack()) {
     // Add the new parameter to the instantiated parameter pack.
     CurrentInstantiationScope->InstantiatedLocalPackArg(OldParm, NewParm);
   } else {
@@ -1760,7 +1896,7 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
       collectUnexpandedParameterPacks(Base.getTypeSourceInfo()->getTypeLoc(),
                                       Unexpanded);
       bool ShouldExpand = false;
-      bool RetainExpansion = false;
+      Sema::RetainExpansionMode RetainExpansion = Sema::REM_None;
       Optional<unsigned> NumExpansions;
       if (CheckParameterPacksForExpansion(Base.getEllipsisLoc(), 
                                           Base.getSourceRange(),
@@ -2720,6 +2856,9 @@ Sema::SubstNestedNameSpecifierLoc(NestedNameSpecifierLoc NNS,
 DeclarationNameInfo
 Sema::SubstDeclarationNameInfo(const DeclarationNameInfo &NameInfo,
                          const MultiLevelTemplateArgumentList &TemplateArgs) {
+  if (!NameInfo.getName().isDependentName())
+    return NameInfo;
+
   TemplateInstantiator Instantiator(*this, TemplateArgs, NameInfo.getLoc(),
                                     NameInfo.getName());
   return Instantiator.TransformDeclarationNameInfo(NameInfo);

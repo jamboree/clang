@@ -789,7 +789,7 @@ VarDecl *Sema::createLambdaInitCaptureVarDecl(SourceLocation Loc,
 FieldDecl *Sema::buildInitCaptureField(LambdaScopeInfo *LSI, VarDecl *Var) {
   FieldDecl *Field = FieldDecl::Create(
       Context, LSI->Lambda, Var->getLocation(), Var->getLocation(),
-      nullptr, Var->getType(), Var->getTypeSourceInfo(), nullptr, false,
+      {}, Var->getType(), Var->getTypeSourceInfo(), nullptr, false,
       ICIS_NoInit);
   Field->setImplicit(true);
   Field->setAccess(AS_private);
@@ -1030,7 +1030,7 @@ void Sema::ActOnStartOfLambdaDefinition(LambdaIntroducer &Intro,
       // C++11 [expr.prim.lambda]p10:
       //   The identifiers in a capture-list are looked up using the usual
       //   rules for unqualified name lookup (3.4.1)
-      DeclarationNameInfo Name(C->Id, C->Loc);
+      DeclarationNameInfo Name(getPossiblyTemplatedName(C->Id), C->Loc);
       LookupResult R(*this, Name, LookupOrdinaryName);
       LookupName(R, CurScope);
       if (R.isAmbiguous())
@@ -1699,7 +1699,7 @@ ExprResult Sema::BuildBlockForLambdaConversion(SourceLocation CurrentLocation,
   TypeSourceInfo *CapVarTSI =
       Context.getTrivialTypeSourceInfo(Src->getType());
   VarDecl *CapVar = VarDecl::Create(Context, Block, ConvLocation,
-                                    ConvLocation, nullptr,
+                                    ConvLocation, {},
                                     Src->getType(), CapVarTSI,
                                     SC_None);
   BlockDecl::Capture Capture(/*Variable=*/CapVar, /*ByRef=*/false,

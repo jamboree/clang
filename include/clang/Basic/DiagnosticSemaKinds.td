@@ -1368,6 +1368,8 @@ def err_nested_name_spec_is_not_class : Error<
 def ext_nested_name_spec_is_enum : ExtWarn<
   "use of enumeration in a nested name specifier is a C++11 extension">,
   InGroup<CXX11>;
+def err_nested_name_spec_is_empty : Error<
+  "cannot refer to an empty name in a nested name specifier">;
 
 // C++ class members
 def err_storageclass_invalid_for_member : Error<
@@ -3138,7 +3140,6 @@ def ext_param_promoted_not_compatible_with_prototype : ExtWarn<
   "with parameter type}0,1 declared in a previous prototype">,
   InGroup<KNRPromotedParameter>;
 
-
 // C++ Overloading Semantic Analysis.
 def err_ovl_diff_return_type : Error<
   "functions that differ only in their return type cannot be overloaded">;
@@ -3193,7 +3194,7 @@ def note_ovl_candidate_incomplete_deduction : Note<"candidate template ignored: 
     "couldn't infer template argument %0">;
 def note_ovl_candidate_inconsistent_deduction : Note<
     "candidate template ignored: deduced conflicting %select{types|values|"
-    "templates}0 for parameter %1%diff{ ($ vs. $)|}2,3">;
+    "templates|declnames}0 for parameter %1%diff{ ($ vs. $)|}2,3">;
 def note_ovl_candidate_explicit_arg_mismatch_named : Note<
     "candidate template ignored: invalid explicitly-specified argument "
     "for template parameter %0">;
@@ -3560,9 +3561,6 @@ def err_ovl_deleted_object_call : Error<
 def note_ovl_surrogate_cand : Note<"conversion candidate of type %0">;
 def err_member_call_without_object : Error<
   "call to non-static member function without an object argument">;
-def note_ovl_surrogate_desig : Note<
-  "designated arguments cannot be used by surrogate "
-  "(implicit conversion to function pointer)">;
 
 // C++ Address of Overloaded Function
 def err_addr_ovl_no_viable : Error<
@@ -3654,6 +3652,14 @@ def err_template_tag_noparams : Error<
 def err_template_decl_ref : Error<
   "cannot refer to %select{class|variable}0 template %1 without a template argument list">;
 
+def err_template_name_depends_on_own_param : Error<
+  "template name cannot depend on its own declname parameter">;
+
+def err_templated_name_on_undeclared_elaborated_type : Error<
+  "declname parameter cannot name an undeclared elaborated type">;
+
+def err_empty_local_extern_name : Error<"%select{function|variable}0 name is empty">;
+
 // C++ Template Argument Lists
 def err_template_missing_args : Error<
   "use of class template %0 requires template arguments">;
@@ -3677,6 +3683,8 @@ def err_template_arg_nontype_ambig : Error<
   "template argument for non-type template parameter is treated as function type %0">;
 def err_template_arg_must_be_template : Error<
   "template argument for template template parameter must be a class template%select{| or type alias template}0">;
+def err_template_arg_must_be_declname : Error<
+  "template argument for template declname parameter must be a declaration name">;
 def ext_template_arg_local_type : ExtWarn<
   "template argument uses local type %0">, InGroup<LocalTypeTemplateArgs>;
 def ext_template_arg_unnamed_type : ExtWarn<
@@ -4205,8 +4213,8 @@ def note_template_parameter_pack_here : Note<
   "parameter%select{| pack}1 declared here">;
   
 def err_unexpanded_parameter_pack : Error<
-  "%select{expression|base type|declaration type|data member type|bit-field "
-  "size|static assertion|fixed underlying type|enumerator value|"
+  "%select{expression|base type|declaration type|declaration name|data member "
+  "type|bit-field size|static assertion|fixed underlying type|enumerator value|"
   "using declaration|friend declaration|qualifier|initializer|default argument|"
   "non-type template parameter type|exception type|partial specialization|"
   "__if_exists name|__if_not_exists name|lambda|block}0 contains"
@@ -4558,6 +4566,9 @@ def warn_typecheck_function_qualifiers_unspecified : Warning<
   "'%0' qualifier on function type %1 has unspecified behavior">;
 def warn_typecheck_reference_qualifiers : Warning<
   "'%0' qualifier on reference type %1 has no effect">,
+  InGroup<IgnoredQualifiers>;
+def warn_typecheck_designating_type_qualifiers : Warning<
+  "'%0' qualifier on designating type %1 has no effect">,
   InGroup<IgnoredQualifiers>;
 def err_typecheck_invalid_restrict_not_pointer : Error<
   "restrict requires a pointer or reference (%0 is invalid)">;
@@ -5089,6 +5100,8 @@ def err_illegal_decl_mempointer_in_nonclass : Error<
 def err_mempointer_in_nonclass_type : Error<
   "member pointer refers into non-class type %0">;
 def err_reference_to_void : Error<"cannot form a reference to 'void'">;
+def err_pointer_or_reference_to_designating_type : Error<
+  "cannot form a %select{pointer|reference}0 to designating type %1">;
 def err_nonfunction_block_type : Error<
   "block pointer to non-function type is invalid">;
 def err_return_block_has_expr : Error<"void block should not return a value">;
@@ -5100,6 +5113,14 @@ def err_atomic_specifier_bad_type : Error<
   "_Atomic cannot be applied to "
   "%select{incomplete |array |function |reference |atomic |qualified |}0type "
   "%1 %select{||||||which is not trivially copyable}0">;
+def err_designator_on_designating_type : Error<
+  "cannot add designator on type %0 which already has a designator">;
+def err_var_or_ret_designating_type : Error<
+  "%select{variable has|function cannot return}0 designating type %1">;
+def err_parm_types_have_same_designator : Error<
+  "%ordinal0 and %ordinal1 parameters have the same designator %2 in type">;
+def err_function_decl_has_designators_in_prototype : Error<
+  "function declaration has designators in prototype %0">;
 
 // Expressions.
 def ext_sizeof_alignof_function_type : Extension<
@@ -5311,6 +5332,9 @@ def ext_member_redeclared : ExtWarn<"class member cannot be redeclared">,
   InGroup<RedeclaredClassMember>;
 def err_member_redeclared_in_instantiation : Error<
   "multiple overloads of %0 instantiate to the same signature %1">;
+def err_member_name_conflict_in_instantiation : Error<
+  "declarations conflict in instantiated name %0">;
+def note_member_name_conflict : Note<"conflicting declaration %0 declared here">;
 def err_member_name_of_class : Error<"member %0 has the same name as its class">;
 def err_member_def_undefined_record : Error<
   "out-of-line definition of %0 from class %1 without definition">;
@@ -6567,10 +6591,6 @@ def err_protocheck_bad_argument_pos : Error<
   "%select{multiple arguments provided|missing argument}0 for %ordinal1 parameter">;
 def err_protocheck_argument_out_of_bounds : Error<
   "argument index %0 is out of bounds, max %1 parameter%s1">;
-
-def err_designated_arguments_indirect_callee : Error<
-  "designated arguments cannot be used by "
-  "%select{function pointer|member function pointer}0">;
 
 def err_arc_typecheck_convert_incompatible_pointer : Error<
   "incompatible pointer types passing retainable parameter of type %0"

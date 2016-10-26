@@ -126,7 +126,8 @@ class ASTContext : public RefCountedBase<ASTContext> {
   mutable llvm::ContextualFoldingSet<DependentTemplateSpecializationType,
                                      ASTContext&>
     DependentTemplateSpecializationTypes;
-  llvm::FoldingSet<PackExpansionType> PackExpansionTypes;
+  mutable llvm::FoldingSet<PackExpansionType> PackExpansionTypes;
+  mutable llvm::FoldingSet<DesignatingType> DesignatingTypes;
   mutable llvm::FoldingSet<ObjCObjectTypeImpl> ObjCObjectTypes;
   mutable llvm::FoldingSet<ObjCObjectPointerType> ObjCObjectPointerTypes;
   mutable llvm::FoldingSet<DependentUnaryTransformType>
@@ -143,7 +144,10 @@ class ASTContext : public RefCountedBase<ASTContext> {
   mutable llvm::ContextualFoldingSet<SubstTemplateTemplateParmPackStorage,
                                      ASTContext&> 
     SubstTemplateTemplateParmPacks;
-  
+  mutable llvm::ContextualFoldingSet<SubstTemplateDeclNameParmPackStorage,
+                                     ASTContext&> 
+    SubstTemplateDeclNameParmPacks;
+
   /// \brief The set of nested name specifiers.
   ///
   /// This set is managed by the NestedNameSpecifier class.
@@ -812,10 +816,6 @@ public:
                                           UsingShadowDecl *Pattern);
   UsingShadowDecl *getInstantiatedFromUsingShadowDecl(UsingShadowDecl *Inst);
 
-  FieldDecl *getInstantiatedFromUnnamedFieldDecl(FieldDecl *Field);
-
-  void setInstantiatedFromUnnamedFieldDecl(FieldDecl *Inst, FieldDecl *Tmpl);
-  
   // Access to the set of methods overridden by the given C++ method.
   typedef CXXMethodVector::const_iterator overridden_cxx_method_iterator;
   overridden_cxx_method_iterator
@@ -1260,7 +1260,7 @@ public:
                              QualType NamedType) const;
   QualType getDependentNameType(ElaboratedTypeKeyword Keyword,
                                 NestedNameSpecifier *NNS,
-                                const IdentifierInfo *Name,
+                                DeclarationName Name,
                                 QualType Canon = QualType()) const;
 
   QualType getDependentTemplateSpecializationType(ElaboratedTypeKeyword Keyword,
@@ -1272,7 +1272,9 @@ public:
       const IdentifierInfo *Name, ArrayRef<TemplateArgument> Args) const;
 
   QualType getPackExpansionType(QualType Pattern,
-                                Optional<unsigned> NumExpansions);
+                                Optional<unsigned> NumExpansions) const;
+
+  QualType getDesignatingType(QualType T, DeclarationName DesigName) const;
 
   QualType getObjCInterfaceType(const ObjCInterfaceDecl *Decl,
                                 ObjCInterfaceDecl *PrevDecl = nullptr) const;
@@ -1752,7 +1754,10 @@ public:
                                             TemplateName replacement) const;
   TemplateName getSubstTemplateTemplateParmPack(TemplateTemplateParmDecl *Param,
                                         const TemplateArgument &ArgPack) const;
-  
+  DeclarationName
+  getSubstTemplateDeclNameParmPack(TemplateDeclNameParmDecl *Param,
+                                   const TemplateArgument &ArgPack) const;
+
   enum GetBuiltinTypeError {
     GE_None,              ///< No error
     GE_Missing_stdio,     ///< Missing a type from <stdio.h>
@@ -1977,6 +1982,14 @@ public:
   /// Qualifiers are stripped off, functions are turned into function
   /// pointers, and arrays decay one level into pointers.
   CanQualType getCanonicalParamType(QualType T) const;
+
+  CanQualType getCanonicalDesigFunctionType(
+      QualType ResultTy, ArrayRef<ParmVarDecl *> ArgArray,
+      const FunctionProtoType::ExtProtoInfo &EPI) const;
+
+  CanQualType getCanonicalNonDesigFunctionType(QualType T) const;
+
+  bool isFunctionProtoDesigStrip(QualType Src, QualType Dest) const;
 
   /// \brief Determine whether the given types \p T1 and \p T2 are equivalent.
   bool hasSameType(QualType T1, QualType T2) const {

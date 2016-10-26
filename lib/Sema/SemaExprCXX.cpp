@@ -58,12 +58,12 @@ ParsedType Sema::getInheritingConstructorName(CXXScopeSpec &SS,
     Type = QualType(NNS->getAsType(), 0);
     break;
 
-  case NestedNameSpecifier::Identifier:
+  case NestedNameSpecifier::DeclName:
     // Strip off the last layer of the nested-name-specifier and build a
     // typename type for it.
-    assert(NNS->getAsIdentifier() == &Name && "not a constructor name");
+    assert(NNS->getAsDeclName() == &Name && "not a constructor name");
     Type = Context.getDependentNameType(ETK_None, NNS->getPrefix(),
-                                        NNS->getAsIdentifier());
+                                        NNS->getAsDeclName());
     break;
 
   case NestedNameSpecifier::Global:
@@ -296,7 +296,7 @@ ParsedType Sema::getDestructorName(SourceLocation TildeLoc,
     // FIXME: What if we have no nested-name-specifier?
     QualType T = CheckTypenameType(ETK_None, SourceLocation(),
                                    SS.getWithLocInContext(Context),
-                                   II, NameLoc);
+                                   &II, NameLoc);
     return ParsedType::make(T);
   }
 
@@ -347,7 +347,7 @@ bool Sema::checkLiteralOperatorId(const CXXScopeSpec &SS,
     return false;
 
   switch (SS.getScopeRep()->getKind()) {
-  case NestedNameSpecifier::Identifier:
+  case NestedNameSpecifier::DeclName:
   case NestedNameSpecifier::TypeSpec:
   case NestedNameSpecifier::TypeSpecWithTemplate:
     // Per C++11 [over.literal]p2, literal operators can only be declared at
@@ -1047,7 +1047,7 @@ static Expr *captureThis(Sema &S, ASTContext &Context, RecordDecl *RD,
   }
   
   FieldDecl *Field = FieldDecl::Create(
-      Context, RD, Loc, Loc, nullptr, CaptureThisFieldTy,
+      Context, RD, Loc, Loc, {}, CaptureThisFieldTy,
       Context.getTrivialTypeSourceInfo(CaptureThisFieldTy, Loc), nullptr, false,
       ICIS_NoInit);
 
@@ -2470,7 +2470,7 @@ void Sema::DeclareGlobalAllocationFunction(DeclarationName Name,
   ParmVarDecl *ParamDecls[2];
   for (unsigned I = 0; I != NumParams; ++I) {
     ParamDecls[I] = ParmVarDecl::Create(Context, Alloc, SourceLocation(),
-                                        SourceLocation(), nullptr,
+                                        SourceLocation(), {},
                                         Params[I], /*TInfo=*/nullptr,
                                         SC_None, nullptr);
     ParamDecls[I]->setImplicit();
@@ -3406,7 +3406,10 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
     From = FixOverloadedFunctionReference(From, Found, Fn);
     FromType = From->getType();
   }
-
+#if 0
+  FixProtoDesigForFunctionReference(From, ToType);
+  FromType = From->getType();
+#endif
   // If we're converting to an atomic type, first convert to the corresponding
   // non-atomic type.
   QualType ToAtomicType;
@@ -3731,6 +3734,10 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
     From = ImpCastExprToType(From, ToType,
                              CK_ZeroToOCLEvent,
                              From->getValueKind()).get();
+    break;
+
+  case ICK_StripFunctionProtoDesig:
+    From = ImpCastExprToType(From, ToType, CK_NoOp, From->getValueKind()).get();
     break;
 
   case ICK_Lvalue_To_Rvalue:

@@ -938,7 +938,7 @@ public:
   /// \brief Determine whether this is a block-scope declaration with linkage.
   /// This will either be a local variable declaration declared 'extern', or a
   /// local function declaration.
-  bool isLocalExternDecl() {
+  bool isLocalExternDecl() const {
     return IdentifierNamespace & IDNS_LocalExtern;
   }
 
@@ -1820,7 +1820,7 @@ private:
 
 inline bool Decl::isTemplateParameter() const {
   return getKind() == TemplateTypeParm || getKind() == NonTypeTemplateParm ||
-         getKind() == TemplateTemplateParm;
+         getKind() == TemplateTemplateParm || getKind() == TemplateDeclNameParm;
 }
 
 // Specialization selected when ToTy is not a known subclass of DeclContext.

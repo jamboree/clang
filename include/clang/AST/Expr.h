@@ -2383,7 +2383,8 @@ public:
         MemberLoc(NameInfo.getLoc()), OperatorLoc(operatorloc),
         IsArrow(isarrow), HasQualifierOrFoundDecl(false),
         HasTemplateKWAndArgsInfo(false), HadMultipleCandidates(false) {
-    assert(memberdecl->getDeclName() == NameInfo.getName());
+    assert(memberdecl->getDeclName().getCanonicalName() ==
+           NameInfo.getName().getCanonicalName());
   }
 
   // NOTE: this constructor should be used only when it is known that
@@ -4062,6 +4063,21 @@ public:
       Field.FieldLoc = FieldLoc.getRawEncoding();
     }
 
+    /// @brief Initializes a field designator.
+    Designator(DeclarationName Name, SourceLocation DotLoc,
+               SourceLocation FieldLoc)
+        : Kind(FieldDesignator) {
+      if (DeclarationNameExtra *Ex =
+              Name.getAsExtra())
+        Field.NameOrField = reinterpret_cast<uintptr_t>(Ex) | 0x03;
+      else {
+        const IdentifierInfo *Id = Name.getAsIdentifierInfo();
+        Field.NameOrField = reinterpret_cast<uintptr_t>(Id) | 0x01;
+      }
+      Field.DotLoc = DotLoc.getRawEncoding();
+      Field.FieldLoc = FieldLoc.getRawEncoding();
+    }
+
     /// @brief Initializes an array designator.
     Designator(unsigned Index, SourceLocation LBracketLoc,
                SourceLocation RBracketLoc)
@@ -4086,7 +4102,7 @@ public:
     bool isArrayDesignator() const { return Kind == ArrayDesignator; }
     bool isArrayRangeDesignator() const { return Kind == ArrayRangeDesignator; }
 
-    IdentifierInfo *getFieldName() const;
+    DeclarationName getFieldName() const;
 
     FieldDecl *getField() const {
       assert(Kind == FieldDesignator && "Only valid on a field designator");

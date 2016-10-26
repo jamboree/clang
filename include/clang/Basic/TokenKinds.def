@@ -366,6 +366,9 @@ KEYWORD(co_await                    , KEYCOROUTINES)
 KEYWORD(co_return                   , KEYCOROUTINES)
 KEYWORD(co_yield                    , KEYCOROUTINES)
 
+// C++ experimental keywords
+KEYWORD(declname                    , KEYCXX)
+
 // GNU Extensions (in impl-reserved namespace)
 KEYWORD(_Decimal32                  , KEYALL)
 KEYWORD(_Decimal64                  , KEYALL)

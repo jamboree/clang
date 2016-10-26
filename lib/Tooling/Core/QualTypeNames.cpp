@@ -243,7 +243,7 @@ static NestedNameSpecifier *getFullyQualifiedNestedNameSpecifier(
           Ctx,
           Scope->getAsNamespaceAlias()->getNamespace()->getCanonicalDecl(),
           WithGlobalNsPrefix);
-    case NestedNameSpecifier::Identifier:
+    case NestedNameSpecifier::DeclName:
       // A function or some other construct that makes it un-namable
       // at the end of the TU. Skip the current component of the name,
       // but use the name of it's prefix.

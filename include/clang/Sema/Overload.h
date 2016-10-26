@@ -84,6 +84,7 @@ namespace clang {
     ICK_Writeback_Conversion,  ///< Objective-C ARC writeback conversion
     ICK_Zero_Event_Conversion, ///< Zero constant to event (OpenCL1.2 6.12.10)
     ICK_C_Only_Conversion,     ///< Conversions allowed in C, but not C++
+    ICK_StripFunctionProtoDesig, /// < Strip designators from function prototype
     ICK_Num_Conversion_Kinds,  ///< The number of conversion kinds
   };
 

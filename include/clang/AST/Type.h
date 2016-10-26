@@ -19,6 +19,7 @@
 
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/TemplateName.h"
+#include "clang/AST/DeclarationName.h"
 #include "clang/Basic/AddressSpaces.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/ExceptionSpecificationType.h"
@@ -99,6 +100,7 @@ namespace clang {
   class ElaboratedType;
   class ExtQuals;
   class ExtQualsTypeCommonBase;
+  class DeclarationName;
   struct PrintingPolicy;
 
   template <typename> class CanQual;
@@ -1730,6 +1732,8 @@ public:
   bool isTemplateTypeParmType() const;          // C++ template type parameter
   bool isNullPtrType() const;                   // C++0x nullptr_t
   bool isAtomicType() const;                    // C11 _Atomic()
+  bool isDesignatingType() const;               // T.N
+  bool isStrictlyDesignatingType() const;       // T.n where n cannot be null
 
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
   bool is##Id##Type() const;
@@ -3201,7 +3205,8 @@ private:
   }
 
   FunctionProtoType(QualType result, ArrayRef<QualType> params,
-                    QualType canonical, const ExtProtoInfo &epi);
+                    QualType canonical, QualType nonDesig,
+                    const ExtProtoInfo &epi);
 
   /// The number of parameters this function has, not counting '...'.
   unsigned NumParams : 15;
@@ -3220,6 +3225,9 @@ private:
 
   /// Whether this function has a trailing return type.
   unsigned HasTrailingReturn : 1;
+
+  /// Whether this function has designators.
+  unsigned HasDesignators : 1;
 
   // ParamInfo - There is an variable size array after the class in memory that
   // holds the parameter types.
@@ -3336,8 +3344,7 @@ public:
   Expr *getNoexceptExpr() const {
     if (getExceptionSpecType() != EST_ComputedNoexcept)
       return nullptr;
-    // NoexceptExpr sits where the arguments end.
-    return *reinterpret_cast<Expr *const *>(param_type_end());
+    return *reinterpret_cast<Expr *const *>(exception_begin());
   }
   /// \brief If this function type has an exception specification which hasn't
   /// been determined yet (either because it has not been evaluated or because
@@ -3347,7 +3354,7 @@ public:
     if (getExceptionSpecType() != EST_Uninstantiated &&
         getExceptionSpecType() != EST_Unevaluated)
       return nullptr;
-    return reinterpret_cast<FunctionDecl *const *>(param_type_end())[0];
+    return reinterpret_cast<FunctionDecl *const *>(exception_begin())[0];
   }
   /// \brief If this function type has an uninstantiated exception
   /// specification, this is the function whose exception specification
@@ -3356,7 +3363,7 @@ public:
   FunctionDecl *getExceptionSpecTemplate() const {
     if (getExceptionSpecType() != EST_Uninstantiated)
       return nullptr;
-    return reinterpret_cast<FunctionDecl *const *>(param_type_end())[1];
+    return reinterpret_cast<FunctionDecl *const *>(exception_begin())[1];
   }
   /// Determine whether this function type has a non-throwing exception
   /// specification. If this depends on template arguments, returns
@@ -3372,6 +3379,12 @@ public:
   /// called with an arbitrary number of arguments, much like a variadic
   /// function.
   bool isTemplateVariadic() const;
+
+  /// Determines whether this function prototype contains designating types
+  /// in its parameters.
+  bool hasDesignators() const {
+    return cast<FunctionProtoType>(getCanonicalTypeInternal())->HasDesignators;
+  }
 
   bool hasTrailingReturn() const { return HasTrailingReturn; }
 
@@ -3396,14 +3409,22 @@ public:
     return param_type_begin() + NumParams;
   }
 
+  QualType getCanonicalNonDesigProto() const {
+    const FunctionProtoType *CanProto =
+        cast<FunctionProtoType>(getCanonicalTypeInternal());
+    if (CanProto->HasDesignators)
+      return *CanProto->param_type_end();
+    return getCanonicalTypeInternal();
+  }
+
   typedef const QualType *exception_iterator;
 
   ArrayRef<QualType> exceptions() const {
     return llvm::makeArrayRef(exception_begin(), exception_end());
   }
   exception_iterator exception_begin() const {
-    // exceptions begin where arguments end
-    return param_type_end();
+    // exceptions begin where arguments (and alternative prototype if any) end
+    return param_type_end() + HasDesignators;
   }
   exception_iterator exception_end() const {
     if (getExceptionSpecType() != EST_Dynamic)
@@ -4499,10 +4520,10 @@ class DependentNameType : public TypeWithKeyword, public llvm::FoldingSetNode {
   NestedNameSpecifier *NNS;
 
   /// \brief The type that this typename specifier refers to.
-  const IdentifierInfo *Name;
+  DeclarationName Name;
 
   DependentNameType(ElaboratedTypeKeyword Keyword, NestedNameSpecifier *NNS,
-                    const IdentifierInfo *Name, QualType CanonType)
+                    DeclarationName Name, QualType CanonType)
     : TypeWithKeyword(Keyword, DependentName, CanonType, /*Dependent=*/true,
                       /*InstantiationDependent=*/true,
                       /*VariablyModified=*/false,
@@ -4517,10 +4538,10 @@ public:
 
   /// Retrieve the type named by the typename specifier as an identifier.
   ///
-  /// This routine will return a non-NULL identifier pointer when the
-  /// form of the original typename was terminated by an identifier,
+  /// This routine will return a non-empty declname when the
+  /// form of the original typename was terminated by an declname,
   /// e.g., "typename T::type".
-  const IdentifierInfo *getIdentifier() const {
+  DeclarationName getDeclName() const {
     return Name;
   }
 
@@ -4532,10 +4553,10 @@ public:
   }
 
   static void Profile(llvm::FoldingSetNodeID &ID, ElaboratedTypeKeyword Keyword,
-                      NestedNameSpecifier *NNS, const IdentifierInfo *Name) {
+                      NestedNameSpecifier *NNS, DeclarationName Name) {
     ID.AddInteger(Keyword);
     ID.AddPointer(NNS);
-    ID.AddPointer(Name);
+    ID.AddPointer(Name.getAsOpaquePtr());
   }
 
   static bool classof(const Type *T) {
@@ -4694,6 +4715,36 @@ public:
   static bool classof(const Type *T) {
     return T->getTypeClass() == PackExpansion;
   }
+};
+
+/// \brief Represents a type with a designator.
+///
+class DesignatingType : public Type, public llvm::FoldingSetNode {
+  QualType MasterType;
+  DeclarationName DesigName;
+
+  DesignatingType(QualType Master, DeclarationName DesigName, QualType Canon);
+
+  friend class ASTContext; // ASTContext creates these.
+
+public:
+  QualType getMasterType() const { return MasterType; }
+
+  DeclarationName getDesigName() const { return DesigName; }
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(ID, getMasterType(), getDesigName());
+  }
+  static void Profile(llvm::FoldingSetNodeID &ID, QualType Master,
+                      DeclarationName DesigName) {
+    ID.AddPointer(Master.getAsOpaquePtr());
+    ID.AddPointer(DesigName.getAsOpaquePtr());
+  }
+
+  static bool classof(const Type *T) { return T->getTypeClass() == Designating; }
 };
 
 /// Represents a class type in Objective C.
@@ -5309,6 +5360,13 @@ inline bool QualType::isCanonicalAsParam() const {
   if (hasLocalQualifiers()) return false;
 
   const Type *T = getTypePtr();
+  if (const DesignatingType *Desig = T->getAs<DesignatingType>()) {
+    QualType Param = Desig->getMasterType();
+    if (!Param.isCanonical() || Param.hasLocalQualifiers())
+      return false;
+    T = Param.getTypePtr();
+  }
+
   if (T->isVariablyModifiedType() && T->hasSizedVLAType())
     return false;
 
@@ -5563,6 +5621,9 @@ inline bool Type::isObjCObjectOrInterfaceType() const {
 }
 inline bool Type::isAtomicType() const {
   return isa<AtomicType>(CanonicalType);
+}
+inline bool Type::isDesignatingType() const {
+  return isa<DesignatingType>(CanonicalType);
 }
 
 inline bool Type::isObjCQualifiedIdType() const {

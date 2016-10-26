@@ -578,10 +578,17 @@ ASTContext::CanonicalTemplateTemplateParm::Profile(llvm::FoldingSetNodeID &ID,
         ID.AddBoolean(false);
       continue;
     }
-    
-    TemplateTemplateParmDecl *TTP = cast<TemplateTemplateParmDecl>(*P);
-    ID.AddInteger(2);
-    Profile(ID, TTP);
+
+    if (TemplateTemplateParmDecl *TTP =
+            dyn_cast<TemplateTemplateParmDecl>(*P)) {
+      ID.AddInteger(2);
+      Profile(ID, TTP);
+      continue;
+    }
+
+    TemplateDeclNameParmDecl *TDP = cast<TemplateDeclNameParmDecl>(*P);
+    ID.AddInteger(3);
+    ID.AddBoolean(TDP->isParameterPack());
   }
 }
 
@@ -732,6 +739,7 @@ ASTContext::ASTContext(LangOptions &LOpts, SourceManager &SM,
     : FunctionProtoTypes(this_()), TemplateSpecializationTypes(this_()),
       DependentTemplateSpecializationTypes(this_()),
       SubstTemplateTemplateParmPacks(this_()),
+      SubstTemplateDeclNameParmPacks(this_()),
       GlobalNestedNameSpecifier(nullptr), Int128Decl(nullptr),
       UInt128Decl(nullptr), BuiltinVaListDecl(nullptr),
       BuiltinMSVaListDecl(nullptr), ObjCIdDecl(nullptr), ObjCSelDecl(nullptr),
@@ -1240,25 +1248,6 @@ ASTContext::setInstantiatedFromUsingShadowDecl(UsingShadowDecl *Inst,
   InstantiatedFromUsingShadowDecl[Inst] = Pattern;
 }
 
-FieldDecl *ASTContext::getInstantiatedFromUnnamedFieldDecl(FieldDecl *Field) {
-  llvm::DenseMap<FieldDecl *, FieldDecl *>::iterator Pos
-    = InstantiatedFromUnnamedFieldDecl.find(Field);
-  if (Pos == InstantiatedFromUnnamedFieldDecl.end())
-    return nullptr;
-
-  return Pos->second;
-}
-
-void ASTContext::setInstantiatedFromUnnamedFieldDecl(FieldDecl *Inst,
-                                                     FieldDecl *Tmpl) {
-  assert(!Inst->getDeclName() && "Instantiated field decl is not unnamed");
-  assert(!Tmpl->getDeclName() && "Template field decl is not unnamed");
-  assert(!InstantiatedFromUnnamedFieldDecl[Inst] &&
-         "Already noted what unnamed field was instantiated from");
-
-  InstantiatedFromUnnamedFieldDecl[Inst] = Tmpl;
-}
-
 ASTContext::overridden_cxx_method_iterator
 ASTContext::overridden_methods_begin(const CXXMethodDecl *Method) const {
   llvm::DenseMap<const CXXMethodDecl *, CXXMethodVector>::const_iterator Pos =
@@ -1536,6 +1525,9 @@ TypeInfo ASTContext::getTypeInfoImpl(const Type *T) const {
   return getTypeInfo(cast<Class##Type>(T)->desugar().getTypePtr());
 #include "clang/AST/TypeNodes.def"
     llvm_unreachable("Should not see dependent types");
+
+  case Type::Designating:
+    llvm_unreachable("Should not see designating type");
 
   case Type::FunctionNoProto:
   case Type::FunctionProto:
@@ -2740,6 +2732,13 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
                                   vat->getBracketsRange());
     break;
   }
+
+  case Type::Designating: {
+    const DesignatingType *des = cast<DesignatingType>(ty);
+    result = getDesignatingType(
+        getVariableArrayDecayedType(des->getMasterType()), des->getDesigName());
+    break;
+  }
   }
 
   // Apply the top-level qualifiers from the original.
@@ -3066,6 +3065,7 @@ ASTContext::getFunctionType(QualType ResultTy, ArrayRef<QualType> ArgArray,
   // If this type isn't canonical, get the canonical version of it.
   // The exception spec is not part of the canonical type.
   QualType Canonical;
+  QualType NonDesig;
   if (!isCanonical) {
     SmallVector<QualType, 16> CanonicalArgs;
     CanonicalArgs.reserve(NumArgs);
@@ -3084,6 +3084,31 @@ ASTContext::getFunctionType(QualType ResultTy, ArrayRef<QualType> ArgArray,
     FunctionProtoType *NewIP =
       FunctionProtoTypes.FindNodeOrInsertPos(ID, InsertPos);
     assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
+  } else {
+    // If it's canonical, check if the parameters have designators and get a
+    // prototype without designators.
+    unsigned i = 0;
+    for (; i != NumArgs; ++i) {
+      if (ArgArray[i]->isDesignatingType())
+        break;
+    }
+    if (i != NumArgs) {
+      SmallVector<QualType, 16> NonDesigArgs;
+      NonDesigArgs.reserve(NumArgs);
+      auto I = ArgArray.data();
+      NonDesigArgs.insert(NonDesigArgs.end(), I, I + i);
+      do {
+        QualType Parm = ArgArray[i];
+        if (const DesignatingType *Desig = Parm->getAs<DesignatingType>())
+          Parm = Desig->getMasterType();
+        NonDesigArgs.push_back(Parm);
+      } while (++i != NumArgs);
+      NonDesig = getFunctionType(ResultTy, NonDesigArgs, EPI);
+      // Get the new insert position for the node we care about.
+      FunctionProtoType *NewIP =
+          FunctionProtoTypes.FindNodeOrInsertPos(ID, InsertPos);
+      assert(!NewIP && "Shouldn't be in the map!"); (void)NewIP;
+    }
   }
 
   // FunctionProtoType objects are allocated with extra bytes after
@@ -3096,6 +3121,9 @@ ASTContext::getFunctionType(QualType ResultTy, ArrayRef<QualType> ArgArray,
   // specification.
   size_t Size = sizeof(FunctionProtoType) +
                 NumArgs * sizeof(QualType);
+
+  if (!NonDesig.isNull())
+    Size += sizeof(QualType);
 
   if (EPI.ExceptionSpec.Type == EST_Dynamic) {
     Size += EPI.ExceptionSpec.Exceptions.size() * sizeof(QualType);
@@ -3119,7 +3147,7 @@ ASTContext::getFunctionType(QualType ResultTy, ArrayRef<QualType> ArgArray,
 
   FunctionProtoType *FTP = (FunctionProtoType*) Allocate(Size, TypeAlignment);
   FunctionProtoType::ExtProtoInfo newEPI = EPI;
-  new (FTP) FunctionProtoType(ResultTy, ArgArray, Canonical, newEPI);
+  new (FTP) FunctionProtoType(ResultTy, ArgArray, Canonical, NonDesig, newEPI);
   Types.push_back(FTP);
   FunctionProtoTypes.InsertNode(FTP, InsertPos);
   return QualType(FTP, 0);
@@ -3548,7 +3576,7 @@ ASTContext::getParenType(QualType InnerType) const {
 
 QualType ASTContext::getDependentNameType(ElaboratedTypeKeyword Keyword,
                                           NestedNameSpecifier *NNS,
-                                          const IdentifierInfo *Name,
+                                          DeclarationName Name,
                                           QualType Canon) const {
   if (Canon.isNull()) {
     NestedNameSpecifier *CanonNNS = getCanonicalNestedNameSpecifier(NNS);
@@ -3641,13 +3669,14 @@ ASTContext::getDependentTemplateSpecializationType(
   return QualType(T, 0);
 }
 
-QualType ASTContext::getPackExpansionType(QualType Pattern,
-                                          Optional<unsigned> NumExpansions) {
+QualType
+ASTContext::getPackExpansionType(QualType Pattern,
+                                 Optional<unsigned> NumExpansions) const {
   llvm::FoldingSetNodeID ID;
   PackExpansionType::Profile(ID, Pattern, NumExpansions);
 
-  assert(Pattern->containsUnexpandedParameterPack() &&
-         "Pack expansions must expand one or more parameter packs");
+  //assert(Pattern->containsUnexpandedParameterPack() &&
+  //       "Pack expansions must expand one or more parameter packs");
   void *InsertPos = nullptr;
   PackExpansionType *T
     = PackExpansionTypes.FindNodeOrInsertPos(ID, InsertPos);
@@ -3674,6 +3703,38 @@ QualType ASTContext::getPackExpansionType(QualType Pattern,
   Types.push_back(T);
   PackExpansionTypes.InsertNode(T, InsertPos);
   return QualType(T, 0);
+}
+
+QualType ASTContext::getDesignatingType(QualType T,
+                                        DeclarationName DesigName) const {
+  assert(DesigName.isCanonical() && "designator name must be canonical");
+
+  // Unique pointers, to guarantee there is only one pointer of a particular
+  // structure.
+  llvm::FoldingSetNodeID ID;
+  DesignatingType::Profile(ID, T, DesigName);
+
+  void *InsertPos = nullptr;
+  if (DesignatingType *PT = DesignatingTypes.FindNodeOrInsertPos(ID, InsertPos))
+    return QualType(PT, 0);
+
+  // If the master type isn't canonical, this won't be a canonical type either,
+  // so fill in the canonical type field.
+  QualType Canonical;
+  if (!T.isCanonical()) {
+    Canonical = getDesignatingType(getCanonicalType(T), DesigName);
+
+    // Get the new insert position for the node we care about.
+    DesignatingType *NewIP =
+        DesignatingTypes.FindNodeOrInsertPos(ID, InsertPos);
+    assert(!NewIP && "Shouldn't be in the map!");
+    (void)NewIP;
+  }
+  DesignatingType *New =
+      new (*this, TypeAlignment) DesignatingType(T, DesigName, Canonical);
+  Types.push_back(New);
+  DesignatingTypes.InsertNode(New, InsertPos);
+  return QualType(New, 0);
 }
 
 /// CmpProtocolNames - Comparison predicate for sorting protocols
@@ -4173,17 +4234,75 @@ CanQualType ASTContext::getCanonicalParamType(QualType T) const {
   // qualifiers.
   T = getCanonicalType(T);
   T = getVariableArrayDecayedType(T);
+
   const Type *Ty = T.getTypePtr();
+  const PackExpansionType *Expansion = dyn_cast<PackExpansionType>(Ty);
+  if (Expansion)
+    Ty = Expansion->getPattern().getTypePtr();
+  const DesignatingType *Desig = Ty->getAs<DesignatingType>();
+  if (Desig)
+    Ty = Desig->getMasterType().getTypePtr();
+
   QualType Result;
   if (isa<ArrayType>(Ty)) {
-    Result = getArrayDecayedType(QualType(Ty,0));
+    Result = getArrayDecayedType(QualType(Ty, 0));
   } else if (isa<FunctionType>(Ty)) {
     Result = getPointerType(QualType(Ty, 0));
   } else {
     Result = QualType(Ty, 0);
   }
 
+  if (Desig)
+    Result = getDesignatingType(Result, Desig->getDesigName());
+  if (Expansion)
+    Result = getPackExpansionType(Result, Expansion->getNumExpansions());
+
   return CanQualType::CreateUnsafe(Result);
+}
+
+CanQualType ASTContext::getCanonicalDesigFunctionType(
+    QualType ResultTy, ArrayRef<ParmVarDecl *> ArgArray,
+    const FunctionProtoType::ExtProtoInfo &EPI) const {
+  SmallVector<QualType, 16> CanonicalArgs;
+  CanonicalArgs.reserve(ArgArray.size());
+  bool AnyDesig = false;
+
+  for (const ParmVarDecl *Parm : ArgArray) {
+    QualType T = getCanonicalParamType(Parm->getType());
+    if (Parm->isDesignatable()) {
+      T = getDesignatingType(T, Parm->getDeclName().getCanonicalName());
+      AnyDesig = true;
+    }
+    CanonicalArgs.push_back(T);
+  }
+  if (!AnyDesig)
+    return CanQualType();
+
+  FunctionProtoType::ExtProtoInfo CanonicalEPI = EPI;
+  CanonicalEPI.HasTrailingReturn = false;
+  CanonicalEPI.ExceptionSpec = FunctionProtoType::ExceptionSpecInfo();
+
+  // Adjust the canonical function result type.
+  CanQualType CanResultTy = getCanonicalFunctionResultType(ResultTy);
+  QualType Result = getFunctionType(CanResultTy, CanonicalArgs, CanonicalEPI);
+  return CanQualType::CreateUnsafe(Result);
+}
+
+CanQualType ASTContext::getCanonicalNonDesigFunctionType(QualType T) const {
+  const FunctionProtoType *Proto = T->getAs<FunctionProtoType>();
+  if (Proto)
+    T = Proto->getCanonicalNonDesigProto();
+  return getCanonicalType(T);
+}
+
+bool ASTContext::isFunctionProtoDesigStrip(QualType Src, QualType Dest) const {
+  if (const FunctionProtoType *DestProto = Dest->getAs<FunctionProtoType>()) {
+    if (const FunctionProtoType *SrcProto = Src->getAs<FunctionProtoType>()) {
+      if (!DestProto->hasDesignators() && SrcProto->hasDesignators())
+        return hasSameType(SrcProto->getCanonicalNonDesigProto(), Dest);
+    }
+  }
+  return false;
 }
 
 QualType ASTContext::getUnqualifiedArrayType(QualType type,
@@ -4428,6 +4547,14 @@ ASTContext::getCanonicalTemplateArgument(const TemplateArgument &Arg) const {
 
       return TemplateArgument(llvm::makeArrayRef(CanonArgs, Arg.pack_size()));
     }
+
+    case TemplateArgument::DeclName:
+      return TemplateArgument(Arg.getAsDeclName().getCanonicalName());
+
+    case TemplateArgument::DeclNameExpansion:
+      return TemplateArgument(
+          Arg.getAsDeclNameOrDeclNamePattern().getCanonicalName(),
+          Arg.getNumDeclNameExpansions());
   }
 
   // Silence GCC warning
@@ -4440,11 +4567,11 @@ ASTContext::getCanonicalNestedNameSpecifier(NestedNameSpecifier *NNS) const {
     return nullptr;
 
   switch (NNS->getKind()) {
-  case NestedNameSpecifier::Identifier:
+  case NestedNameSpecifier::DeclName:
     // Canonicalize the prefix but keep the identifier the same.
     return NestedNameSpecifier::Create(*this,
                          getCanonicalNestedNameSpecifier(NNS->getPrefix()),
-                                       NNS->getAsIdentifier());
+                                       NNS->getAsDeclName());
 
   case NestedNameSpecifier::Namespace:
     // A namespace is canonical; build a nested-name-specifier with
@@ -4471,8 +4598,8 @@ ASTContext::getCanonicalNestedNameSpecifier(NestedNameSpecifier *NNS) const {
     //   typedef typename T::type T1;
     //   typedef typename T1::type T2;
     if (const DependentNameType *DNT = T->getAs<DependentNameType>())
-      return NestedNameSpecifier::Create(*this, DNT->getQualifier(), 
-                           const_cast<IdentifierInfo *>(DNT->getIdentifier()));
+      return NestedNameSpecifier::Create(*this, DNT->getQualifier(),
+                                         DNT->getDeclName());
 
     // Otherwise, just canonicalize the type, and force it to be a TypeSpec.
     // FIXME: Why are TypeSpec and TypeSpecWithTemplate distinct in the
@@ -4549,8 +4676,18 @@ const ArrayType *ASTContext::getAsArrayType(QualType T) const {
 }
 
 QualType ASTContext::getAdjustedParameterType(QualType T) const {
-  if (T->isArrayType() || T->isFunctionType())
-    return getDecayedType(T);
+  const PackExpansionType *Expansion = dyn_cast<PackExpansionType>(T);
+  QualType SubT = Expansion ? Expansion->getPattern() : T;
+  const DesignatingType *Desig = SubT->getAs<DesignatingType>();
+  if (Desig)
+    SubT = Desig->getMasterType();
+  if (SubT->isArrayType() || SubT->isFunctionType()) {
+    T = getDecayedType(SubT);
+    if (Desig)
+      T = getDesignatingType(T, Desig->getDesigName());
+    if (Expansion)
+      T = getPackExpansionType(T, Expansion->getNumExpansions());
+  }
   return T;
 }
 
@@ -5947,6 +6084,7 @@ void ASTContext::getObjCEncodingForTypeImpl(QualType T, std::string& S,
     return;
 
   case Type::Pipe:
+  case Type::Designating:
 #define ABSTRACT_TYPE(KIND, BASE)
 #define TYPE(KIND, BASE)
 #define DEPENDENT_TYPE(KIND, BASE) \
@@ -6685,6 +6823,27 @@ ASTContext::getSubstTemplateTemplateParmPack(TemplateTemplateParmDecl *Param,
   }
 
   return TemplateName(Subst);
+}
+
+DeclarationName
+ASTContext::getSubstTemplateDeclNameParmPack(TemplateDeclNameParmDecl *Param,
+                                       const TemplateArgument &ArgPack) const {
+  ASTContext &Self = const_cast<ASTContext &>(*this);
+  llvm::FoldingSetNodeID ID;
+  SubstTemplateDeclNameParmPackStorage::Profile(ID, Self, Param, ArgPack);
+
+  void *InsertPos = nullptr;
+  SubstTemplateDeclNameParmPackStorage *Subst
+    = SubstTemplateDeclNameParmPacks.FindNodeOrInsertPos(ID, InsertPos);
+  
+  if (!Subst) {
+    Subst = new (*this) SubstTemplateDeclNameParmPackStorage(Param, 
+                                                           ArgPack.pack_size(),
+                                                         ArgPack.pack_begin());
+    SubstTemplateDeclNameParmPacks.InsertNode(Subst, InsertPos);
+  }
+
+  return DeclarationName(Subst);
 }
 
 /// getFromTargetType - Given one of the integer types provided by
@@ -7747,6 +7906,7 @@ QualType ASTContext::mergeTypes(QualType LHS, QualType RHS,
   case Type::LValueReference:
   case Type::RValueReference:
   case Type::MemberPointer:
+  case Type::Designating:
     llvm_unreachable("C++ should never be in mergeTypes");
 
   case Type::ObjCInterface:

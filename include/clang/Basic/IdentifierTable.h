@@ -808,6 +808,9 @@ public:
 #include "clang/Basic/OperatorKinds.def"
     CXXLiteralOperator,
     CXXUsingDirective,
+    CXXTemplatedName,
+    SubstTemplateDeclNameParmPack,
+    SubstTemplatedName,
     NUM_EXTRA_KINDS
   };
 
@@ -821,6 +824,7 @@ public:
   /// arguments in the Objective-C selector, in which case the
   /// DeclarationNameExtra is also a MultiKeywordSelector.
   unsigned ExtraKindOrNumArgs;
+  uintptr_t CanonicalPtr;
 };
 
 }  // end namespace clang

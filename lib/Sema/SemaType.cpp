@@ -1679,7 +1679,7 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
     //   The effect of a cv-qualifier-seq in a function declarator is not the
     //   same as adding cv-qualification on top of the function type. In the
     //   latter case, the cv-qualifiers are ignored.
-    if (TypeQuals && Result->isFunctionType()) {
+    if (Result->isFunctionType()) {
       diagnoseAndRemoveTypeQualifiers(
           S, DS, TypeQuals, Result, DeclSpec::TQ_const | DeclSpec::TQ_volatile,
           S.getLangOpts().CPlusPlus
@@ -1697,11 +1697,18 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
     // There don't appear to be any other contexts in which a cv-qualified
     // reference type could be formed, so the 'ill-formed' clause here appears
     // to never happen.
-    if (TypeQuals && Result->isReferenceType()) {
+    if (Result->isReferenceType()) {
       diagnoseAndRemoveTypeQualifiers(
           S, DS, TypeQuals, Result,
           DeclSpec::TQ_const | DeclSpec::TQ_volatile | DeclSpec::TQ_atomic,
           diag::warn_typecheck_reference_qualifiers);
+    }
+
+    if (Result->isDesignatingType()) {
+      diagnoseAndRemoveTypeQualifiers(
+          S, DS, TypeQuals, Result,
+          DeclSpec::TQ_const | DeclSpec::TQ_volatile | DeclSpec::TQ_atomic,
+          diag::warn_typecheck_designating_type_qualifiers);
     }
 
     // C90 6.5.3 constraints: "The same type qualifier shall not appear more
@@ -1955,6 +1962,11 @@ QualType Sema::BuildPointerType(QualType T,
     return QualType();
   }
 
+  if (T->isDesignatingType()) {
+    Diag(Loc, diag::err_pointer_or_reference_to_designating_type) << 0 << T;
+    return QualType();
+  }
+
   if (checkQualifiedFunction(*this, T, Loc, QFK_Pointer))
     return QualType();
 
@@ -2017,6 +2029,11 @@ QualType Sema::BuildReferenceType(QualType T, bool SpelledAsLValue,
     return QualType();
   }
 
+  if (T->isDesignatingType()) {
+    Diag(Loc, diag::err_pointer_or_reference_to_designating_type) << 1 << T;
+    return QualType();
+  }
+
   if (checkQualifiedFunction(*this, T, Loc, QFK_Reference))
     return QualType();
 
@@ -2043,6 +2060,18 @@ QualType Sema::BuildPipeType(QualType T, SourceLocation Loc) {
 
   // Build the pipe type.
   return Context.getPipeType(T);
+}
+
+QualType Sema::BuildDesignatingType(QualType T, DeclarationName DesigName,
+                              SourceLocation Loc) {
+  if (T->isDesignatingType()) {
+    Diag(Loc, diag::err_designator_on_designating_type)
+      << T;
+    return QualType();
+  }
+
+  // Build the designating type.
+  return Context.getDesignatingType(T, DesigName.getCanonicalName());
 }
 
 /// Check whether the specified array size makes the array type a VLA.  If so,
@@ -2105,7 +2134,8 @@ QualType Sema::BuildArrayType(QualType T, ArrayType::ArraySizeModifier ASM,
       return QualType();
     }
 
-    if (T->isVoidType() || T->isIncompleteArrayType()) {
+    if (T->isVoidType() || T->isIncompleteArrayType() ||
+        T->isDesignatingType()) {
       Diag(Loc, diag::err_illegal_decl_array_incomplete_type) << T;
       return QualType();
     }
@@ -2336,6 +2366,11 @@ bool Sema::CheckFunctionReturnType(QualType T, SourceLocation Loc) {
     return true;
   }
 
+  if (T->isDesignatingType()) {
+    Diag(Loc, diag::err_var_or_ret_designating_type) << 1 << T;
+    return true;
+  }
+
   // Functions cannot return half FP.
   if (T->isHalfType() && !getLangOpts().HalfArgsAndReturns) {
     Diag(Loc, diag::err_parameters_retval_cannot_have_fp16_type) << 1 <<
@@ -2428,14 +2463,28 @@ QualType Sema::BuildFunctionType(QualType T,
   bool Invalid = false;
 
   Invalid |= CheckFunctionReturnType(T, Loc);
-
+  llvm::SmallDenseMap<const IdentifierInfo *, unsigned, 4> Desigs;
   for (unsigned Idx = 0, Cnt = ParamTypes.size(); Idx < Cnt; ++Idx) {
     // FIXME: Loc is too inprecise here, should use proper locations for args.
     QualType ParamType = Context.getAdjustedParameterType(ParamTypes[Idx]);
-    if (ParamType->isVoidType()) {
+    QualType NonDesigType = ParamType;
+    if (const DesignatingType *Desig = ParamType->getAs<DesignatingType>()) {
+      NonDesigType = Desig->getMasterType();
+      if (const IdentifierInfo *Id =
+              Desig->getDesigName().getAsIdentifierInfo()) {
+        unsigned &PrevIdx = Desigs[Id];
+        if (PrevIdx) {
+          Diag(Loc, diag::err_parm_types_have_same_designator)
+              << (Idx + 1) << PrevIdx << Id;
+          Invalid = true;
+        }
+        PrevIdx = Idx + 1;
+      }
+    }
+    if (NonDesigType->isVoidType()) {
       Diag(Loc, diag::err_param_with_void_type);
       Invalid = true;
-    } else if (ParamType->isHalfType() && !getLangOpts().HalfArgsAndReturns) {
+    } else if (NonDesigType->isHalfType() && !getLangOpts().HalfArgsAndReturns) {
       // Disallow half FP arguments.
       Diag(Loc, diag::err_parameters_retval_cannot_have_fp16_type) << 0 <<
         FixItHint::CreateInsertion(Loc, "*");
@@ -3486,7 +3535,8 @@ static void checkNullabilityConsistency(TypeProcessingState &state,
 
 static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
                                                 QualType declSpecType,
-                                                TypeSourceInfo *TInfo) {
+                                                TypeSourceInfo *TInfo,
+                                                bool AllowDesignator) {
   // The TypeSourceInfo that this function returns will not be a null type.
   // If there is an error, this function will fill in a dummy type as fallback.
   QualType T = declSpecType;
@@ -4011,6 +4061,12 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
         D.setInvalidType(true);
       }
 
+      if (T->isDesignatingType()) {
+        S.Diag(DeclType.Loc, diag::err_var_or_ret_designating_type) << 1 << T;
+        T = T->getAs<DesignatingType>()->getMasterType();
+        D.setInvalidType(true);
+      }
+
       // Do not allow returning half FP value.
       // FIXME: This really should be in BuildFunctionType.
       if (T->isHalfType()) {
@@ -4187,11 +4243,31 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
         SmallVector<FunctionProtoType::ExtParameterInfo, 16>
           ExtParameterInfos(FTI.NumParams);
         bool HasAnyInterestingExtParameterInfos = false;
+        llvm::SmallDenseMap<const IdentifierInfo *, unsigned, 4> Desigs;
 
         for (unsigned i = 0, e = FTI.NumParams; i != e; ++i) {
           ParmVarDecl *Param = cast<ParmVarDecl>(FTI.Params[i].Param);
           QualType ParamTy = Param->getType();
           assert(!ParamTy.isNull() && "Couldn't parse type?");
+
+          const DesignatingType *Desig = ParamTy->getAs<DesignatingType>();
+          if (Desig) {
+            ParamTy = Desig->getMasterType();
+            if (const IdentifierInfo *Id =
+                    Desig->getDesigName().getAsIdentifierInfo()) {
+              unsigned &PrevIdx = Desigs[Id];
+              if (PrevIdx) {
+                S.Diag(DeclType.Loc,
+                       diag::err_parm_types_have_same_designator)
+                    << (i + 1) << PrevIdx << Id;
+                Param->setType(ParamTy);
+                Desig = nullptr;
+              }
+              PrevIdx = i + 1;
+            }
+          }
+
+          QualType OriginTy = ParamTy;
 
           // Look for 'void'.  void is allowed only as a single parameter to a
           // function with no other parameters (C99 6.7.5.3p10).  We record
@@ -4255,7 +4331,13 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
             HasAnyInterestingExtParameterInfos = true;
           }
 
-          ParamTys.push_back(ParamTy);
+          if (Desig && OriginTy != ParamTy) {
+            ParamTy =
+                Context.getDesignatingType(ParamTy, Desig->getDesigName());
+            Param->setType(ParamTy);
+          }
+
+          ParamTys.push_back(Param->getType());
         }
 
         if (HasAnyInterestingExtParameterInfos) {
@@ -4312,9 +4394,9 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
         NestedNameSpecifier *NNS = SS.getScopeRep();
         NestedNameSpecifier *NNSPrefix = NNS->getPrefix();
         switch (NNS->getKind()) {
-        case NestedNameSpecifier::Identifier:
+        case NestedNameSpecifier::DeclName:
           ClsType = Context.getDependentNameType(ETK_None, NNSPrefix,
-                                                 NNS->getAsIdentifier());
+                                                 NNS->getAsDeclName());
           break;
 
         case NestedNameSpecifier::Namespace:
@@ -4473,6 +4555,10 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
     T.addConst();
   }
 
+  if (AllowDesignator && D.hasDot())
+    T = S.BuildDesignatingType(T, S.getPossiblyTemplatedName(D.getIdentifier()),
+                               D.getIdentifierLoc());
+
   // If there was an ellipsis in the declarator, the declaration declares a
   // parameter pack whose type may be a pack expansion type.
   if (D.hasEllipsis()) {
@@ -4492,7 +4578,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
       //
       // We represent function parameter packs as function parameters whose
       // type is a pack expansion.
-      if (!T->containsUnexpandedParameterPack()) {
+      if (!T->containsUnexpandedParameterPack() && !D.isEllipsisPostfix()) {
         S.Diag(D.getEllipsisLoc(),
              diag::err_function_parameter_pack_without_parameter_packs)
           << T <<  D.getSourceRange();
@@ -4572,7 +4658,13 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S) {
   if (D.isPrototypeContext() && getLangOpts().ObjCAutoRefCount)
     inferARCWriteback(state, T);
 
-  return GetFullTypeForDeclarator(state, T, ReturnTypeInfo);
+  bool AllowDesignator =
+      S &&
+      !(S->isFunctionDeclarationScope() &&
+        (D.getContext() == Declarator::PrototypeContext ||
+         D.getContext() == Declarator::LambdaExprParameterContext));
+
+  return GetFullTypeForDeclarator(state, T, ReturnTypeInfo, AllowDesignator);
 }
 
 static void transferARCOwnershipToDeclSpec(Sema &S,
@@ -4689,7 +4781,7 @@ TypeSourceInfo *Sema::GetTypeForDeclaratorCast(Declarator &D, QualType FromTy) {
       transferARCOwnership(state, declSpecTy, ownership);
   }
 
-  return GetFullTypeForDeclarator(state, declSpecTy, ReturnTypeInfo);
+  return GetFullTypeForDeclarator(state, declSpecTy, ReturnTypeInfo, false);
 }
 
 /// Map an AttributedType::Kind to an AttributeList::Kind.
@@ -4969,11 +5061,13 @@ namespace {
 
   class DeclaratorLocFiller : public TypeLocVisitor<DeclaratorLocFiller> {
     ASTContext &Context;
+    const Declarator &D;
     const DeclaratorChunk &Chunk;
 
   public:
-    DeclaratorLocFiller(ASTContext &Context, const DeclaratorChunk &Chunk)
-      : Context(Context), Chunk(Chunk) {}
+    DeclaratorLocFiller(ASTContext &Context, const Declarator &D,
+                        const DeclaratorChunk &Chunk)
+        : Context(Context), D(D), Chunk(Chunk) {}
 
     void VisitQualifiedTypeLoc(QualifiedTypeLoc TL) {
       llvm_unreachable("qualified type locs not expected here!");
@@ -5011,7 +5105,7 @@ namespace {
       // Now copy source location info into the type loc component.
       TypeLoc ClsTL = ClsTInfo->getTypeLoc();
       switch (NNSLoc.getNestedNameSpecifier()->getKind()) {
-      case NestedNameSpecifier::Identifier:
+      case NestedNameSpecifier::DeclName:
         assert(isa<DependentNameType>(ClsTy) && "Unexpected TypeLoc");
         {
           DependentNameTypeLoc DNTLoc = ClsTL.castAs<DependentNameTypeLoc>();
@@ -5085,6 +5179,11 @@ namespace {
       assert(Chunk.Kind == DeclaratorChunk::Pipe);
       TL.setKWLoc(Chunk.Loc);
     }
+    void VisitDesignatingTypeLoc(DesignatingTypeLoc TL) {
+      assert(D.hasDot());
+      TL.setDotLoc(D.getDotLoc());
+      TL.setNameLoc(D.getIdentifierLoc());
+    }
 
     void VisitTypeLoc(TypeLoc TL) {
       llvm_unreachable("unsupported TypeLoc kind in declarator!");
@@ -5154,7 +5253,7 @@ Sema::GetTypeSourceInfoForDeclarator(Declarator &D, QualType T,
     while (AdjustedTypeLoc TL = CurrTL.getAs<AdjustedTypeLoc>())
       CurrTL = TL.getNextTypeLoc().getUnqualifiedLoc();
 
-    DeclaratorLocFiller(Context, D.getTypeObject(i)).Visit(CurrTL);
+    DeclaratorLocFiller(Context, D, D.getTypeObject(i)).Visit(CurrTL);
     CurrTL = CurrTL.getNextTypeLoc().getUnqualifiedLoc();
   }
 
@@ -5192,10 +5291,12 @@ void LocInfoType::getAsStringInternal(std::string &Str,
 }
 
 TypeResult Sema::ActOnTypeName(Scope *S, Declarator &D) {
-  // C99 6.7.6: Type names have no identifier.  This is already validated by
-  // the parser.
-  assert(D.getIdentifier() == nullptr &&
-         "Type name should have no identifier!");
+  if (!D.hasDot()) {
+    // C99 6.7.6: Type names have no identifier.  This is already validated by
+    // the parser.
+    assert(D.getIdentifier() == nullptr &&
+           "Type name should have no identifier!");
+  }
 
   TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
   QualType T = TInfo->getType();

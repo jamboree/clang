@@ -1293,6 +1293,8 @@ public:
   QualType BuildAtomicType(QualType T, SourceLocation Loc);
   QualType BuildPipeType(QualType T,
                          SourceLocation Loc);
+  QualType BuildDesignatingType(QualType T, DeclarationName DesigName,
+                                SourceLocation Loc);
 
   TypeSourceInfo *GetTypeForDeclarator(Declarator &D, Scope *S);
   TypeSourceInfo *GetTypeForDeclaratorCast(Declarator &D, QualType FromTy);
@@ -1555,7 +1557,8 @@ public:
     NC_NestedNameSpecifier,
     NC_TypeTemplate,
     NC_VarTemplate,
-    NC_FunctionTemplate
+    NC_FunctionTemplate,
+    NC_DeclName
   };
 
   class NameClassification {
@@ -1603,6 +1606,10 @@ public:
       NameClassification Result(NC_FunctionTemplate);
       Result.Template = Name;
       return Result;
+    }
+
+    static NameClassification DeclName() {
+      return NameClassification(NC_DeclName);
     }
 
     NameClassificationKind getKind() const { return Kind; }
@@ -1747,7 +1754,7 @@ public:
                                           SourceLocation Loc,
                                           QualType T);
   ParmVarDecl *CheckParameter(DeclContext *DC, SourceLocation StartLoc,
-                              SourceLocation NameLoc, IdentifierInfo *Name,
+                              SourceLocation NameLoc, DeclarationName Name,
                               QualType T, TypeSourceInfo *TSInfo,
                               StorageClass SC);
   void ActOnParamDefaultArgument(Decl *param,
@@ -1940,7 +1947,7 @@ public:
   bool isAcceptableTagRedeclaration(const TagDecl *Previous,
                                     TagTypeKind NewTag, bool isDefinition,
                                     SourceLocation NewTagLoc,
-                                    const IdentifierInfo *Name);
+                                    DeclarationName Name);
 
   enum TagUseKind {
     TUK_Reference,   // Reference to a tag:  'struct foo *X;'
@@ -1959,6 +1966,11 @@ public:
                  SourceLocation ScopedEnumKWLoc,
                  bool ScopedEnumUsesClassTag, TypeResult UnderlyingType,
                  bool IsTypeSpecifier, SkipBodyInfo *SkipBody = nullptr);
+
+  bool CheckLocalTemplatedName(DeclarationName Name, SourceLocation NameLoc,
+                               DeclContext *DC);
+
+  void CheckNameRedeclaration(NamedDecl *NewND, LookupResult &Previous);
 
   Decl *ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
                                 unsigned TagSpec, SourceLocation TagLoc,
@@ -2062,8 +2074,8 @@ public:
 
   EnumConstantDecl *CheckEnumConstant(EnumDecl *Enum,
                                       EnumConstantDecl *LastEnumConst,
-                                      SourceLocation IdLoc,
-                                      IdentifierInfo *Id,
+                                      SourceLocation NameLoc,
+                                      DeclarationName Name,
                                       Expr *val);
   bool CheckEnumUnderlyingType(TypeSourceInfo *TI);
   bool CheckEnumRedeclaration(SourceLocation EnumLoc, bool IsScoped,
@@ -2521,10 +2533,10 @@ public:
   void AddSurrogateCandidate(CXXConversionDecl *Conversion,
                              DeclAccessPair FoundDecl,
                              CXXRecordDecl *ActingContext,
-                             const FunctionProtoType *Proto,
-                             Expr *Object, ArrayRef<Expr *> Args,
-                             OverloadCandidateSet& CandidateSet,
-                             bool HasDesig);
+                             const FunctionProtoType *Proto, Expr *Object,
+                             ArrayRef<Expr *> Args,
+                             SmallVectorImpl<Expr *> &MappedArgs,
+                             OverloadCandidateSet &CandidateSet, bool HasDesig);
   void AddMemberOperatorCandidates(OverloadedOperatorKind Op,
                                    SourceLocation OpLoc, ArrayRef<Expr *> Args,
                                    OverloadCandidateSet& CandidateSet,
@@ -2551,6 +2563,9 @@ public:
       llvm::function_ref<unsigned(unsigned, const DesignationFailureInfo &)>
   DesignationFailureSink;
 
+  typedef llvm::PointerUnion<const FunctionDecl *, const FunctionProtoType *>
+      FunctionDeclOrProtoType;
+
   /// This handles arg arity checking and designated arg mapping, failure is
   /// reported via DesignationFailureSink, 0 is returned on success.
   /// If HasDesig is false, Args and MappedArgs are untouched, otherwise, 
@@ -2565,17 +2580,15 @@ public:
   ///
   /// Note that ovl_fail_missing_argument is not handled here and needs a
   /// separate check.
-  unsigned DesignateArguments(FunctionDecl *Function,
-                              unsigned NumParams,
-                              unsigned MinRequiredArgs,
-                              ArrayRef<Expr *>& Args,
+  unsigned DesignateArguments(const FunctionProtoType *Proto,
+                              unsigned NumParams, unsigned MinRequiredArgs,
+                              ArrayRef<Expr *> &Args,
                               SmallVectorImpl<Expr *> &MappedArgs,
-                              DesignationFailureSink Sink,
-                              bool HasDesig,
+                              DesignationFailureSink Sink, bool HasDesig,
                               bool PartialOverloading = false);
 
-  bool DesignateArgumentsForCall(FunctionDecl *Function, Expr *CallExpr,
-                                 MultiExprArg Args,
+  bool DesignateArgumentsForCall(FunctionDeclOrProtoType Function,
+                                 Expr *CallExpr, MultiExprArg Args,
                                  SmallVectorImpl<Expr *> &MappedArgs);
 
   // Emit as a 'note' the specific overload candidate
@@ -2642,6 +2655,8 @@ public:
   ExprResult FixOverloadedFunctionReference(ExprResult,
                                             DeclAccessPair FoundDecl,
                                             FunctionDecl *Fn);
+
+  void FixProtoDesigForFunctionReference(Expr *E, QualType ToType);
 
   void AddOverloadedCallCandidates(UnresolvedLookupExpr *ULE,
                                    ArrayRef<Expr *> Args,
@@ -2884,6 +2899,10 @@ public:
 
   /// \brief Clears the state of the given TypoExpr.
   void clearDelayedTypo(TypoExpr *TE);
+
+  TemplateDeclNameParmDecl *LookupTemplateDeclNameParm(const IdentifierInfo *Id);
+
+  DeclarationName getPossiblyTemplatedName(const IdentifierInfo *Id);
 
   /// \brief Look up a name, looking for a single declaration.  Return
   /// null if the results were absent, ambiguous, or overloaded.
@@ -4670,6 +4689,8 @@ public:
   void CheckCompatibleReinterpretCast(QualType SrcType, QualType DestType,
                                       bool IsDereference, SourceRange Range);
 
+  bool areCompatibleFunctionProtoTypes(QualType TypeL, QualType TypeR);
+
   /// ActOnCXXNamedCast - Parse {dynamic,static,reinterpret,const}_cast's.
   ExprResult ActOnCXXNamedCast(SourceLocation OpLoc,
                                tok::TokenKind Kind,
@@ -5001,7 +5022,7 @@ public:
                                     ParsedType ObjectType);
 
   bool BuildCXXNestedNameSpecifier(Scope *S,
-                                   IdentifierInfo &Identifier,
+                                   IdentifierInfo *Identifier,
                                    SourceLocation IdentifierLoc,
                                    SourceLocation CCLoc,
                                    QualType ObjectType,
@@ -5375,7 +5396,7 @@ public:
   MemInitResult BuildMemInitializer(Decl *ConstructorD,
                                     Scope *S,
                                     CXXScopeSpec &SS,
-                                    IdentifierInfo *MemberOrBase,
+                                    DeclarationName MemberOrBase,
                                     ParsedType TemplateTypeTy,
                                     const DeclSpec &DS,
                                     SourceLocation IdLoc,
@@ -5758,6 +5779,14 @@ public:
                                        SourceLocation EqualLoc,
                                        ParsedTemplateArgument DefaultArg);
 
+  Decl *ActOnTemplateDeclNameParameter(Scope *S, SourceLocation EllipsisLoc,
+                                       SourceLocation KeyLoc,
+                                       IdentifierInfo *ParamName,
+                                       SourceLocation ParamNameLoc,
+                                       unsigned Depth, unsigned Position,
+                                       SourceLocation EqualLoc,
+                                       ParsedTemplateArgument DefaultArg);
+
   TemplateParameterList *
   ActOnTemplateParameterList(unsigned Depth,
                              SourceLocation ExportLoc,
@@ -5766,6 +5795,9 @@ public:
                              ArrayRef<Decl *> Params,
                              SourceLocation RAngleLoc,
                              Expr *RequiresClause);
+
+  DeclNameResult ActOnDeclName(Scope *S, SourceLocation QuestionLoc,
+                               SourceLocation NameLoc, IdentifierInfo *Name);
 
   /// \brief The context in which we are checking a template parameter list.
   enum TemplateParamListContext {
@@ -5790,7 +5822,7 @@ public:
 
   DeclResult CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
                                 SourceLocation KWLoc, CXXScopeSpec &SS,
-                                IdentifierInfo *Name, SourceLocation NameLoc,
+                                DeclarationName Name, SourceLocation NameLoc,
                                 AttributeList *Attr,
                                 TemplateParameterList *TemplateParams,
                                 AccessSpecifier AS,
@@ -6090,7 +6122,7 @@ public:
   QualType CheckTypenameType(ElaboratedTypeKeyword Keyword,
                              SourceLocation KeywordLoc,
                              NestedNameSpecifierLoc QualifierLoc,
-                             const IdentifierInfo &II,
+                             DeclarationName Name,
                              SourceLocation IILoc);
 
   TypeSourceInfo *RebuildTypeInCurrentInstantiation(TypeSourceInfo *T,
@@ -6133,6 +6165,9 @@ public:
 
     /// \brief The type of an arbitrary declaration.
     UPPC_DeclarationType,
+
+    /// \brief The name of an arbitrary declaration.
+    UPPC_DeclarationName,
 
     /// \brief The type of a data member.
     UPPC_DataMemberType,
@@ -6255,6 +6290,19 @@ public:
                                        TemplateName Template,
                                        UnexpandedParameterPackContext UPPC);
 
+  /// \brief If the given decl name contains an unexpanded parameter pack,
+  /// diagnose the error.
+  ///
+  /// \param Loc The location of the template name.
+  ///
+  /// \param Name The decl name that is being checked for unexpanded
+  /// parameter packs.
+  ///
+  /// \returns true if an error occurred, false otherwise.
+  bool DiagnoseUnexpandedParameterPack(SourceLocation Loc,
+                                       DeclarationName Name,
+                                       UnexpandedParameterPackContext UPPC);
+
   /// \brief If the given template argument contains an unexpanded parameter
   /// pack, diagnose the error.
   ///
@@ -6364,6 +6412,8 @@ public:
   ExprResult CheckPackExpansion(Expr *Pattern, SourceLocation EllipsisLoc,
                                 Optional<unsigned> NumExpansions);
 
+  enum RetainExpansionMode { REM_None, REM_NoExpand, REM_NoSubstitute };
+
   /// \brief Determine whether we could expand a pack expansion with the
   /// given set of parameter packs into separate arguments by repeatedly
   /// transforming the pattern.
@@ -6403,17 +6453,17 @@ public:
                              ArrayRef<UnexpandedParameterPack> Unexpanded,
                              const MultiLevelTemplateArgumentList &TemplateArgs,
                                        bool &ShouldExpand,
-                                       bool &RetainExpansion,
+                                       RetainExpansionMode &RetainExpansion,
                                        Optional<unsigned> &NumExpansions);
 
-  /// \brief Determine the number of arguments in the given pack expansion
-  /// type.
+  /// \brief Determine the number of arguments in the given parameter pack.
   ///
   /// This routine assumes that the number of arguments in the expansion is
   /// consistent across all of the unexpanded parameter packs in its pattern.
   ///
   /// Returns an empty Optional if the type can't be expanded.
-  Optional<unsigned> getNumArgumentsInExpansion(QualType T,
+  Optional<unsigned> getNumArgumentsInExpansion(
+      const ParmVarDecl *Parm,
       const MultiLevelTemplateArgumentList &TemplateArgs);
 
   /// \brief Determine whether the given declarator contains any unexpanded
@@ -6523,7 +6573,8 @@ public:
       FunctionTemplateDecl *FunctionTemplate,
       TemplateArgumentListInfo &ExplicitTemplateArgs,
       SmallVectorImpl<DeducedTemplateArgument> &Deduced,
-      SmallVectorImpl<QualType> &ParamTypes, QualType *FunctionType,
+      SmallVectorImpl<QualType> &ParamTypes,
+      SmallVectorImpl<ParmVarDecl *> *OutParams, QualType *FunctionType,
       sema::TemplateDeductionInfo &Info);
 
   /// brief A function argument from which we performed template argument
@@ -6944,6 +6995,14 @@ public:
     InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
                           NamedDecl *Template,
                           TemplateTemplateParmDecl *Param,
+                          ArrayRef<TemplateArgument> TemplateArgs,
+                          SourceRange InstantiationRange);
+
+    /// \brief Note that we are substituting prior template arguments into a
+    /// template declname parameter.
+    InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
+                          NamedDecl *Template,
+                          TemplateDeclNameParmDecl *Param,
                           ArrayRef<TemplateArgument> TemplateArgs,
                           SourceRange InstantiationRange);
 
@@ -8908,11 +8967,16 @@ public:
     Ref_Compatible
   };
 
+  enum ReferenceCastFlag {
+    RCF_DerivedToBase = 0x01,
+    RCF_ObjCConversion = 0x02,
+    RCF_ObjCLifetimeConversion = 0x04,
+    RCF_StripFunctionProtoDesig = 0x08
+  };
+
   ReferenceCompareResult CompareReferenceRelationship(SourceLocation Loc,
                                                       QualType T1, QualType T2,
-                                                      bool &DerivedToBase,
-                                                      bool &ObjCConversion,
-                                                bool &ObjCLifetimeConversion);
+                                                      unsigned &Flags);
 
   ExprResult checkUnknownAnyCast(SourceRange TypeRange, QualType CastType,
                                  Expr *CastExpr, CastKind &CastKind,
@@ -9129,7 +9193,7 @@ public:
   /// the correct width, and that the field type is valid.
   /// Returns false on success.
   /// Can optionally return whether the bit-field is of width 0
-  ExprResult VerifyBitField(SourceLocation FieldLoc, IdentifierInfo *FieldName,
+  ExprResult VerifyBitField(SourceLocation FieldLoc, DeclarationName FieldName,
                             QualType FieldTy, bool IsMsStruct,
                             Expr *BitWidth, bool *ZeroWidth = nullptr);
 

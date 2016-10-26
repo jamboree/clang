@@ -405,6 +405,12 @@ bool Type::isComplexIntegerType() const {
   return getAsComplexIntegerType();
 }
 
+bool Type::isStrictlyDesignatingType() const {
+  if (const DesignatingType *Desig = getAs<DesignatingType>())
+    return Desig->getDesigName().getAsIdentifierInfo() != nullptr;
+  return false;
+}
+
 const ComplexType *Type::getAsComplexIntegerType() const {
   if (const ComplexType *Complex = getAs<ComplexType>())
     if (Complex->getElementType()->isIntegerType())
@@ -1961,6 +1967,8 @@ bool Type::isIncompleteType(NamedDecl **Def) const {
       *Def = Interface;
     return !Interface->hasDefinition();
   }
+  case Designating:
+    return true;
   }
 }
 
@@ -2652,10 +2660,9 @@ StringRef FunctionType::getNameForCallConv(CallingConv CC) {
 }
 
 FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
-                                     QualType canonical,
+                                     QualType canonical, QualType nonDesig,
                                      const ExtProtoInfo &epi)
-    : FunctionType(FunctionProto, result, canonical,
-                   result->isDependentType(),
+    : FunctionType(FunctionProto, result, canonical, result->isDependentType(),
                    result->isInstantiationDependentType(),
                    result->isVariablyModifiedType(),
                    result->containsUnexpandedParameterPack(), epi.ExtInfo),
@@ -2663,7 +2670,8 @@ FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
       NumExceptions(epi.ExceptionSpec.Exceptions.size()),
       ExceptionSpecType(epi.ExceptionSpec.Type),
       HasExtParameterInfos(epi.ExtParameterInfos != nullptr),
-      Variadic(epi.Variadic), HasTrailingReturn(epi.HasTrailingReturn) {
+      Variadic(epi.Variadic), HasTrailingReturn(epi.HasTrailingReturn),
+      HasDesignators(!nonDesig.isNull()) {
   assert(NumParams == params.size() && "function has too many parameters");
 
   FunctionTypeBits.TypeQuals = epi.TypeQuals;
@@ -2682,10 +2690,15 @@ FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
 
     argSlot[i] = params[i];
   }
+  // Fill in the prototype without designators.
+  if (HasDesignators) {
+    QualType *protoSlot = argSlot + NumParams;
+    *protoSlot = nonDesig;
+  }
 
   if (getExceptionSpecType() == EST_Dynamic) {
     // Fill in the exception array.
-    QualType *exnSlot = argSlot + NumParams;
+    QualType *exnSlot = argSlot + NumParams + HasDesignators;
     unsigned I = 0;
     for (QualType ExceptionType : epi.ExceptionSpec.Exceptions) {
       // Note that a dependent exception specification does *not* make
@@ -2799,9 +2812,11 @@ bool FunctionProtoType::isNothrow(const ASTContext &Ctx,
 
 bool FunctionProtoType::isTemplateVariadic() const {
   for (unsigned ArgIdx = getNumParams(); ArgIdx; --ArgIdx)
-    if (isa<PackExpansionType>(getParamType(ArgIdx - 1)))
-      return true;
-  
+    if (const PackExpansionType *Expansion =
+            dyn_cast<PackExpansionType>(getParamType(ArgIdx - 1)))
+      if (!Expansion->getNumExpansions())
+        return true;
+
   return false;
 }
 
@@ -3175,6 +3190,18 @@ TemplateSpecializationType::Profile(llvm::FoldingSetNodeID &ID,
     Arg.Profile(ID, Context);
 }
 
+DesignatingType::DesignatingType(QualType Master, DeclarationName DesigName,
+                                 QualType Canon)
+    : Type(Designating, Canon, /*Dependent=*/false,
+           /*InstantiationDependent=*/false, Master->isVariablyModifiedType(),
+           Master->containsUnexpandedParameterPack()),
+      MasterType(Master), DesigName(DesigName) {
+  bool hasDependentDesig = DesigName.isDependentName();
+  setDependent(hasDependentDesig || Master->isDependentType());
+  setInstantiationDependent(hasDependentDesig ||
+                            Master->isInstantiationDependentType());
+}
+
 QualType
 QualifierCollector::apply(const ASTContext &Context, QualType QT) const {
   if (!hasNonFastQualifiers())
@@ -3367,6 +3394,9 @@ static CachedProperties computeCachedProperties(const Type *T) {
     return Cache::get(cast<AtomicType>(T)->getValueType());
   case Type::Pipe:
     return Cache::get(cast<PipeType>(T)->getElementType());
+  case Type::Designating:
+    return CachedProperties(ExternalLinkage, false);
+
   }
 
   llvm_unreachable("unhandled type class");
@@ -3451,6 +3481,8 @@ static LinkageInfo computeLinkageInfo(const Type *T) {
     return computeLinkageInfo(cast<AtomicType>(T)->getValueType());
   case Type::Pipe:
     return computeLinkageInfo(cast<PipeType>(T)->getElementType());
+  case Type::Designating:
+    return computeLinkageInfo(cast<DesignatingType>(T)->getMasterType());
   }
 
   llvm_unreachable("unhandled type class");
@@ -3601,6 +3633,7 @@ bool Type::canHaveNullability() const {
   case Type::ObjCInterface:
   case Type::Atomic:
   case Type::Pipe:
+  case Type::Designating:
     return false;
   }
   llvm_unreachable("bad type kind!");

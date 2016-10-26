@@ -966,6 +966,8 @@ ASTDeclContextNameLookupTrait::ReadKey(const unsigned char *d, unsigned) {
   case DeclarationName::CXXDestructorName:
   case DeclarationName::CXXConversionFunctionName:
   case DeclarationName::CXXUsingDirective:
+  case DeclarationName::CXXTemplatedName:
+  case DeclarationName::SubstTemplatedName:
     Data = 0;
     break;
   }
@@ -5928,6 +5930,9 @@ void TypeLocReader::VisitDependentTemplateSpecializationTypeLoc(
 void TypeLocReader::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
   TL.setEllipsisLoc(ReadSourceLocation(Record, Idx));
 }
+void TypeLocReader::VisitDesignatingTypeLoc(DesignatingTypeLoc TL) {
+  TL.setDotLoc(ReadSourceLocation(Record, Idx));
+}
 void TypeLocReader::VisitObjCInterfaceTypeLoc(ObjCInterfaceTypeLoc TL) {
   TL.setNameLoc(ReadSourceLocation(Record, Idx));
 }
@@ -8035,7 +8040,7 @@ ASTReader::ReadNestedNameSpecifier(ModuleFile &F,
     NestedNameSpecifier::SpecifierKind Kind
       = (NestedNameSpecifier::SpecifierKind)Record[Idx++];
     switch (Kind) {
-    case NestedNameSpecifier::Identifier: {
+    case NestedNameSpecifier::DeclName: {
       IdentifierInfo *II = GetIdentifierInfo(F, Record, Idx);
       NNS = NestedNameSpecifier::Create(Context, Prev, II);
       break;
@@ -8090,7 +8095,7 @@ ASTReader::ReadNestedNameSpecifierLoc(ModuleFile &F, const RecordData &Record,
     NestedNameSpecifier::SpecifierKind Kind
       = (NestedNameSpecifier::SpecifierKind)Record[Idx++];
     switch (Kind) {
-    case NestedNameSpecifier::Identifier: {
+    case NestedNameSpecifier::DeclName: {
       IdentifierInfo *II = GetIdentifierInfo(F, Record, Idx);      
       SourceRange Range = ReadSourceRange(F, Record, Idx);
       Builder.Extend(Context, II, Range.getBegin(), Range.getEnd());

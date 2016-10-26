@@ -960,6 +960,14 @@ void DeclPrinter::PrintTemplateParameters(const TemplateParameterList *Params,
                  dyn_cast<TemplateTemplateParmDecl>(Param)) {
       VisitTemplateDecl(TTPD);
       // FIXME: print the default argument, if present.
+    } else {
+      const TemplateDeclNameParmDecl *TDP =
+          cast<TemplateDeclNameParmDecl>(Param);
+      Out << "declname ";
+      if (TDP->isParameterPack())
+        Out << "...";
+      Out << TDP->getName();
+      // FIXME: print the default argument, if present.
     }
   }
 

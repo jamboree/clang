@@ -97,13 +97,13 @@ public:
   /// \param Context The AST context in which this nested-name-specifier
   /// resides.
   ///
-  /// \param Identifier The identifier.
+  /// \param Name The declname.
   ///
-  /// \param IdentifierLoc The location of the identifier.
+  /// \param NameLoc The location of the declname.
   ///
   /// \param ColonColonLoc The location of the trailing '::'.
-  void Extend(ASTContext &Context, IdentifierInfo *Identifier,
-              SourceLocation IdentifierLoc, SourceLocation ColonColonLoc);
+  void Extend(ASTContext &Context, DeclarationName Name,
+              SourceLocation NameLoc, SourceLocation ColonColonLoc);
 
   /// \brief Extend the current nested-name-specifier by another 
   /// nested-name-specifier component of the form 'namespace::'.
@@ -1678,8 +1678,8 @@ private:
   /// \brief Is this Declarator a redeclaration?
   unsigned Redeclaration : 1;
 
-  /// \brief Is this Declarator a designator?
-  bool Designator : 1;
+  /// \brief Is the ellipsis postfix?
+  unsigned EllipsisPostfix : 1;
 
   /// Attrs - Attributes.
   ParsedAttributes Attrs;
@@ -1710,9 +1710,9 @@ private:
   /// this declarator as a parameter pack.
   SourceLocation EllipsisLoc;
 
-  /// \brief If provided, the source location of the period used to describe
+  /// \brief If provided, the source location of the dot used to describe
   /// this declarator as a designator.
-  SourceLocation PeriodLoc;
+  SourceLocation DotLoc;
 
   friend struct DeclaratorChunk;
 
@@ -1721,7 +1721,7 @@ public:
     : DS(ds), Range(ds.getSourceRange()), Context(C),
       InvalidType(DS.getTypeSpecType() == DeclSpec::TST_error),
       GroupingParens(false), FunctionDefinition(FDK_Declaration), 
-      Redeclaration(false), Designator(false),
+      Redeclaration(false), EllipsisPostfix(false),
       Attrs(ds.getAttributePool().getFactory()), AsmLabel(nullptr),
       InlineParamsUsed(false), Extension(false), ObjCIvar(false),
       ObjCWeakProperty(false) {
@@ -1806,7 +1806,7 @@ public:
     ObjCWeakProperty = false;
     CommaLoc = SourceLocation();
     EllipsisLoc = SourceLocation();
-    PeriodLoc = SourceLocation();
+    DotLoc = SourceLocation();
   }
 
   /// mayOmitIdentifier - Return true if the identifier is either optional or
@@ -1908,6 +1908,40 @@ public:
     case AliasTemplateContext:
     case TemplateTypeArgContext:
     case TrailingReturnContext:
+      return true;
+    }
+    llvm_unreachable("unknown context kind!");
+  }
+
+  /// mayHaveDesignatorInType - Return true if the designator is allowed to be
+  /// part of the type (i.e. DesignatingType).
+  bool mayHaveDesignatorInType() const {
+    switch (Context) {
+    case FileContext:
+    case KNRTypeListContext:
+    case MemberContext:
+    case BlockContext:
+    case ForContext:
+    case InitStmtContext:
+    case ConditionContext:
+    case PrototypeContext:
+    case LambdaExprParameterContext:
+    case TemplateParamContext:
+    case CXXCatchContext:
+    case ObjCCatchContext:
+    case TypeNameContext:
+    case ConversionIdContext:
+    case ObjCParameterContext:
+    case ObjCResultContext:
+    case BlockLiteralContext:
+    case CXXNewContext:
+    case LambdaExprContext:
+    case TrailingReturnContext:
+      return false;
+
+    case AliasDeclContext:
+    case AliasTemplateContext:
+    case TemplateTypeArgContext:
       return true;
     }
     llvm_unreachable("unknown context kind!");
@@ -2241,9 +2275,9 @@ public:
   SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
   void setEllipsisLoc(SourceLocation EL) { EllipsisLoc = EL; }
 
-  bool hasPeriod() const { return PeriodLoc.isValid(); }
-  SourceLocation getPeriodLoc() const { return PeriodLoc; }
-  void setPeriodLoc(SourceLocation L) { PeriodLoc = L; }
+  bool hasDot() const { return DotLoc.isValid(); }
+  SourceLocation getDotLoc() const { return DotLoc; }
+  void setDotLoc(SourceLocation L) { DotLoc = L; }
   
   void setFunctionDefinitionKind(FunctionDefinitionKind Val) { 
     FunctionDefinition = Val; 
@@ -2273,8 +2307,8 @@ public:
   void setRedeclaration(bool Val) { Redeclaration = Val; }
   bool isRedeclaration() const { return Redeclaration; }
 
-  void setDesignator(bool Val) { Designator = Val; }
-  bool isDesignator() const { return Designator; }
+  void setEllipsisPostfix(bool Val) { EllipsisPostfix = Val; }
+  bool isEllipsisPostfix() const { return EllipsisPostfix; }
 };
 
 /// \brief This little struct is used to capture information about

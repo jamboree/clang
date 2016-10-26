@@ -1978,6 +1978,39 @@ public:
   }
 };
 
+struct DesignatingTypeLocInfo {
+  SourceLocation DotLoc;
+  SourceLocation NameLoc;
+};
+
+class DesignatingTypeLoc
+    : public ConcreteTypeLoc<UnqualTypeLoc, DesignatingTypeLoc, DesignatingType,
+                             DesignatingTypeLocInfo> {
+public:
+  SourceLocation getDotLoc() const { return this->getLocalData()->DotLoc; }
+  void setDotLoc(SourceLocation Loc) { this->getLocalData()->DotLoc = Loc; }
+
+  SourceLocation getNameLoc() const { return this->getLocalData()->NameLoc; }
+  void setNameLoc(SourceLocation Loc) { this->getLocalData()->NameLoc = Loc; }
+
+  SourceRange getLocalSourceRange() const {
+    return SourceRange(getDotLoc(), getNameLoc());
+  }
+
+  void initializeLocal(ASTContext &Context, SourceLocation Loc) {
+    setDotLoc(Loc);
+    setNameLoc(Loc);
+  }
+
+  TypeLoc getMasterLoc() const { return getInnerTypeLoc(); }
+
+  DeclarationNameInfo getNameInfo() const {
+    return DeclarationNameInfo(getTypePtr()->getDesigName(), getNameLoc());
+  }
+
+  QualType getInnerType() const { return this->getTypePtr()->getMasterType(); }
+};
+
 struct AtomicTypeLocInfo {
   SourceLocation KWLoc, LParenLoc, RParenLoc;
 };
