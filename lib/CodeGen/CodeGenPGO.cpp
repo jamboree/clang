@@ -458,6 +458,8 @@ struct ComputeRegionCounts : public ConstStmtVisitor<ComputeRegionCounts> {
 
   void VisitSwitchStmt(const SwitchStmt *S) {
     RecordStmtCount(S);
+    if (S->getInit())
+      Visit(S->getInit());
     Visit(S->getCond());
     CurrentCount = 0;
     BreakContinueStack.push_back(BreakContinue());
@@ -488,6 +490,8 @@ struct ComputeRegionCounts : public ConstStmtVisitor<ComputeRegionCounts> {
   void VisitIfStmt(const IfStmt *S) {
     RecordStmtCount(S);
     uint64_t ParentCount = CurrentCount;
+    if (S->getInit())
+      Visit(S->getInit());
     Visit(S->getCond());
 
     // Counter tracks the "then" part of an if statement. The count for
@@ -659,12 +663,18 @@ void CodeGenPGO::mapRegionCounters(const Decl *D) {
   FunctionHash = Walker.Hash.finalize();
 }
 
-void CodeGenPGO::emitCounterRegionMapping(const Decl *D) {
+bool CodeGenPGO::skipRegionMappingForDecl(const Decl *D) {
   if (SkipCoverageMapping)
-    return;
-  // Don't map the functions inside the system headers
+    return true;
+
+  // Don't map the functions in system headers.
+  const auto &SM = CGM.getContext().getSourceManager();
   auto Loc = D->getBody()->getLocStart();
-  if (CGM.getContext().getSourceManager().isInSystemHeader(Loc))
+  return SM.isInSystemHeader(Loc);
+}
+
+void CodeGenPGO::emitCounterRegionMapping(const Decl *D) {
+  if (skipRegionMappingForDecl(D))
     return;
 
   std::string CoverageMapping;
@@ -685,11 +695,7 @@ void CodeGenPGO::emitCounterRegionMapping(const Decl *D) {
 void
 CodeGenPGO::emitEmptyCounterMapping(const Decl *D, StringRef Name,
                                     llvm::GlobalValue::LinkageTypes Linkage) {
-  if (SkipCoverageMapping)
-    return;
-  // Don't map the functions inside the system headers
-  auto Loc = D->getBody()->getLocStart();
-  if (CGM.getContext().getSourceManager().isInSystemHeader(Loc))
+  if (skipRegionMappingForDecl(D))
     return;
 
   std::string CoverageMapping;

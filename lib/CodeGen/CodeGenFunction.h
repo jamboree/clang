@@ -21,6 +21,7 @@
 #include "CodeGenModule.h"
 #include "CodeGenPGO.h"
 #include "EHScopeStack.h"
+#include "VarBypassDetector.h"
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExprObjC.h"
@@ -88,6 +89,7 @@ class BlockFieldFlags;
 class RegionCodeGenTy;
 class TargetCodeGenInfo;
 struct OMPTaskDataTy;
+struct CGCoroData;
 
 /// The kind of evaluation to perform on values of a particular
 /// type.  Basically, is the code in CGExprScalar, CGExprComplex, or
@@ -140,6 +142,10 @@ public:
   LoopInfoStack LoopStack;
   CGBuilderTy Builder;
 
+  // Stores variables for which we can't generate correct lifetime markers
+  // because of jumps.
+  VarBypassDetector Bypasses;
+
   /// \brief CGBuilder insert helper. This function is called after an
   /// instruction is created using Builder.
   void InsertHelper(llvm::Instruction *I, const llvm::Twine &Name,
@@ -154,6 +160,16 @@ public:
   const CGFunctionInfo *CurFnInfo;
   QualType FnRetTy;
   llvm::Function *CurFn;
+
+  // Holds coroutine data if the current function is a coroutine. We use a
+  // wrapper to manage its lifetime, so that we don't have to define CGCoroData
+  // in this header.
+  struct CGCoroInfo {
+    std::unique_ptr<CGCoroData> Data;
+    CGCoroInfo();
+    ~CGCoroInfo();
+  };
+  CGCoroInfo CurCoro;
 
   /// CurGD - The GlobalDecl for the current function being compiled.
   GlobalDecl CurGD;
@@ -430,7 +446,7 @@ public:
     LifetimeExtendedCleanupStack.resize(
         LifetimeExtendedCleanupStack.size() + sizeof(Header) + Header.Size);
 
-    static_assert(sizeof(Header) % llvm::AlignOf<T>::Alignment == 0,
+    static_assert(sizeof(Header) % alignof(T) == 0,
                   "Cleanup will be allocated on misaligned address");
     char *Buffer = &LifetimeExtendedCleanupStack[OldSize];
     new (Buffer) LifetimeExtendedCleanupHeader(Header);
@@ -1175,6 +1191,9 @@ private:
   llvm::BasicBlock *TerminateHandler;
   llvm::BasicBlock *TrapBB;
 
+  /// True if we need emit the life-time markers.
+  const bool ShouldEmitLifetimeMarkers;
+
   /// Add a kernel metadata node to the named metadata node 'opencl.kernels'.
   /// In the kernel metadata node, reference the kernel function and metadata 
   /// nodes for its optional attribute qualifiers (OpenCL 1.1 6.7.2):
@@ -1520,6 +1539,10 @@ public:
   /// ShouldInstrumentFunction - Return true if the current function should be
   /// instrumented with __cyg_profile_func_* calls
   bool ShouldInstrumentFunction();
+
+  /// ShouldXRayInstrument - Return true if the current function should be
+  /// instrumented with XRay nop sleds.
+  bool ShouldXRayInstrumentFunction() const;
 
   /// EmitFunctionInstrumentation - Emit LLVM code to call the specified
   /// instrumentation function with the current function and the call site, if
@@ -2018,7 +2041,8 @@ public:
   void EmitCXXDeleteExpr(const CXXDeleteExpr *E);
 
   void EmitDeleteCall(const FunctionDecl *DeleteFD, llvm::Value *Ptr,
-                      QualType DeleteTy);
+                      QualType DeleteTy, llvm::Value *NumElements = nullptr,
+                      CharUnits CookieSize = CharUnits());
 
   RValue EmitBuiltinNewDeleteCall(const FunctionProtoType *Type,
                                   const Expr *Arg, bool IsDelete);
@@ -2103,7 +2127,6 @@ public:
 
   void EmitScalarInit(const Expr *init, const ValueDecl *D, LValue lvalue,
                       bool capturedByInit);
-  void EmitScalarInit(llvm::Value *init, LValue lvalue);
 
   typedef void SpecialInitFn(CodeGenFunction &Init, const VarDecl &D,
                              llvm::Value *Address);
@@ -2286,6 +2309,8 @@ public:
   void EmitObjCAtSynchronizedStmt(const ObjCAtSynchronizedStmt &S);
   void EmitObjCAutoreleasePoolStmt(const ObjCAutoreleasePoolStmt &S);
 
+  RValue EmitCoroutineIntrinsic(const CallExpr *E, unsigned int IID);
+
   void EnterCXXTryStmt(const CXXTryStmt &S, bool IsFnTryBlock = false);
   void ExitCXXTryStmt(const CXXTryStmt &S, bool IsFnTryBlock = false);
 
@@ -2388,6 +2413,9 @@ public:
                                  OMPPrivateScope &PrivateScope);
   void EmitOMPPrivateClause(const OMPExecutableDirective &D,
                             OMPPrivateScope &PrivateScope);
+  void EmitOMPUseDevicePtrClause(
+      const OMPClause &C, OMPPrivateScope &PrivateScope,
+      const llvm::DenseMap<const ValueDecl *, Address> &CaptureDeviceAddrMap);
   /// \brief Emit code for copyin clause in \a D directive. The next code is
   /// generated at the start of outlined functions for directives:
   /// \code
@@ -2502,6 +2530,12 @@ public:
   void EmitOMPDistributeParallelForSimdDirective(
       const OMPDistributeParallelForSimdDirective &S);
   void EmitOMPDistributeSimdDirective(const OMPDistributeSimdDirective &S);
+  void EmitOMPTargetParallelForSimdDirective(
+      const OMPTargetParallelForSimdDirective &S);
+  void EmitOMPTargetSimdDirective(const OMPTargetSimdDirective &S);
+  void EmitOMPTeamsDistributeDirective(const OMPTeamsDistributeDirective &S);
+  void
+  EmitOMPTeamsDistributeSimdDirective(const OMPTeamsDistributeSimdDirective &S);
 
   /// Emit outlined function for the target directive.
   static std::pair<llvm::Function * /*OutlinedFn*/,
@@ -2799,7 +2833,7 @@ public:
   LValue EmitStmtExprLValue(const StmtExpr *E);
   LValue EmitPointerToDataMemberBinaryExpr(const BinaryOperator *E);
   LValue EmitObjCSelectorLValue(const ObjCSelectorExpr *E);
-  void   EmitDeclRefExprDbgValue(const DeclRefExpr *E, llvm::Constant *Init);
+  void   EmitDeclRefExprDbgValue(const DeclRefExpr *E, const APValue &Init);
 
   //===--------------------------------------------------------------------===//
   //                         Scalar Expression Emission
@@ -2856,7 +2890,8 @@ public:
   EmitCXXMemberOrOperatorCall(const CXXMethodDecl *MD, llvm::Value *Callee,
                               ReturnValueSlot ReturnValue, llvm::Value *This,
                               llvm::Value *ImplicitParam,
-                              QualType ImplicitParamTy, const CallExpr *E);
+                              QualType ImplicitParamTy, const CallExpr *E,
+                              CallArgList *RtlArgs);
   RValue EmitCXXDestructorCall(const CXXDestructorDecl *DD, llvm::Value *Callee,
                                llvm::Value *This, llvm::Value *ImplicitParam,
                                QualType ImplicitParamTy, const CallExpr *E,
@@ -2934,6 +2969,12 @@ public:
   llvm::Value *EmitNVPTXBuiltinExpr(unsigned BuiltinID, const CallExpr *E);
   llvm::Value *EmitWebAssemblyBuiltinExpr(unsigned BuiltinID,
                                           const CallExpr *E);
+
+private:
+  enum class MSVCIntrin;
+
+public:
+  llvm::Value *EmitMSVCBuiltinExpr(MSVCIntrin BuiltinID, const CallExpr *E);
 
   llvm::Value *EmitObjCProtocolExpr(const ObjCProtocolExpr *E);
   llvm::Value *EmitObjCStringLiteral(const ObjCStringLiteral *E);
@@ -3157,6 +3198,10 @@ public:
   /// If the statement (recursively) contains a switch or loop with a break
   /// inside of it, this is fine.
   static bool containsBreak(const Stmt *S);
+
+  /// Determine if the given statement might introduce a declaration into the
+  /// current scope, by being a (possibly-labelled) DeclStmt.
+  static bool mightAddDeclToScope(const Stmt *S);
   
   /// ConstantFoldsToSimpleInteger - If the specified expression does not fold
   /// to a constant, or if it does but contains a label, return false.  If it
@@ -3302,12 +3347,22 @@ public:
   static bool isObjCMethodWithTypeParams(const T *) { return false; }
 #endif
 
+  enum class EvaluationOrder {
+    ///! No language constraints on evaluation order.
+    Default,
+    ///! Language semantics require left-to-right evaluation.
+    ForceLeftToRight,
+    ///! Language semantics require right-to-left evaluation.
+    ForceRightToLeft
+  };
+
   /// EmitCallArgs - Emit call arguments for a function.
   template <typename T>
   void EmitCallArgs(CallArgList &Args, const T *CallArgTypeInfo,
                     llvm::iterator_range<CallExpr::const_arg_iterator> ArgRange,
                     const FunctionDecl *CalleeDecl = nullptr,
-                    unsigned ParamsToSkip = 0) {
+                    unsigned ParamsToSkip = 0,
+                    EvaluationOrder Order = EvaluationOrder::Default) {
     SmallVector<QualType, 16> ArgTypes;
     CallExpr::const_arg_iterator Arg = ArgRange.begin();
 
@@ -3347,13 +3402,14 @@ public:
     for (auto *A : llvm::make_range(Arg, ArgRange.end()))
       ArgTypes.push_back(getVarArgType(A));
 
-    EmitCallArgs(Args, ArgTypes, ArgRange, CalleeDecl, ParamsToSkip);
+    EmitCallArgs(Args, ArgTypes, ArgRange, CalleeDecl, ParamsToSkip, Order);
   }
 
   void EmitCallArgs(CallArgList &Args, ArrayRef<QualType> ArgTypes,
                     llvm::iterator_range<CallExpr::const_arg_iterator> ArgRange,
                     const FunctionDecl *CalleeDecl = nullptr,
-                    unsigned ParamsToSkip = 0);
+                    unsigned ParamsToSkip = 0,
+                    EvaluationOrder Order = EvaluationOrder::Default);
 
   /// EmitPointerWithAlignment - Given an expression with a pointer
   /// type, emit the value and compute our best estimate of the

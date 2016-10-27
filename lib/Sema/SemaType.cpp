@@ -1000,55 +1000,27 @@ static QualType applyObjCTypeArgs(Sema &S, SourceLocation loc, QualType type,
   return S.Context.getObjCObjectType(type, finalTypeArgs, { }, false);
 }
 
-/// Apply Objective-C protocol qualifiers to the given type.
-static QualType applyObjCProtocolQualifiers(
-                  Sema &S, SourceLocation loc, SourceRange range, QualType type,
-                  ArrayRef<ObjCProtocolDecl *> protocols,
-                  const SourceLocation *protocolLocs,
-                  bool failOnError = false) {
-  ASTContext &ctx = S.Context;
-  if (const ObjCObjectType *objT = dyn_cast<ObjCObjectType>(type.getTypePtr())){
-    // FIXME: Check for protocols to which the class type is already
-    // known to conform.
-
-    return ctx.getObjCObjectType(objT->getBaseType(),
-                                 objT->getTypeArgsAsWritten(),
-                                 protocols,
-                                 objT->isKindOfTypeAsWritten());
+QualType Sema::BuildObjCTypeParamType(const ObjCTypeParamDecl *Decl,
+                                      SourceLocation ProtocolLAngleLoc,
+                                      ArrayRef<ObjCProtocolDecl *> Protocols,
+                                      ArrayRef<SourceLocation> ProtocolLocs,
+                                      SourceLocation ProtocolRAngleLoc,
+                                      bool FailOnError) {
+  QualType Result = QualType(Decl->getTypeForDecl(), 0);
+  if (!Protocols.empty()) {
+    bool HasError;
+    Result = Context.applyObjCProtocolQualifiers(Result, Protocols,
+                                                 HasError);
+    if (HasError) {
+      Diag(SourceLocation(), diag::err_invalid_protocol_qualifiers)
+        << SourceRange(ProtocolLAngleLoc, ProtocolRAngleLoc);
+      if (FailOnError) Result = QualType();
+    }
+    if (FailOnError && Result.isNull())
+      return QualType();
   }
 
-  if (type->isObjCObjectType()) {
-    // Silently overwrite any existing protocol qualifiers.
-    // TODO: determine whether that's the right thing to do.
-
-    // FIXME: Check for protocols to which the class type is already
-    // known to conform.
-    return ctx.getObjCObjectType(type, { }, protocols, false);
-  }
-
-  // id<protocol-list>
-  if (type->isObjCIdType()) {
-    const ObjCObjectPointerType *objPtr = type->castAs<ObjCObjectPointerType>();
-    type = ctx.getObjCObjectType(ctx.ObjCBuiltinIdTy, { }, protocols,
-                                 objPtr->isKindOfType());
-    return ctx.getObjCObjectPointerType(type);
-  }
-
-  // Class<protocol-list>
-  if (type->isObjCClassType()) {
-    const ObjCObjectPointerType *objPtr = type->castAs<ObjCObjectPointerType>();
-    type = ctx.getObjCObjectType(ctx.ObjCBuiltinClassTy, { }, protocols,
-                                 objPtr->isKindOfType());
-    return ctx.getObjCObjectPointerType(type);
-  }
-
-  S.Diag(loc, diag::err_invalid_protocol_qualifiers)
-    << range;
-
-  if (failOnError)
-    return QualType();
-
-  return type;
+  return Result;
 }
 
 QualType Sema::BuildObjCObjectType(QualType BaseType,
@@ -1072,12 +1044,14 @@ QualType Sema::BuildObjCObjectType(QualType BaseType,
   }
 
   if (!Protocols.empty()) {
-    Result = applyObjCProtocolQualifiers(*this, Loc,
-                                         SourceRange(ProtocolLAngleLoc,
-                                                     ProtocolRAngleLoc),
-                                         Result, Protocols,
-                                         ProtocolLocs.data(),
-                                         FailOnError);
+    bool HasError;
+    Result = Context.applyObjCProtocolQualifiers(Result, Protocols,
+                                                 HasError);
+    if (HasError) {
+      Diag(Loc, diag::err_invalid_protocol_qualifiers)
+        << SourceRange(ProtocolLAngleLoc, ProtocolRAngleLoc);
+      if (FailOnError) Result = QualType();
+    }
     if (FailOnError && Result.isNull())
       return QualType();
   }
@@ -1181,6 +1155,20 @@ TypeResult Sema::actOnObjCTypeArgsAndProtocolQualifiers(
     // The '*' is implicit.
     ObjCObjectPointerTL.setStarLoc(SourceLocation());
     ResultTL = ObjCObjectPointerTL.getPointeeLoc();
+  }
+
+  if (auto OTPTL = ResultTL.getAs<ObjCTypeParamTypeLoc>()) {
+    // Protocol qualifier information.
+    if (OTPTL.getNumProtocols() > 0) {
+      assert(OTPTL.getNumProtocols() == Protocols.size());
+      OTPTL.setProtocolLAngleLoc(ProtocolLAngleLoc);
+      OTPTL.setProtocolRAngleLoc(ProtocolRAngleLoc);
+      for (unsigned i = 0, n = Protocols.size(); i != n; ++i)
+        OTPTL.setProtocolLoc(i, ProtocolLocs[i]);
+    }
+
+    // We're done. Return the completed type to the parser.
+    return CreateParsedType(Result, ResultTInfo);
   }
 
   auto ObjCObjectTL = ResultTL.castAs<ObjCObjectTypeLoc>();
@@ -1594,7 +1582,14 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
       // template type parameter.
       Result = QualType(CorrespondingTemplateParam->getTypeForDecl(), 0);
     } else {
-      Result = Context.getAutoType(QualType(), AutoTypeKeyword::Auto, false);
+      // If auto appears in the declaration of a template parameter, treat
+      // the parameter as type-dependent.
+      bool IsDependent =
+        S.getLangOpts().CPlusPlus1z &&
+        declarator.getContext() == Declarator::TemplateParamContext;
+      Result = Context.getAutoType(QualType(),
+                                   AutoTypeKeyword::Auto,
+                                   IsDependent);
     }
     break;
 
@@ -1755,6 +1750,12 @@ QualType Sema::BuildQualifiedType(QualType T, SourceLocation Loc,
   if (T.isNull())
     return QualType();
 
+  // Ignore any attempt to form a cv-qualified reference.
+  if (T->isReferenceType()) {
+    Qs.removeConst();
+    Qs.removeVolatile();
+  }
+
   // Enforce C99 6.7.3p2: "Types other than pointer types derived from
   // object or incomplete types shall not be restrict-qualified."
   if (Qs.hasRestrict()) {
@@ -1795,6 +1796,11 @@ QualType Sema::BuildQualifiedType(QualType T, SourceLocation Loc,
                                   unsigned CVRAU, const DeclSpec *DS) {
   if (T.isNull())
     return QualType();
+
+  // Ignore any attempt to form a cv-qualified reference.
+  if (T->isReferenceType())
+    CVRAU &=
+        ~(DeclSpec::TQ_const | DeclSpec::TQ_volatile | DeclSpec::TQ_atomic);
 
   // Convert from DeclSpec::TQ to Qualifiers::TQ by just dropping TQ_atomic and
   // TQ_unaligned;
@@ -2272,6 +2278,10 @@ QualType Sema::BuildArrayType(QualType T, ArrayType::ArraySizeModifier ASM,
     Diag(Loc, diag::err_opencl_vla);
     return QualType();
   }
+  // CUDA device code doesn't support VLAs.
+  if (getLangOpts().CUDA && T->isVariableArrayType())
+    CUDADiagIfDeviceCode(Loc, diag::err_cuda_vla) << CurrentCUDATarget();
+
   // If this is not C99, extwarn about VLA's and C99 array size modifiers.
   if (!getLangOpts().C99) {
     if (T->isVariableArrayType()) {
@@ -2425,28 +2435,16 @@ static void checkExtParameterInfos(Sema &S, ArrayRef<QualType> paramTypes,
       }
       continue;
 
-    // swift_context parameters must be the last parameter except for
-    // a possible swift_error parameter.
     case ParameterABI::SwiftContext:
       checkForSwiftCC(paramIndex);
-      if (!(paramIndex == numParams - 1 ||
-            (paramIndex == numParams - 2 &&
-             EPI.ExtParameterInfos[numParams - 1].getABI()
-               == ParameterABI::SwiftErrorResult))) {
-        S.Diag(getParamLoc(paramIndex),
-               diag::err_swift_context_not_before_swift_error_result);
-      }
       continue;
 
-    // swift_error parameters must be the last parameter.
+    // swift_error parameters must be preceded by a swift_context parameter.
     case ParameterABI::SwiftErrorResult:
       checkForSwiftCC(paramIndex);
-      if (paramIndex != numParams - 1) {
-        S.Diag(getParamLoc(paramIndex),
-               diag::err_swift_error_result_not_last);
-      } else if (paramIndex == 0 ||
-                 EPI.ExtParameterInfos[paramIndex - 1].getABI()
-                   != ParameterABI::SwiftContext) {
+      if (paramIndex == 0 ||
+          EPI.ExtParameterInfos[paramIndex - 1].getABI() !=
+              ParameterABI::SwiftContext) {
         S.Diag(getParamLoc(paramIndex),
                diag::err_swift_error_result_not_after_swift_context);
       }
@@ -2904,7 +2902,8 @@ static QualType GetDeclSpecTypeForDeclarator(TypeProcessingState &state,
       Error = 7; // Exception declaration
       break;
     case Declarator::TemplateParamContext:
-      Error = 8; // Template parameter
+      if (!SemaRef.getLangOpts().CPlusPlus1z)
+        Error = 8; // Template parameter
       break;
     case Declarator::BlockLiteralContext:
       Error = 9; // Block literal
@@ -3875,8 +3874,13 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
                               DeclType.Loc, DeclType.getAttrListRef());
 
       T = S.BuildBlockPointerType(T, D.getIdentifierLoc(), Name);
-      if (DeclType.Cls.TypeQuals)
+      if (DeclType.Cls.TypeQuals || LangOpts.OpenCL) {
+        // OpenCL v2.0, s6.12.5 - Block variable declarations are implicitly
+        // qualified with const.
+        if (LangOpts.OpenCL)
+          DeclType.Cls.TypeQuals |= DeclSpec::TQ_const;
         T = S.BuildQualifiedType(T, DeclType.Loc, DeclType.Cls.TypeQuals);
+      }
       break;
     case DeclaratorChunk::Pointer:
       // Verify that we're not building a pointer to pointer to function with
@@ -3897,6 +3901,18 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
           T = S.BuildQualifiedType(T, DeclType.Loc, DeclType.Ptr.TypeQuals);
         break;
       }
+
+      // OpenCL v2.0 s6.9b - Pointer to image/sampler cannot be used.
+      // OpenCL v2.0 s6.13.16.1 - Pointer to pipe cannot be used.
+      // OpenCL v2.0 s6.12.5 - Pointers to Blocks are not allowed.
+      if (LangOpts.OpenCL) {
+        if (T->isImageType() || T->isSamplerT() || T->isPipeType() ||
+            T->isBlockPointerType()) {
+          S.Diag(D.getIdentifierLoc(), diag::err_opencl_pointer_to_type) << T;
+          D.setInvalidType(true);
+        }
+      }
+
       T = S.BuildPointerType(T, DeclType.Loc, Name);
       if (DeclType.Ptr.TypeQuals)
         T = S.BuildQualifiedType(T, DeclType.Loc, DeclType.Ptr.TypeQuals);
@@ -4085,7 +4101,8 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
 
         // OpenCL v2.0 s6.12.5 - A block cannot be the return value of a
         // function.
-      if (LangOpts.OpenCL && T->isBlockPointerType()) {
+      if (LangOpts.OpenCL && (T->isBlockPointerType() || T->isImageType() ||
+                              T->isSamplerT() || T->isPipeType())) {
         S.Diag(D.getIdentifierLoc(), diag::err_opencl_invalid_return)
             << T << 1 /*hint off*/;
         D.setInvalidType(true);
@@ -4181,7 +4198,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
 
       // Exception specs are not allowed in typedefs. Complain, but add it
       // anyway.
-      if (IsTypedefName && FTI.getExceptionSpecType())
+      if (IsTypedefName && FTI.getExceptionSpecType() && !LangOpts.CPlusPlus1z)
         S.Diag(FTI.getExceptionSpecLocBeg(),
                diag::err_exception_spec_in_typedef)
             << (D.getContext() == Declarator::AliasDeclContext ||
@@ -4982,11 +4999,9 @@ namespace {
         TL.getWrittenBuiltinSpecs() = DS.getWrittenBuiltinSpecs();
         // Try to have a meaningful source location.
         if (TL.getWrittenSignSpec() != TSS_unspecified)
-          // Sign spec loc overrides the others (e.g., 'unsigned long').
-          TL.setBuiltinLoc(DS.getTypeSpecSignLoc());
-        else if (TL.getWrittenWidthSpec() != TSW_unspecified)
-          // Width spec loc overrides type spec loc (e.g., 'short int').
-          TL.setBuiltinLoc(DS.getTypeSpecWidthLoc());
+          TL.expandBuiltinRange(DS.getTypeSpecSignLoc());
+        if (TL.getWrittenWidthSpec() != TSW_unspecified)
+          TL.expandBuiltinRange(DS.getTypeSpecWidthRange());
       }
     }
     void VisitElaboratedTypeLoc(ElaboratedTypeLoc TL) {
@@ -5620,7 +5635,7 @@ static bool handleObjCOwnershipTypeAttr(TypeProcessingState &state,
         if (Class->isArcWeakrefUnavailable()) {
           S.Diag(AttrLoc, diag::err_arc_unsupported_weak_class);
           S.Diag(ObjT->getInterfaceDecl()->getLocation(),
-                  diag::note_class_declared);
+                 diag::note_class_declared);
         }
       }
     }
@@ -5973,7 +5988,6 @@ bool Sema::checkNullabilityTypeSpecifier(QualType &type,
   // For the context-sensitive keywords/Objective-C property
   // attributes, require that the type be a single-level pointer.
   if (isContextSensitive) {
-    // Make sure that the pointee isn't itself a pointer type.
     QualType pointeeType = desugared->getPointeeType();
     if (pointeeType->isAnyPointerType() ||
         pointeeType->isObjCObjectPointerType() ||
@@ -5997,6 +6011,13 @@ bool Sema::checkNullabilityTypeSpecifier(QualType &type,
 }
 
 bool Sema::checkObjCKindOfType(QualType &type, SourceLocation loc) {
+  if (isa<ObjCTypeParamType>(type)) {
+    // Build the attributed type to record where __kindof occurred.
+    type = Context.getAttributedType(AttributedType::attr_objc_kindof,
+                                     type, type);
+    return false;
+  }
+
   // Find out if it's an Objective-C object or object pointer type;
   const ObjCObjectPointerType *ptrType = type->getAs<ObjCObjectPointerType>();
   const ObjCObjectType *objType = ptrType ? ptrType->getObjectType() 
@@ -6962,6 +6983,14 @@ bool Sema::hasVisibleDefinition(NamedDecl *D, NamedDecl **Suggested,
       return false;
     }
     D = ED->getDefinition();
+  } else if (auto *FD = dyn_cast<FunctionDecl>(D)) {
+    if (auto *Pattern = FD->getTemplateInstantiationPattern())
+      FD = Pattern;
+    D = FD->getDefinition();
+  } else if (auto *VD = dyn_cast<VarDecl>(D)) {
+    if (auto *Pattern = VD->getTemplateInstantiationPattern())
+      VD = Pattern;
+    D = VD->getDefinition();
   }
   assert(D && "missing definition for pattern of instantiated definition");
 
@@ -6969,7 +6998,7 @@ bool Sema::hasVisibleDefinition(NamedDecl *D, NamedDecl **Suggested,
   if (isVisible(D))
     return true;
 
-  // The external source may have additional definitions of this type that are
+  // The external source may have additional definitions of this entity that are
   // visible, so complete the redeclaration chain now and ask again.
   if (auto *Source = Context.getExternalSource()) {
     Source->CompleteRedeclChain(D);

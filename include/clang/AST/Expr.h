@@ -2416,8 +2416,8 @@ public:
 
   /// \brief Retrieve the member declaration to which this expression refers.
   ///
-  /// The returned declaration will either be a FieldDecl or (in C++)
-  /// a CXXMethodDecl.
+  /// The returned declaration will be a FieldDecl or (in C++) a VarDecl (for
+  /// static data members), a CXXMethodDecl, or an EnumConstantDecl.
   ValueDecl *getMemberDecl() const { return MemberDecl; }
   void setMemberDecl(ValueDecl *D) { MemberDecl = D; }
 
@@ -3872,7 +3872,7 @@ public:
 
   // Explicit InitListExpr's originate from source code (and have valid source
   // locations). Implicit InitListExpr's are created by the semantic analyzer.
-  bool isExplicit() {
+  bool isExplicit() const {
     return LBraceLoc.isValid() && RBraceLoc.isValid();
   }
 
@@ -4476,11 +4476,19 @@ public:
     return cast<Expr>(SubExprs[END_EXPR+i]);
   }
   Expr *getAssocExpr(unsigned i) { return cast<Expr>(SubExprs[END_EXPR+i]); }
-
+  ArrayRef<Expr *> getAssocExprs() const {
+    return NumAssocs
+               ? llvm::makeArrayRef(
+                     &reinterpret_cast<Expr **>(SubExprs)[END_EXPR], NumAssocs)
+               : None;
+  }
   const TypeSourceInfo *getAssocTypeSourceInfo(unsigned i) const {
     return AssocTypes[i];
   }
   TypeSourceInfo *getAssocTypeSourceInfo(unsigned i) { return AssocTypes[i]; }
+  ArrayRef<TypeSourceInfo *> getAssocTypeSourceInfos() const {
+    return NumAssocs ? llvm::makeArrayRef(&AssocTypes[0], NumAssocs) : None;
+  }
 
   QualType getAssocType(unsigned i) const {
     if (const TypeSourceInfo *TS = getAssocTypeSourceInfo(i))

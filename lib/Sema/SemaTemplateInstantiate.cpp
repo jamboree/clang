@@ -15,6 +15,7 @@
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ASTLambda.h"
+#include "clang/AST/ASTMutationListener.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
 #include "clang/Basic/LangOptions.h"
@@ -225,6 +226,10 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
     Inst.NumTemplateArgs = TemplateArgs.size();
     Inst.DeductionInfo = DeductionInfo;
     Inst.InstantiationRange = InstantiationRange;
+    AlreadyInstantiating =
+        !SemaRef.InstantiatingSpecializations
+             .insert(std::make_pair(Inst.Entity->getCanonicalDecl(), Inst.Kind))
+             .second;
     SemaRef.InNonInstantiationSFINAEContext = false;
     SemaRef.ActiveTemplateInstantiations.push_back(Inst);
     if (!Inst.isInstantiationRecord())
@@ -247,13 +252,14 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
           PointOfInstantiation, InstantiationRange, Entity) {}
 
 Sema::InstantiatingTemplate::InstantiatingTemplate(
-    Sema &SemaRef, SourceLocation PointOfInstantiation, TemplateDecl *Template,
-    ArrayRef<TemplateArgument> TemplateArgs, SourceRange InstantiationRange)
+    Sema &SemaRef, SourceLocation PointOfInstantiation, TemplateParameter Param,
+    TemplateDecl *Template, ArrayRef<TemplateArgument> TemplateArgs,
+    SourceRange InstantiationRange)
     : InstantiatingTemplate(
           SemaRef,
           ActiveTemplateInstantiation::DefaultTemplateArgumentInstantiation,
-          PointOfInstantiation, InstantiationRange, Template, nullptr,
-          TemplateArgs) {}
+          PointOfInstantiation, InstantiationRange, getAsNamedDecl(Param),
+          Template, TemplateArgs) {}
 
 Sema::InstantiatingTemplate::InstantiatingTemplate(
     Sema &SemaRef, SourceLocation PointOfInstantiation,
@@ -263,7 +269,11 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
     sema::TemplateDeductionInfo &DeductionInfo, SourceRange InstantiationRange)
     : InstantiatingTemplate(SemaRef, Kind, PointOfInstantiation,
                             InstantiationRange, FunctionTemplate, nullptr,
-                            TemplateArgs, &DeductionInfo) {}
+                            TemplateArgs, &DeductionInfo) {
+  assert(
+    Kind == ActiveTemplateInstantiation::ExplicitTemplateArgumentSubstitution ||
+    Kind == ActiveTemplateInstantiation::DeducedTemplateArgumentSubstitution);
+}
 
 Sema::InstantiatingTemplate::InstantiatingTemplate(
     Sema &SemaRef, SourceLocation PointOfInstantiation,
@@ -337,7 +347,8 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
 
 void Sema::InstantiatingTemplate::Clear() {
   if (!Invalid) {
-    if (!SemaRef.ActiveTemplateInstantiations.back().isInstantiationRecord()) {
+    auto &Active = SemaRef.ActiveTemplateInstantiations.back();
+    if (!Active.isInstantiationRecord()) {
       assert(SemaRef.NonInstantiationEntries > 0);
       --SemaRef.NonInstantiationEntries;
     }
@@ -354,6 +365,10 @@ void Sema::InstantiatingTemplate::Clear() {
         SemaRef.LookupModulesCache.erase(M);
       SemaRef.ActiveTemplateInstantiationLookupModules.pop_back();
     }
+
+    if (!AlreadyInstantiating)
+      SemaRef.InstantiatingSpecializations.erase(
+          std::make_pair(Active.Entity, Active.Kind));
 
     SemaRef.ActiveTemplateInstantiations.pop_back();
     Invalid = true;
@@ -453,7 +468,7 @@ void Sema::PrintInstantiationStack() {
     }
 
     case ActiveTemplateInstantiation::DefaultTemplateArgumentInstantiation: {
-      TemplateDecl *Template = cast<TemplateDecl>(Active->Entity);
+      TemplateDecl *Template = cast<TemplateDecl>(Active->Template);
       SmallVector<char, 128> TemplateArgsStr;
       llvm::raw_svector_ostream OS(TemplateArgsStr);
       Template->printName(OS);
@@ -1269,8 +1284,8 @@ ExprResult TemplateInstantiator::transformNonTypeTemplateParmRef(
                         cast<PackExpansionType>(parm->getType())->getPattern(),
                                      TemplateArgs, loc, parm->getDeclName());
     } else {
-      type = SemaRef.SubstType(parm->getType(), TemplateArgs, 
-                               loc, parm->getDeclName());
+      type = SemaRef.SubstType(VD ? arg.getParamTypeForDecl() : arg.getNullPtrType(),
+                               TemplateArgs, loc, parm->getDeclName());
     }
     assert(!type.isNull() && "type substitution failed for param type");
     assert(!type->isDependentType() && "param type still dependent");
@@ -1982,62 +1997,6 @@ namespace clang {
   }
 }
 
-/// Determine whether we would be unable to instantiate this template (because
-/// it either has no definition, or is in the process of being instantiated).
-static bool DiagnoseUninstantiableTemplate(Sema &S,
-                                           SourceLocation PointOfInstantiation,
-                                           TagDecl *Instantiation,
-                                           bool InstantiatedFromMember,
-                                           TagDecl *Pattern,
-                                           TagDecl *PatternDef,
-                                           TemplateSpecializationKind TSK,
-                                           bool Complain = true) {
-  if (PatternDef && !PatternDef->isBeingDefined()) {
-    NamedDecl *SuggestedDef = nullptr;
-    if (!S.hasVisibleDefinition(PatternDef, &SuggestedDef,
-                                /*OnlyNeedComplete*/false)) {
-      // If we're allowed to diagnose this and recover, do so.
-      bool Recover = Complain && !S.isSFINAEContext();
-      if (Complain)
-        S.diagnoseMissingImport(PointOfInstantiation, SuggestedDef,
-                                Sema::MissingImportKind::Definition, Recover);
-      return !Recover;
-    }
-    return false;
-  }
-
-  if (!Complain || (PatternDef && PatternDef->isInvalidDecl())) {
-    // Say nothing
-  } else if (PatternDef) {
-    assert(PatternDef->isBeingDefined());
-    S.Diag(PointOfInstantiation,
-           diag::err_template_instantiate_within_definition)
-      << (TSK != TSK_ImplicitInstantiation)
-      << S.Context.getTypeDeclType(Instantiation);
-    // Not much point in noting the template declaration here, since
-    // we're lexically inside it.
-    Instantiation->setInvalidDecl();
-  } else if (InstantiatedFromMember) {
-    S.Diag(PointOfInstantiation,
-           diag::err_implicit_instantiate_member_undefined)
-      << S.Context.getTypeDeclType(Instantiation);
-    S.Diag(Pattern->getLocation(), diag::note_member_declared_at);
-  } else {
-    S.Diag(PointOfInstantiation, diag::err_template_instantiate_undefined)
-      << (TSK != TSK_ImplicitInstantiation)
-      << S.Context.getTypeDeclType(Instantiation);
-    S.Diag(Pattern->getLocation(), diag::note_template_decl_here);
-  }
-
-  // In general, Instantiation isn't marked invalid to get more than one
-  // error for multiple undefined instantiations. But the code that does
-  // explicit declaration -> explicit definition conversion can't handle
-  // invalid declarations, so mark as invalid in that case.
-  if (TSK == TSK_ExplicitInstantiationDeclaration)
-    Instantiation->setInvalidDecl();
-  return true;
-}
-
 /// \brief Instantiate the definition of a class from a given pattern.
 ///
 /// \param PointOfInstantiation The point of instantiation within the
@@ -2068,7 +2027,7 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
                        bool Complain) {
   CXXRecordDecl *PatternDef
     = cast_or_null<CXXRecordDecl>(Pattern->getDefinition());
-  if (DiagnoseUninstantiableTemplate(*this, PointOfInstantiation, Instantiation,
+  if (DiagnoseUninstantiableTemplate(PointOfInstantiation, Instantiation,
                                 Instantiation->getInstantiatedFromMemberClass(),
                                      Pattern, PatternDef, TSK, Complain))
     return true;
@@ -2088,6 +2047,7 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
   InstantiatingTemplate Inst(*this, PointOfInstantiation, Instantiation);
   if (Inst.isInvalid())
     return true;
+  assert(!Inst.isAlreadyInstantiating() && "should have been caught by caller");
   PrettyDeclStackTraceEntry CrashInfo(*this, Instantiation, SourceLocation(),
                                       "instantiating class definition");
 
@@ -2228,7 +2188,7 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
   if (TSK == TSK_ImplicitInstantiation) {
     Instantiation->setLocation(Pattern->getLocation());
     Instantiation->setLocStart(Pattern->getInnerLocStart());
-    Instantiation->setRBraceLoc(Pattern->getRBraceLoc());
+    Instantiation->setBraceRange(Pattern->getBraceRange());
   }
 
   if (!Instantiation->isInvalidDecl()) {
@@ -2297,7 +2257,7 @@ bool Sema::InstantiateEnum(SourceLocation PointOfInstantiation,
                            const MultiLevelTemplateArgumentList &TemplateArgs,
                            TemplateSpecializationKind TSK) {
   EnumDecl *PatternDef = Pattern->getDefinition();
-  if (DiagnoseUninstantiableTemplate(*this, PointOfInstantiation, Instantiation,
+  if (DiagnoseUninstantiableTemplate(PointOfInstantiation, Instantiation,
                                  Instantiation->getInstantiatedFromMemberEnum(),
                                      Pattern, PatternDef, TSK,/*Complain*/true))
     return true;
@@ -2313,6 +2273,8 @@ bool Sema::InstantiateEnum(SourceLocation PointOfInstantiation,
   InstantiatingTemplate Inst(*this, PointOfInstantiation, Instantiation);
   if (Inst.isInvalid())
     return true;
+  if (Inst.isAlreadyInstantiating())
+    return false;
   PrettyDeclStackTraceEntry CrashInfo(*this, Instantiation, SourceLocation(),
                                       "instantiating enum definition");
 
@@ -2387,6 +2349,12 @@ bool Sema::InstantiateInClassInitializer(
   InstantiatingTemplate Inst(*this, PointOfInstantiation, Instantiation);
   if (Inst.isInvalid())
     return true;
+  if (Inst.isAlreadyInstantiating()) {
+    // Error out if we hit an instantiation cycle for this initializer.
+    Diag(PointOfInstantiation, diag::err_in_class_initializer_cycle)
+      << Instantiation;
+    return true;
+  }
   PrettyDeclStackTraceEntry CrashInfo(*this, Instantiation, SourceLocation(),
                                       "instantiating default member init");
 
@@ -2408,6 +2376,9 @@ bool Sema::InstantiateInClassInitializer(
   assert((!Init || !isa<ParenListExpr>(Init)) && "call-style init in class");
   ActOnFinishCXXInClassMemberInitializer(
       Instantiation, Init ? Init->getLocStart() : SourceLocation(), Init);
+
+  if (auto *L = getASTMutationListener())
+    L->DefaultMemberInitializerInstantiated(Instantiation);
 
   // Exit the scope of this instantiation.
   SavedContext.pop();

@@ -251,7 +251,7 @@ public:
   // FIXME: Deprecated, move clients to getName().
   std::string getNameAsString() const { return Name.getAsString(); }
 
-  void printName(raw_ostream &os) const { os << Name; }
+  virtual void printName(raw_ostream &os) const;
 
   /// getDeclName - Get the actual, stored name of the declaration,
   /// which may be a special name.
@@ -789,7 +789,7 @@ public:
 
 protected:
   // A pointer union of Stmt * and EvaluatedStmt *. When an EvaluatedStmt, we
-  // have allocated the auxilliary struct of information there.
+  // have allocated the auxiliary struct of information there.
   //
   // TODO: It is a bit unfortunate to use a PointerUnion inside the VarDecl for
   // this as *many* VarDecls are ParmVarDecls that don't have default
@@ -866,6 +866,11 @@ protected:
     friend class ASTDeclReader;
 
     unsigned : NumVarDeclBits;
+
+    // FIXME: We need something similar to CXXRecordDecl::DefinitionData.
+    /// \brief Whether this variable is a definition which was demoted due to
+    /// module merge.
+    unsigned IsThisDeclarationADemotedDefinition : 1;
 
     /// \brief Whether this variable is the exception variable in a C++ catch
     /// or an Objective-C @catch statement.
@@ -1027,7 +1032,7 @@ public:
   ///   void foo() { int x; static int y; extern int z; }
   ///
   bool isLocalVarDecl() const {
-    if (getKind() != Decl::Var)
+    if (getKind() != Decl::Var && getKind() != Decl::Decomposition)
       return false;
     if (const DeclContext *DC = getLexicalDeclContext())
       return DC->getRedeclContext()->isFunctionOrMethod();
@@ -1042,7 +1047,7 @@ public:
   /// isFunctionOrMethodVarDecl - Similar to isLocalVarDecl, but
   /// excludes variables declared in blocks.
   bool isFunctionOrMethodVarDecl() const {
-    if (getKind() != Decl::Var)
+    if (getKind() != Decl::Var && getKind() != Decl::Decomposition)
       return false;
     const DeclContext *DC = getLexicalDeclContext()->getRedeclContext();
     return DC->isFunctionOrMethod() && DC->getDeclKind() != Decl::Block;
@@ -1200,10 +1205,26 @@ public:
   InitializationStyle getInitStyle() const {
     return static_cast<InitializationStyle>(VarDeclBits.InitStyle);
   }
-
   /// \brief Whether the initializer is a direct-initializer (list or call).
   bool isDirectInit() const {
     return getInitStyle() != CInit;
+  }
+
+  /// \brief If this definition should pretend to be a declaration.
+  bool isThisDeclarationADemotedDefinition() const {
+    return isa<ParmVarDecl>(this) ? false :
+      NonParmVarDeclBits.IsThisDeclarationADemotedDefinition;
+  }
+
+  /// \brief This is a definition which should be demoted to a declaration.
+  ///
+  /// In some cases (mostly module merging) we can end up with two visible
+  /// definitions one of which needs to be demoted to a declaration to keep
+  /// the AST invariants.
+  void demoteThisDefinitionToDeclaration() {
+    assert (isThisDeclarationADefinition() && "Not a definition!");
+    assert (!isa<ParmVarDecl>(this) && "Cannot demote ParmVarDecls!");
+    NonParmVarDeclBits.IsThisDeclarationADemotedDefinition = 1;
   }
 
   /// \brief Determine whether this variable is the exception variable in a
@@ -1303,6 +1324,10 @@ public:
     assert(!isa<ParmVarDecl>(this));
     NonParmVarDeclBits.PreviousDeclInSameBlockScope = Same;
   }
+
+  /// \brief Retrieve the variable declaration from which this variable could
+  /// be instantiated, if it is an instantiation (rather than a non-template).
+  VarDecl *getTemplateInstantiationPattern() const;
 
   /// \brief If this variable is an instantiated static data member of a
   /// class template specialization, returns the templated static data member
@@ -1789,6 +1814,17 @@ public:
   virtual bool isDefined() const {
     const FunctionDecl* Definition;
     return isDefined(Definition);
+  }
+
+  /// \brief Get the definition for this declaration.
+  FunctionDecl *getDefinition() {
+    const FunctionDecl *Definition;
+    if (isDefined(Definition))
+      return const_cast<FunctionDecl *>(Definition);
+    return nullptr;
+  }
+  const FunctionDecl *getDefinition() const {
+    return const_cast<FunctionDecl *>(this)->getDefinition();
   }
 
   /// getBody - Retrieve the body (definition) of the function. The
@@ -2809,7 +2845,7 @@ protected:
   /// the TU.
   unsigned IsCompleteDefinitionRequired : 1;
 private:
-  SourceLocation RBraceLoc;
+  SourceRange BraceRange;
 
   // A struct representing syntactic qualifier info,
   // to be used for the (uncommon) case of out-of-line declarations.
@@ -2871,8 +2907,8 @@ public:
   using redeclarable_base::getMostRecentDecl;
   using redeclarable_base::isFirstDecl;
 
-  SourceLocation getRBraceLoc() const { return RBraceLoc; }
-  void setRBraceLoc(SourceLocation L) { RBraceLoc = L; }
+  SourceRange getBraceRange() const { return BraceRange; }
+  void setBraceRange(SourceRange R) { BraceRange = R; }
 
   /// getInnerLocStart - Return SourceLocation representing start of source
   /// range ignoring outer template declarations.
@@ -3812,6 +3848,55 @@ public:
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) { return K == Import; }
+};
+
+/// \brief Represents a C++ Modules TS module export declaration.
+///
+/// For example:
+/// \code
+///   export void foo();
+/// \endcode
+class ExportDecl final : public Decl, public DeclContext {
+  virtual void anchor();
+private:
+  /// \brief The source location for the right brace (if valid).
+  SourceLocation RBraceLoc;
+
+  ExportDecl(DeclContext *DC, SourceLocation ExportLoc)
+    : Decl(Export, DC, ExportLoc), DeclContext(Export),
+      RBraceLoc(SourceLocation()) { }
+
+  friend class ASTDeclReader;
+
+public:
+  static ExportDecl *Create(ASTContext &C, DeclContext *DC,
+                            SourceLocation ExportLoc);
+  static ExportDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+  
+  SourceLocation getExportLoc() const { return getLocation(); }
+  SourceLocation getRBraceLoc() const { return RBraceLoc; }
+  void setRBraceLoc(SourceLocation L) { RBraceLoc = L; }
+
+  SourceLocation getLocEnd() const LLVM_READONLY {
+    if (RBraceLoc.isValid())
+      return RBraceLoc;
+    // No braces: get the end location of the (only) declaration in context
+    // (if present).
+    return decls_empty() ? getLocation() : decls_begin()->getLocEnd();
+  }
+
+  SourceRange getSourceRange() const override LLVM_READONLY {
+    return SourceRange(getLocation(), getLocEnd());
+  }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == Export; }
+  static DeclContext *castToDeclContext(const ExportDecl *D) {
+    return static_cast<DeclContext *>(const_cast<ExportDecl*>(D));
+  }
+  static ExportDecl *castFromDeclContext(const DeclContext *DC) {
+    return static_cast<ExportDecl *>(const_cast<DeclContext*>(DC));
+  }
 };
 
 /// \brief Represents an empty-declaration.

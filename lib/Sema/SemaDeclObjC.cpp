@@ -11,22 +11,22 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/Sema/SemaInternal.h"
+#include "TypeLocBuilder.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ASTMutationListener.h"
-#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprObjC.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/Lookup.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ScopeInfo.h"
+#include "clang/Sema/SemaInternal.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
-#include "TypeLocBuilder.h"
 
 using namespace clang;
 
@@ -2353,7 +2353,7 @@ static bool CheckMethodOverrideParam(Sema &S,
   }
   if (S.Context.hasSameUnqualifiedType(ImplTy, IfaceTy))
     return true;
-  
+
   if (!Warn)
     return false;
   unsigned DiagID = 
@@ -2741,7 +2741,7 @@ void Sema::MatchAllMethodDeclarations(const SelectorSet &InsMap,
     } else {
       ObjCMethodDecl *ImpMethodDecl =
         IMPDecl->getInstanceMethod(I->getSelector());
-      assert(CDecl->getInstanceMethod(I->getSelector()) &&
+      assert(CDecl->getInstanceMethod(I->getSelector(), true/*AllowHidden*/) &&
              "Expected to find the method through lookup as well");
       // ImpMethodDecl may be null as in a @dynamic property.
       if (ImpMethodDecl) {
@@ -2767,7 +2767,7 @@ void Sema::MatchAllMethodDeclarations(const SelectorSet &InsMap,
     } else {
       ObjCMethodDecl *ImpMethodDecl =
         IMPDecl->getClassMethod(I->getSelector());
-      assert(CDecl->getClassMethod(I->getSelector()) &&
+      assert(CDecl->getClassMethod(I->getSelector(), true/*AllowHidden*/) &&
              "Expected to find the method through lookup as well");
       // ImpMethodDecl may be null as in a @dynamic property.
       if (ImpMethodDecl) {
@@ -3217,7 +3217,7 @@ void Sema::addMethodToGlobalList(ObjCMethodList *List,
   ObjCMethodList *ListWithSameDeclaration = nullptr;
   for (; List; Previous = List, List = List->getNext()) {
     // If we are building a module, keep all of the methods.
-    if (getLangOpts().CompilingModule)
+    if (getLangOpts().isCompilingModule())
       continue;
 
     bool SameDeclaration = MatchTwoMethodDeclarations(Method,

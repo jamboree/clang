@@ -35,7 +35,7 @@ namespace format {
 enum class ParseError { Success = 0, Error, Unsuitable };
 class ParseErrorCategory final : public std::error_category {
 public:
-  const char *name() const LLVM_NOEXCEPT override;
+  const char *name() const noexcept override;
   std::string message(int EV) const override;
 };
 const std::error_category &getParseCategory();
@@ -549,6 +549,9 @@ struct FormatStyle {
   /// \brief If ``true``, a space may be inserted after C style casts.
   bool SpaceAfterCStyleCast;
 
+  /// \brief If \c true, a space will be inserted after the 'template' keyword.
+  bool SpaceAfterTemplateKeyword;
+
   /// \brief If ``false``, spaces will be removed before assignment operators.
   bool SpaceBeforeAssignmentOperators;
 
@@ -698,6 +701,7 @@ struct FormatStyle {
            PenaltyReturnTypeOnItsOwnLine == R.PenaltyReturnTypeOnItsOwnLine &&
            PointerAlignment == R.PointerAlignment &&
            SpaceAfterCStyleCast == R.SpaceAfterCStyleCast &&
+           SpaceAfterTemplateKeyword == R.SpaceAfterTemplateKeyword &&
            SpaceBeforeAssignmentOperators == R.SpaceBeforeAssignmentOperators &&
            SpaceBeforeParens == R.SpaceBeforeParens &&
            SpaceInEmptyParentheses == R.SpaceInEmptyParentheses &&
@@ -770,16 +774,23 @@ tooling::Replacements sortIncludes(const FormatStyle &Style, StringRef Code,
                                    unsigned *Cursor = nullptr);
 
 /// \brief Returns the replacements corresponding to applying and formatting
-/// \p Replaces.
-tooling::Replacements formatReplacements(StringRef Code,
-                                         const tooling::Replacements &Replaces,
-                                         const FormatStyle &Style);
+/// \p Replaces on success; otheriwse, return an llvm::Error carrying
+/// llvm::StringError.
+llvm::Expected<tooling::Replacements>
+formatReplacements(StringRef Code, const tooling::Replacements &Replaces,
+                   const FormatStyle &Style);
 
 /// \brief Returns the replacements corresponding to applying \p Replaces and
-/// cleaning up the code after that.
-/// This also inserts a C++ #include directive into the correct block if the
-/// replacement corresponding to the header insertion has offset UINT_MAX.
-tooling::Replacements
+/// cleaning up the code after that on success; otherwise, return an llvm::Error
+/// carrying llvm::StringError.
+/// This also supports inserting/deleting C++ #include directives:
+/// - If a replacement has offset UINT_MAX, length 0, and a replacement text
+///   that is an #include directive, this will insert the #include into the
+///   correct block in the \p Code.
+/// - If a replacement has offset UINT_MAX, length 1, and a replacement text
+///   that is the name of the header to be removed, the header will be removed
+///   from \p Code if it exists.
+llvm::Expected<tooling::Replacements>
 cleanupAroundReplacements(StringRef Code, const tooling::Replacements &Replaces,
                           const FormatStyle &Style);
 

@@ -347,6 +347,17 @@ __declspec(dllimport) inline int *ReferencingImportedDelete() { delete (int*)nul
 // MO1-DAG: define available_externally dllimport i32* @"\01?ReferencingImportedDelete@@YAPAHXZ"
 USE(ReferencingImportedNew)
 USE(ReferencingImportedDelete)
+struct ClassWithDtor { ~ClassWithDtor() {} };
+struct __declspec(dllimport) ClassWithNonDllImportField { ClassWithDtor t; };
+struct __declspec(dllimport) ClassWithNonDllImportBase : public ClassWithDtor { };
+USECLASS(ClassWithNonDllImportField);
+USECLASS(ClassWithNonDllImportBase);
+// MO1-DAG: declare dllimport x86_thiscallcc void @"\01??1ClassWithNonDllImportBase@@QAE@XZ"(%struct.ClassWithNonDllImportBase*)
+// MO1-DAG: declare dllimport x86_thiscallcc void @"\01??1ClassWithNonDllImportField@@QAE@XZ"(%struct.ClassWithNonDllImportField*)
+struct ClassWithCtor { ClassWithCtor() {} };
+struct __declspec(dllimport) ClassWithNonDllImportFieldWithCtor { ClassWithCtor t; };
+USECLASS(ClassWithNonDllImportFieldWithCtor);
+// MO1-DAG: declare dllimport x86_thiscallcc %struct.ClassWithNonDllImportFieldWithCtor* @"\01??0ClassWithNonDllImportFieldWithCtor@@QAE@XZ"(%struct.ClassWithNonDllImportFieldWithCtor* returned)
 
 // A dllimport function with a TLS variable must not be available_externally.
 __declspec(dllimport) inline void FunctionWithTLSVar() { static __thread int x = 42; }
@@ -658,7 +669,7 @@ namespace Vtordisp {
   // Don't dllimport the vtordisp.
   // MO1-DAG: define linkonce_odr x86_thiscallcc void @"\01?f@?$C@H@Vtordisp@@$4PPPPPPPM@A@AEXXZ"
 
-  class Base {
+  class __declspec(dllimport) Base {
     virtual void f() {}
   };
   template <typename T>
@@ -676,7 +687,7 @@ namespace ClassTemplateStaticDef {
     static int x;
   };
   template <typename T> int S<T>::x;
-  // MSC-DAG: @"\01?x@?$S@H@ClassTemplateStaticDef@@2HA" = available_externally dllimport global i32 0
+  // MSC-DAG: @"\01?x@?$S@H@ClassTemplateStaticDef@@2HA" = external dllimport global i32
   int f() { return S<int>::x; }
 
   // Partial class template specialization static field:
@@ -685,7 +696,7 @@ namespace ClassTemplateStaticDef {
     static int x;
   };
   template <typename A> int T<A*>::x;
-  // GNU-DAG: @_ZN22ClassTemplateStaticDef1TIPvE1xE = available_externally dllimport global i32 0
+  // GNU-DAG: @_ZN22ClassTemplateStaticDef1TIPvE1xE = external dllimport global i32
   int g() { return T<void*>::x; }
 }
 

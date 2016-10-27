@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "RAIIObjectsForParser.h"
-#include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/StmtOpenMP.h"
 #include "clang/Parse/ParseDiagnostic.h"
@@ -107,7 +106,11 @@ static OpenMPDirectiveKind ParseOpenMPDirectiveKind(Parser &P) {
     { OMPD_parallel, OMPD_sections, OMPD_parallel_sections },
     { OMPD_taskloop, OMPD_simd, OMPD_taskloop_simd },
     { OMPD_target, OMPD_parallel, OMPD_target_parallel },
-    { OMPD_target_parallel, OMPD_for, OMPD_target_parallel_for }
+    { OMPD_target, OMPD_simd, OMPD_target_simd },
+    { OMPD_target_parallel, OMPD_for, OMPD_target_parallel_for },
+    { OMPD_target_parallel_for, OMPD_simd, OMPD_target_parallel_for_simd },
+    { OMPD_teams, OMPD_distribute, OMPD_teams_distribute },
+    { OMPD_teams_distribute, OMPD_simd, OMPD_teams_distribute_simd }
   };
   enum { CancellationPoint = 0, DeclareReduction = 1, TargetData = 2 };
   auto Tok = P.getCurToken();
@@ -608,7 +611,6 @@ Parser::DeclGroupPtrTy Parser::ParseOpenMPDeclarativeDirectiveWithExtDecl(
       if (AS == AS_none) {
         assert(TagType == DeclSpec::TST_unspecified);
         MaybeParseCXX11Attributes(Attrs);
-        MaybeParseMicrosoftAttributes(Attrs);
         ParsingDeclSpec PDS(*this);
         Ptr = ParseExternalDeclaration(Attrs, &PDS);
       } else {
@@ -670,7 +672,6 @@ Parser::DeclGroupPtrTy Parser::ParseOpenMPDeclarativeDirectiveWithExtDecl(
            Tok.isNot(tok::eof) && Tok.isNot(tok::r_brace)) {
       ParsedAttributesWithRange attrs(AttrFactory);
       MaybeParseCXX11Attributes(attrs);
-      MaybeParseMicrosoftAttributes(attrs);
       ParseExternalDeclaration(attrs);
       if (Tok.isAnnotation() && Tok.is(tok::annot_pragma_openmp)) {
         TentativeParsingAction TPA(*this);
@@ -739,6 +740,10 @@ Parser::DeclGroupPtrTy Parser::ParseOpenMPDeclarativeDirectiveWithExtDecl(
   case OMPD_distribute_parallel_for:
   case OMPD_distribute_parallel_for_simd:
   case OMPD_distribute_simd:
+  case OMPD_target_parallel_for_simd:
+  case OMPD_target_simd:
+  case OMPD_teams_distribute:
+  case OMPD_teams_distribute_simd:
     Diag(Tok, diag::err_omp_unexpected_directive)
         << getOpenMPDirectiveName(DKind);
     break;
@@ -771,7 +776,9 @@ Parser::DeclGroupPtrTy Parser::ParseOpenMPDeclarativeDirectiveWithExtDecl(
 ///         'distribute' | 'target enter data' | 'target exit data' |
 ///         'target parallel' | 'target parallel for' |
 ///         'target update' | 'distribute parallel for' |
-///         'distribute paralle for simd' | 'distribute simd' {clause}
+///         'distribute paralle for simd' | 'distribute simd' |
+///         'target parallel for simd' | 'target simd' |
+///         'teams distribute' | 'teams distribute simd' {clause}
 ///         annot_pragma_openmp_end
 ///
 StmtResult Parser::ParseOpenMPDeclarativeOrExecutableDirective(
@@ -878,7 +885,11 @@ StmtResult Parser::ParseOpenMPDeclarativeOrExecutableDirective(
   case OMPD_distribute:
   case OMPD_distribute_parallel_for:
   case OMPD_distribute_parallel_for_simd:
-  case OMPD_distribute_simd: {
+  case OMPD_distribute_simd:
+  case OMPD_target_parallel_for_simd:
+  case OMPD_target_simd:
+  case OMPD_teams_distribute:
+  case OMPD_teams_distribute_simd: {
     ConsumeToken();
     // Parse directive name of the 'critical' directive if any.
     if (DKind == OMPD_critical) {
@@ -1057,7 +1068,7 @@ bool Parser::ParseOpenMPSimpleVarList(
 ///       simdlen-clause | threads-clause | simd-clause | num_teams-clause |
 ///       thread_limit-clause | priority-clause | grainsize-clause |
 ///       nogroup-clause | num_tasks-clause | hint-clause | to-clause |
-///       from-clause
+///       from-clause | is_device_ptr-clause
 ///
 OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
                                      OpenMPClauseKind CKind, bool FirstClause) {
@@ -1183,6 +1194,8 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
   case OMPC_map:
   case OMPC_to:
   case OMPC_from:
+  case OMPC_use_device_ptr:
+  case OMPC_is_device_ptr:
     Clause = ParseOpenMPVarListClause(DKind, CKind);
     break;
   case OMPC_unknown:
@@ -1747,6 +1760,10 @@ bool Parser::ParseOpenMPVarList(OpenMPDirectiveKind DKind,
 ///       'to' '(' list ')'
 ///    from-clause:
 ///       'from' '(' list ')'
+///    use_device_ptr-clause:
+///       'use_device_ptr' '(' list ')'
+///    is_device_ptr-clause:
+///       'is_device_ptr' '(' list ')'
 ///
 /// For 'linear' clause linear-list may have the following forms:
 ///  list

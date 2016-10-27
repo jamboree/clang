@@ -14,7 +14,6 @@
 #include "clang/Driver/Job.h"
 #include "clang/Driver/Util.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/Support/Path.h"
 #include <map>
 
 namespace llvm {
@@ -70,8 +69,9 @@ class Compilation {
 
   /// Cache of translated arguments for a particular tool chain and bound
   /// architecture.
-  llvm::DenseMap<std::pair<const ToolChain *, const char *>,
-                 llvm::opt::DerivedArgList *> TCArgs;
+  llvm::DenseMap<std::pair<const ToolChain *, StringRef>,
+                 llvm::opt::DerivedArgList *>
+      TCArgs;
 
   /// Temporary files which should be removed on exit.
   llvm::opt::ArgStringList TempFiles;
@@ -98,12 +98,7 @@ public:
   const Driver &getDriver() const { return TheDriver; }
 
   const ToolChain &getDefaultToolChain() const { return DefaultToolChain; }
-  const ToolChain *getOffloadingHostToolChain() const {
-    auto It = OrderedOffloadingToolchains.find(Action::OFK_Host);
-    if (It != OrderedOffloadingToolchains.end())
-      return It->second;
-    return nullptr;
-  }
+
   unsigned isOffloadingHostKind(Action::OffloadKind Kind) const {
     return ActiveOffloadMask & Kind;
   }
@@ -121,8 +116,14 @@ public:
     return OrderedOffloadingToolchains.equal_range(Kind);
   }
 
-  // Return an offload toolchain of the provided kind. Only one is expected to
-  // exist.
+  /// Return true if an offloading tool chain of a given kind exists.
+  template <Action::OffloadKind Kind> bool hasOffloadToolChain() const {
+    return OrderedOffloadingToolchains.find(Kind) !=
+           OrderedOffloadingToolchains.end();
+  }
+
+  /// Return an offload toolchain of the provided kind. Only one is expected to
+  /// exist.
   template <Action::OffloadKind Kind>
   const ToolChain *getSingleOffloadToolChain() const {
     auto TCs = getOffloadToolChains<Kind>();
@@ -184,7 +185,7 @@ public:
   ///
   /// \param BoundArch - The bound architecture name, or 0.
   const llvm::opt::DerivedArgList &getArgsForToolChain(const ToolChain *TC,
-                                                       const char *BoundArch);
+                                                       StringRef BoundArch);
 
   /// addTempFile - Add a file to remove on exit, and returns its
   /// argument.

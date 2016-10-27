@@ -220,11 +220,11 @@ DeclaratorChunk DeclaratorChunk::getFunction(bool hasProto,
     // parameter list there (in an effort to avoid new/delete traffic).  If it
     // is already used (consider a function returning a function pointer) or too
     // small (function with too many parameters), go to the heap.
-    if (!TheDeclarator.InlineParamsUsed &&
+    if (!TheDeclarator.InlineStorageUsed &&
         NumParams <= llvm::array_lengthof(TheDeclarator.InlineParams)) {
       I.Fun.Params = TheDeclarator.InlineParams;
       I.Fun.DeleteParams = false;
-      TheDeclarator.InlineParamsUsed = true;
+      TheDeclarator.InlineStorageUsed = true;
     } else {
       I.Fun.Params = new DeclaratorChunk::ParamInfo[NumParams];
       I.Fun.DeleteParams = true;
@@ -256,6 +256,38 @@ DeclaratorChunk DeclaratorChunk::getFunction(bool hasProto,
     break;
   }
   return I;
+}
+
+void Declarator::setDecompositionBindings(
+    SourceLocation LSquareLoc,
+    ArrayRef<DecompositionDeclarator::Binding> Bindings,
+    SourceLocation RSquareLoc) {
+  assert(!hasName() && "declarator given multiple names!");
+
+  BindingGroup.LSquareLoc = LSquareLoc;
+  BindingGroup.RSquareLoc = RSquareLoc;
+  BindingGroup.NumBindings = Bindings.size();
+  Range.setEnd(RSquareLoc);
+
+  // We're now past the identifier.
+  SetIdentifier(nullptr, LSquareLoc);
+  Name.EndLocation = RSquareLoc;
+
+  // Allocate storage for bindings and stash them away.
+  if (Bindings.size()) {
+    if (!InlineStorageUsed &&
+        Bindings.size() <= llvm::array_lengthof(InlineBindings)) {
+      BindingGroup.Bindings = InlineBindings;
+      BindingGroup.DeleteBindings = false;
+      InlineStorageUsed = true;
+    } else {
+      BindingGroup.Bindings =
+          new DecompositionDeclarator::Binding[Bindings.size()];
+      BindingGroup.DeleteBindings = true;
+    }
+    std::uninitialized_copy(Bindings.begin(), Bindings.end(),
+                            BindingGroup.Bindings);
+  }
 }
 
 bool Declarator::isDeclarationOfFunction() const {
@@ -578,14 +610,16 @@ bool DeclSpec::SetTypeSpecWidth(TSW W, SourceLocation Loc,
                                 const char *&PrevSpec,
                                 unsigned &DiagID,
                                 const PrintingPolicy &Policy) {
-  // Overwrite TSWLoc only if TypeSpecWidth was unspecified, so that
+  // Overwrite TSWRange.Begin only if TypeSpecWidth was unspecified, so that
   // for 'long long' we will keep the source location of the first 'long'.
   if (TypeSpecWidth == TSW_unspecified)
-    TSWLoc = Loc;
+    TSWRange.setBegin(Loc);
   // Allow turning long -> long long.
   else if (W != TSW_longlong || TypeSpecWidth != TSW_long)
     return BadSpecifier(W, (TSW)TypeSpecWidth, PrevSpec, DiagID);
   TypeSpecWidth = W;
+  // Remember location of the last 'long'
+  TSWRange.setEnd(Loc);
   return false;
 }
 
@@ -965,9 +999,9 @@ void DeclSpec::Finish(Sema &S, const PrintingPolicy &Policy) {
        TypeQualifiers)) {
     const unsigned NumLocs = 9;
     SourceLocation ExtraLocs[NumLocs] = {
-      TSWLoc, TSCLoc, TSSLoc, AltiVecLoc,
-      TQ_constLoc, TQ_restrictLoc, TQ_volatileLoc, TQ_atomicLoc, TQ_unalignedLoc
-    };
+        TSWRange.getBegin(), TSCLoc,       TSSLoc,
+        AltiVecLoc,          TQ_constLoc,  TQ_restrictLoc,
+        TQ_volatileLoc,      TQ_atomicLoc, TQ_unalignedLoc};
     FixItHint Hints[NumLocs];
     SourceLocation FirstLoc;
     for (unsigned I = 0; I != NumLocs; ++I) {
@@ -1009,8 +1043,8 @@ void DeclSpec::Finish(Sema &S, const PrintingPolicy &Policy) {
       // Only 'short' and 'long long' are valid with vector bool. (PIM 2.1)
       if ((TypeSpecWidth != TSW_unspecified) && (TypeSpecWidth != TSW_short) &&
           (TypeSpecWidth != TSW_longlong))
-        S.Diag(TSWLoc, diag::err_invalid_vector_bool_decl_spec)
-          << getSpecifierName((TSW)TypeSpecWidth);
+        S.Diag(TSWRange.getBegin(), diag::err_invalid_vector_bool_decl_spec)
+            << getSpecifierName((TSW)TypeSpecWidth);
 
       // vector bool long long requires VSX support or ZVector.
       if ((TypeSpecWidth == TSW_longlong) &&
@@ -1027,7 +1061,8 @@ void DeclSpec::Finish(Sema &S, const PrintingPolicy &Policy) {
       // vector long double and vector long long double are never allowed.
       // vector double is OK for Power7 and later, and ZVector.
       if (TypeSpecWidth == TSW_long || TypeSpecWidth == TSW_longlong)
-        S.Diag(TSWLoc, diag::err_invalid_vector_long_double_decl_spec);
+        S.Diag(TSWRange.getBegin(),
+               diag::err_invalid_vector_long_double_decl_spec);
       else if (!S.Context.getTargetInfo().hasFeature("vsx") &&
                !S.getLangOpts().ZVector)
         S.Diag(TSTLoc, diag::err_invalid_vector_double_decl_spec);
@@ -1038,10 +1073,11 @@ void DeclSpec::Finish(Sema &S, const PrintingPolicy &Policy) {
     } else if (TypeSpecWidth == TSW_long) {
       // vector long is unsupported for ZVector and deprecated for AltiVec.
       if (S.getLangOpts().ZVector)
-        S.Diag(TSWLoc, diag::err_invalid_vector_long_decl_spec);
+        S.Diag(TSWRange.getBegin(), diag::err_invalid_vector_long_decl_spec);
       else
-        S.Diag(TSWLoc, diag::warn_vector_long_decl_spec_combination)
-          << getSpecifierName((TST)TypeSpecType, Policy);
+        S.Diag(TSWRange.getBegin(),
+               diag::warn_vector_long_decl_spec_combination)
+            << getSpecifierName((TST)TypeSpecType, Policy);
     }
 
     if (TypeAltiVecPixel) {
@@ -1074,8 +1110,8 @@ void DeclSpec::Finish(Sema &S, const PrintingPolicy &Policy) {
     if (TypeSpecType == TST_unspecified)
       TypeSpecType = TST_int; // short -> short int, long long -> long long int.
     else if (TypeSpecType != TST_int) {
-      S.Diag(TSWLoc, diag::err_invalid_width_spec) << (int)TypeSpecWidth
-        <<  getSpecifierName((TST)TypeSpecType, Policy);
+      S.Diag(TSWRange.getBegin(), diag::err_invalid_width_spec)
+          << (int)TypeSpecWidth << getSpecifierName((TST)TypeSpecType, Policy);
       TypeSpecType = TST_int;
       TypeSpecOwned = false;
     }
@@ -1084,8 +1120,8 @@ void DeclSpec::Finish(Sema &S, const PrintingPolicy &Policy) {
     if (TypeSpecType == TST_unspecified)
       TypeSpecType = TST_int;  // long -> long int.
     else if (TypeSpecType != TST_int && TypeSpecType != TST_double) {
-      S.Diag(TSWLoc, diag::err_invalid_width_spec) << (int)TypeSpecWidth
-        << getSpecifierName((TST)TypeSpecType, Policy);
+      S.Diag(TSWRange.getBegin(), diag::err_invalid_width_spec)
+          << (int)TypeSpecWidth << getSpecifierName((TST)TypeSpecType, Policy);
       TypeSpecType = TST_int;
       TypeSpecOwned = false;
     }
@@ -1267,6 +1303,7 @@ bool VirtSpecifiers::SetSpecifier(Specifier VS, SourceLocation Loc,
   switch (VS) {
   default: llvm_unreachable("Unknown specifier!");
   case VS_Override: VS_overrideLoc = Loc; break;
+  case VS_GNU_Final:
   case VS_Sealed:
   case VS_Final:    VS_finalLoc = Loc; break;
   }
@@ -1279,6 +1316,7 @@ const char *VirtSpecifiers::getSpecifierName(Specifier VS) {
   default: llvm_unreachable("Unknown specifier");
   case VS_Override: return "override";
   case VS_Final: return "final";
+  case VS_GNU_Final: return "__final";
   case VS_Sealed: return "sealed";
   }
 }

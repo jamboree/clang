@@ -420,6 +420,10 @@ private:
   /// \brief The complete set of modules that has been imported.
   llvm::SetVector<clang::Module *> ImportedModules;
 
+  /// \brief The set of modules for which the module initializers
+  /// have been emitted.
+  llvm::SmallPtrSet<clang::Module *, 16> EmittedModuleInitializers;
+
   /// \brief A vector of metadata strings.
   SmallVector<llvm::Metadata *, 16> LinkerOptionsMetadata;
 
@@ -610,7 +614,7 @@ public:
     return TheModule.getDataLayout();
   }
   const TargetInfo &getTarget() const { return Target; }
-  const llvm::Triple &getTriple() const;
+  const llvm::Triple &getTriple() const { return Target.getTriple(); }
   bool supportsCOMDAT() const;
   void maybeSetTrivialComdat(const Decl &D, llvm::GlobalObject &GO);
 
@@ -1145,6 +1149,9 @@ public:
 
   llvm::SanitizerStatReport &getSanStats();
 
+  llvm::Value *
+  createOpenCLIntToSamplerConversion(const Expr *E, CodeGenFunction &CGF);
+
 private:
   llvm::Constant *
   GetOrCreateLLVMFunction(StringRef MangledName, llvm::Type *Ty, GlobalDecl D,
@@ -1175,7 +1182,7 @@ private:
   
   // C++ related functions.
 
-  void EmitNamespace(const NamespaceDecl *D);
+  void EmitDeclContext(const DeclContext *DC);
   void EmitLinkageSpec(const LinkageSpecDecl *D);
   void CompleteDIClassType(const CXXMethodDecl* D);
 

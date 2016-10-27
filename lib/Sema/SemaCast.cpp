@@ -256,6 +256,7 @@ Sema::BuildCXXNamedCast(SourceLocation OpLoc, tok::TokenKind Kind,
       Op.CheckConstCast();
       if (Op.SrcExpr.isInvalid())
         return ExprError();
+      DiscardMisalignedMemberAddress(DestType.getTypePtr(), E);
     }
     return Op.complete(CXXConstCastExpr::Create(Context, Op.ResultType,
                                   Op.ValueKind, Op.SrcExpr.get(), DestTInfo,
@@ -279,6 +280,7 @@ Sema::BuildCXXNamedCast(SourceLocation OpLoc, tok::TokenKind Kind,
       Op.CheckReinterpretCast();
       if (Op.SrcExpr.isInvalid())
         return ExprError();
+      DiscardMisalignedMemberAddress(DestType.getTypePtr(), E);
     }
     return Op.complete(CXXReinterpretCastExpr::Create(Context, Op.ResultType,
                                     Op.ValueKind, Op.Kind, Op.SrcExpr.get(),
@@ -291,6 +293,7 @@ Sema::BuildCXXNamedCast(SourceLocation OpLoc, tok::TokenKind Kind,
       Op.CheckStaticCast();
       if (Op.SrcExpr.isInvalid())
         return ExprError();
+      DiscardMisalignedMemberAddress(DestType.getTypePtr(), E);
     }
     
     return Op.complete(CXXStaticCastExpr::Create(Context, Op.ResultType,
@@ -1159,7 +1162,7 @@ TryLValueToRValueCast(Sema &Self, Expr *SrcExpr, QualType DestType,
   unsigned RCF;
   if (Self.CompareReferenceRelationship(SrcExpr->getLocStart(),
                                         ToType, FromType, RCF) 
-        < Sema::Ref_Compatible_With_Added_Qualification) {
+        != Sema::Ref_Compatible) {
     if (CStyle)
       return TC_NotApplicable;
     msg = diag::err_bad_lvalue_to_rvalue_cast;

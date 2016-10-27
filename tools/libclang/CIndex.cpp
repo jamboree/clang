@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "CIndexer.h"
 #include "CIndexDiagnostic.h"
+#include "CIndexer.h"
 #include "CLog.h"
 #include "CXCursor.h"
 #include "CXSourceLocation.h"
@@ -1243,8 +1243,9 @@ bool CursorVisitor::VisitUnresolvedUsingTypenameDecl(
 bool CursorVisitor::VisitStaticAssertDecl(StaticAssertDecl *D) {
   if (Visit(MakeCXCursor(D->getAssertExpr(), StmtParent, TU, RegionOfInterest)))
     return true;
-  if (Visit(MakeCXCursor(D->getMessage(), StmtParent, TU, RegionOfInterest)))
-    return true;
+  if (StringLiteral *Message = D->getMessage())
+    if (Visit(MakeCXCursor(Message, StmtParent, TU, RegionOfInterest)))
+      return true;
   return false;
 }
 
@@ -1532,6 +1533,18 @@ bool CursorVisitor::VisitTemplateTypeParmTypeLoc(TemplateTypeParmTypeLoc TL) {
 
 bool CursorVisitor::VisitObjCInterfaceTypeLoc(ObjCInterfaceTypeLoc TL) {
   return Visit(MakeCursorObjCClassRef(TL.getIFaceDecl(), TL.getNameLoc(), TU));
+}
+
+bool CursorVisitor::VisitObjCTypeParamTypeLoc(ObjCTypeParamTypeLoc TL) {
+  if (Visit(MakeCursorTypeRef(TL.getDecl(), TL.getLocStart(), TU)))
+    return true;
+  for (unsigned I = 0, N = TL.getNumProtocols(); I != N; ++I) {
+    if (Visit(MakeCursorObjCProtocolRef(TL.getProtocol(I), TL.getProtocolLoc(I),
+                                        TU)))
+      return true;
+  }
+
+  return false;
 }
 
 bool CursorVisitor::VisitObjCObjectTypeLoc(ObjCObjectTypeLoc TL) {
@@ -1974,6 +1987,12 @@ public:
   void VisitOMPDistributeParallelForSimdDirective(
       const OMPDistributeParallelForSimdDirective *D);
   void VisitOMPDistributeSimdDirective(const OMPDistributeSimdDirective *D);
+  void VisitOMPTargetParallelForSimdDirective(
+      const OMPTargetParallelForSimdDirective *D);
+  void VisitOMPTargetSimdDirective(const OMPTargetSimdDirective *D);
+  void VisitOMPTeamsDistributeDirective(const OMPTeamsDistributeDirective *D);
+  void VisitOMPTeamsDistributeSimdDirective(
+      const OMPTeamsDistributeSimdDirective *D);
 
 private:
   void AddDeclarationNameInfo(const Stmt *S);
@@ -2273,6 +2292,12 @@ void OMPClauseEnqueue::VisitOMPToClause(const OMPToClause *C) {
   VisitOMPClauseList(C);
 }
 void OMPClauseEnqueue::VisitOMPFromClause(const OMPFromClause *C) {
+  VisitOMPClauseList(C);
+}
+void OMPClauseEnqueue::VisitOMPUseDevicePtrClause(const OMPUseDevicePtrClause *C) {
+  VisitOMPClauseList(C);
+}
+void OMPClauseEnqueue::VisitOMPIsDevicePtrClause(const OMPIsDevicePtrClause *C) {
   VisitOMPClauseList(C);
 }
 }
@@ -2739,6 +2764,26 @@ void EnqueueVisitor::VisitOMPDistributeParallelForSimdDirective(
 
 void EnqueueVisitor::VisitOMPDistributeSimdDirective(
     const OMPDistributeSimdDirective *D) {
+  VisitOMPLoopDirective(D);
+}
+
+void EnqueueVisitor::VisitOMPTargetParallelForSimdDirective(
+    const OMPTargetParallelForSimdDirective *D) {
+  VisitOMPLoopDirective(D);
+}
+
+void EnqueueVisitor::VisitOMPTargetSimdDirective(
+    const OMPTargetSimdDirective *D) {
+  VisitOMPLoopDirective(D);
+}
+
+void EnqueueVisitor::VisitOMPTeamsDistributeDirective(
+    const OMPTeamsDistributeDirective *D) {
+  VisitOMPLoopDirective(D);
+}
+
+void EnqueueVisitor::VisitOMPTeamsDistributeSimdDirective(
+    const OMPTeamsDistributeSimdDirective *D) {
   VisitOMPLoopDirective(D);
 }
 
@@ -4598,6 +4643,8 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
       return cxstring::createRef("ObjCStringLiteral");
   case CXCursor_ObjCBoolLiteralExpr:
       return cxstring::createRef("ObjCBoolLiteralExpr");
+  case CXCursor_ObjCAvailabilityCheckExpr:
+      return cxstring::createRef("ObjCAvailabilityCheckExpr");
   case CXCursor_ObjCSelfExpr:
       return cxstring::createRef("ObjCSelfExpr");
   case CXCursor_ObjCEncodeExpr:
@@ -4862,6 +4909,14 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
     return cxstring::createRef("OMPDistributeParallelForSimdDirective");
   case CXCursor_OMPDistributeSimdDirective:
     return cxstring::createRef("OMPDistributeSimdDirective");
+  case CXCursor_OMPTargetParallelForSimdDirective:
+    return cxstring::createRef("OMPTargetParallelForSimdDirective");
+  case CXCursor_OMPTargetSimdDirective:
+    return cxstring::createRef("OMPTargetSimdDirective");
+  case CXCursor_OMPTeamsDistributeDirective:
+    return cxstring::createRef("OMPTeamsDistributeDirective");
+  case CXCursor_OMPTeamsDistributeSimdDirective:
+    return cxstring::createRef("OMPTeamsDistributeSimdDirective");
   case CXCursor_OverloadCandidate:
       return cxstring::createRef("OverloadCandidate");
   case CXCursor_TypeAliasTemplateDecl:
@@ -5589,6 +5644,7 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::TemplateTypeParm:
   case Decl::EnumConstant:
   case Decl::Field:
+  case Decl::Binding:
   case Decl::MSProperty:
   case Decl::IndirectField:
   case Decl::ObjCIvar:
@@ -5601,6 +5657,7 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::ObjCImplementation:
   case Decl::AccessSpec:
   case Decl::LinkageSpec:
+  case Decl::Export:
   case Decl::ObjCPropertyImpl:
   case Decl::FileScopeAsm:
   case Decl::StaticAssert:
@@ -5659,7 +5716,8 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
 
   case Decl::Var:
   case Decl::VarTemplateSpecialization:
-  case Decl::VarTemplatePartialSpecialization: {
+  case Decl::VarTemplatePartialSpecialization:
+  case Decl::Decomposition: {
     // Ask the variable if it has a definition.
     if (const VarDecl *Def = cast<VarDecl>(D)->getDefinition())
       return MakeCXCursor(Def, TU);
@@ -7734,6 +7792,33 @@ CXSourceRangeList *clang_getSkippedRanges(CXTranslationUnit TU, CXFile file) {
   skipped->ranges = new CXSourceRange[skipped->count];
   for (unsigned i = 0, ei = skipped->count; i != ei; ++i)
     skipped->ranges[i] = cxloc::translateSourceRange(Ctx, wantedRanges[i]);
+
+  return skipped;
+}
+
+CXSourceRangeList *clang_getAllSkippedRanges(CXTranslationUnit TU) {
+  CXSourceRangeList *skipped = new CXSourceRangeList;
+  skipped->count = 0;
+  skipped->ranges = nullptr;
+
+  if (isNotUsableTU(TU)) {
+    LOG_BAD_TU(TU);
+    return skipped;
+  }
+    
+  ASTUnit *astUnit = cxtu::getASTUnit(TU);
+  PreprocessingRecord *ppRec = astUnit->getPreprocessor().getPreprocessingRecord();
+  if (!ppRec)
+    return skipped;
+
+  ASTContext &Ctx = astUnit->getASTContext();
+
+  const std::vector<SourceRange> &SkippedRanges = ppRec->getSkippedRanges();
+
+  skipped->count = SkippedRanges.size();
+  skipped->ranges = new CXSourceRange[skipped->count];
+  for (unsigned i = 0, ei = skipped->count; i != ei; ++i)
+    skipped->ranges[i] = cxloc::translateSourceRange(Ctx, SkippedRanges[i]);
 
   return skipped;
 }

@@ -508,9 +508,6 @@ Sema::ActOnIfStmt(SourceLocation IfLoc, bool IsConstexpr, Stmt *InitStmt,
                   ConditionResult Cond,
                   Stmt *thenStmt, SourceLocation ElseLoc,
                   Stmt *elseStmt) {
-  if (InitStmt)
-    Diag(InitStmt->getLocStart(), diag::err_init_stmt_not_supported);
-
   if (Cond.isInvalid())
     Cond = ConditionResult(
         *this, nullptr,
@@ -528,23 +525,26 @@ Sema::ActOnIfStmt(SourceLocation IfLoc, bool IsConstexpr, Stmt *InitStmt,
     DiagnoseEmptyStmtBody(CondExpr->getLocEnd(), thenStmt,
                           diag::warn_empty_if_body);
 
-  return BuildIfStmt(IfLoc, IsConstexpr, Cond, thenStmt, ElseLoc, elseStmt);
+  return BuildIfStmt(IfLoc, IsConstexpr, InitStmt, Cond, thenStmt, ElseLoc,
+                     elseStmt);
 }
 
 StmtResult Sema::BuildIfStmt(SourceLocation IfLoc, bool IsConstexpr,
-                             ConditionResult Cond, Stmt *thenStmt,
-                             SourceLocation ElseLoc, Stmt *elseStmt) {
+                             Stmt *InitStmt, ConditionResult Cond,
+                             Stmt *thenStmt, SourceLocation ElseLoc,
+                             Stmt *elseStmt) {
   if (Cond.isInvalid())
     return StmtError();
 
-  if (IsConstexpr)
+  if (IsConstexpr || isa<ObjCAvailabilityCheckExpr>(Cond.get().second))
     getCurFunction()->setHasBranchProtectedScope();
 
   DiagnoseUnusedExprResult(thenStmt);
   DiagnoseUnusedExprResult(elseStmt);
 
-  return new (Context) IfStmt(Context, IfLoc, IsConstexpr, Cond.get().first,
-                              Cond.get().second, thenStmt, ElseLoc, elseStmt);
+  return new (Context)
+      IfStmt(Context, IfLoc, IsConstexpr, InitStmt, Cond.get().first,
+             Cond.get().second, thenStmt, ElseLoc, elseStmt);
 }
 
 namespace {
@@ -668,13 +668,10 @@ StmtResult Sema::ActOnStartOfSwitchStmt(SourceLocation SwitchLoc,
   if (Cond.isInvalid())
     return StmtError();
 
-  if (InitStmt)
-    Diag(InitStmt->getLocStart(), diag::err_init_stmt_not_supported);
-
   getCurFunction()->setHasBranchIntoScope();
 
-  SwitchStmt *SS =
-      new (Context) SwitchStmt(Context, Cond.get().first, Cond.get().second);
+  SwitchStmt *SS = new (Context)
+      SwitchStmt(Context, InitStmt, Cond.get().first, Cond.get().second);
   getCurFunction()->SwitchStack.push_back(SS);
   return SS;
 }
@@ -3496,6 +3493,8 @@ Sema::ActOnObjCAtSynchronizedOperand(SourceLocation atLoc, Expr *operand) {
                    << type << operand->getSourceRange();
 
         ExprResult result = PerformContextuallyConvertToObjCPointer(operand);
+        if (result.isInvalid())
+          return ExprError();
         if (!result.isUsable())
           return Diag(atLoc, diag::error_objc_synchronized_expects_object)
                    << type << operand->getSourceRange();
@@ -3646,6 +3645,11 @@ StmtResult Sema::ActOnCXXTryBlock(SourceLocation TryLoc, Stmt *TryBlock,
   if (!getLangOpts().CXXExceptions &&
       !getSourceManager().isInSystemHeader(TryLoc))
     Diag(TryLoc, diag::err_exceptions_disabled) << "try";
+
+  // Exceptions aren't allowed in CUDA device code.
+  if (getLangOpts().CUDA)
+    CUDADiagIfDeviceCode(TryLoc, diag::err_cuda_device_exceptions)
+        << "try" << CurrentCUDATarget();
 
   if (getCurScope() && getCurScope()->isOpenMPSimdDirectiveScope())
     Diag(TryLoc, diag::err_omp_simd_region_cannot_use_stmt) << "try";

@@ -17,7 +17,6 @@
 #include "clang/AST/CanonicalType.h"
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/Type.h"
-#include "llvm/ADT/FoldingSet.h"
 #include "llvm/Support/TrailingObjects.h"
 #include <cassert>
 
@@ -91,7 +90,7 @@ public:
   bool shouldPassIndirectly(bool asReturnValue) const;
 
   using EnumerationCallback =
-    llvm::function_ref<void(CharUnits offset, llvm::Type *type)>;
+    llvm::function_ref<void(CharUnits offset, CharUnits end, llvm::Type *type)>;
 
   /// Enumerate the expanded components of this type.
   ///

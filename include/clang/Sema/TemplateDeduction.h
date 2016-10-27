@@ -209,8 +209,7 @@ struct DeductionFailureInfo {
 
   /// \brief A diagnostic indicating why deduction failed.
   union {
-    void *Align;
-    char Diagnostic[sizeof(PartialDiagnosticAt)];
+    alignas(PartialDiagnosticAt) char Diagnostic[sizeof(PartialDiagnosticAt)];
     DesignationFailureInfo DesignationFailure;
   };
 

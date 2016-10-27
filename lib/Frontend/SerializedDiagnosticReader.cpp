@@ -11,7 +11,6 @@
 #include "clang/Basic/FileManager.h"
 #include "clang/Frontend/SerializedDiagnostics.h"
 #include "llvm/Support/ManagedStatic.h"
-#include "llvm/Support/MemoryBuffer.h"
 
 using namespace clang;
 using namespace clang::serialized_diags;
@@ -251,7 +250,7 @@ SerializedDiagnosticReader::readDiagnosticBlock(llvm::BitstreamCursor &Stream) {
 
 namespace {
 class SDErrorCategoryType final : public std::error_category {
-  const char *name() const LLVM_NOEXCEPT override {
+  const char *name() const noexcept override {
     return "clang.serialized_diags";
   }
   std::string message(int IE) const override {

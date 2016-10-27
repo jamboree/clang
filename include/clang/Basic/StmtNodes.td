@@ -165,6 +165,7 @@ def ObjCIsaExpr : DStmt<Expr>;
 def ObjCIndirectCopyRestoreExpr : DStmt<Expr>;
 def ObjCBoolLiteralExpr : DStmt<Expr>;
 def ObjCSubscriptRefExpr : DStmt<Expr>;
+def ObjCAvailabilityCheckExpr : DStmt<Expr>;
 
 // Obj-C ARC Expressions.
 def ObjCBridgedCastExpr : DStmt<ExplicitCastExpr>;
@@ -231,3 +232,7 @@ def OMPDistributeDirective : DStmt<OMPLoopDirective>;
 def OMPDistributeParallelForDirective : DStmt<OMPLoopDirective>;
 def OMPDistributeParallelForSimdDirective : DStmt<OMPLoopDirective>;
 def OMPDistributeSimdDirective : DStmt<OMPLoopDirective>;
+def OMPTargetParallelForSimdDirective : DStmt<OMPLoopDirective>;
+def OMPTargetSimdDirective : DStmt<OMPLoopDirective>;
+def OMPTeamsDistributeDirective : DStmt<OMPLoopDirective>;
+def OMPTeamsDistributeSimdDirective : DStmt<OMPLoopDirective>;

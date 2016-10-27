@@ -44,7 +44,6 @@
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/TargetInfo.h"
-#include "llvm/ADT/SmallString.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cstring>
 #include <functional>
@@ -311,14 +310,8 @@ namespace {
     /// Parent - The caller of this stack frame.
     CallStackFrame *Caller;
 
-    /// CallLoc - The location of the call expression for this call.
-    SourceLocation CallLoc;
-
     /// Callee - The function which was called.
     const FunctionDecl *Callee;
-
-    /// Index - The call index of this call.
-    unsigned Index;
 
     /// This - The binding for the this pointer in this call, if any.
     const LValue *This;
@@ -333,6 +326,12 @@ namespace {
     typedef MapTy::const_iterator temp_iterator;
     /// Temporaries - Temporary lvalues materialized within this stack frame.
     MapTy Temporaries;
+
+    /// CallLoc - The location of the call expression for this call.
+    SourceLocation CallLoc;
+
+    /// Index - The call index of this call.
+    unsigned Index;
 
     CallStackFrame(EvalInfo &Info, SourceLocation CallLoc,
                    const FunctionDecl *Callee, const LValue *This,
@@ -788,7 +787,7 @@ namespace {
     /// (Foo(), 1)      // use noteSideEffect
     /// (Foo() || true) // use noteSideEffect
     /// Foo() + 1       // use noteFailure
-    LLVM_ATTRIBUTE_UNUSED_RESULT bool noteFailure() {
+    LLVM_NODISCARD bool noteFailure() {
       // Failure when evaluating some expression often means there is some
       // subexpression whose evaluation was skipped. Therefore, (because we
       // don't track whether we skipped an expression when unwinding after an
@@ -962,8 +961,8 @@ void SubobjectDesignator::diagnosePointerArithmetic(EvalInfo &Info,
 CallStackFrame::CallStackFrame(EvalInfo &Info, SourceLocation CallLoc,
                                const FunctionDecl *Callee, const LValue *This,
                                APValue *Arguments)
-    : Info(Info), Caller(Info.CurrentCall), CallLoc(CallLoc), Callee(Callee),
-      Index(Info.NextCallIndex++), This(This), Arguments(Arguments) {
+    : Info(Info), Caller(Info.CurrentCall), Callee(Callee), This(This),
+      Arguments(Arguments), CallLoc(CallLoc), Index(Info.NextCallIndex++) {
   Info.CurrentCall = this;
   ++Info.CallStackDepth;
 }
@@ -3401,37 +3400,50 @@ enum EvalStmtResult {
 };
 }
 
-static bool EvaluateDecl(EvalInfo &Info, const Decl *D) {
-  if (const VarDecl *VD = dyn_cast<VarDecl>(D)) {
-    // We don't need to evaluate the initializer for a static local.
-    if (!VD->hasLocalStorage())
-      return true;
+static bool EvaluateVarDecl(EvalInfo &Info, const VarDecl *VD) {
+  // We don't need to evaluate the initializer for a static local.
+  if (!VD->hasLocalStorage())
+    return true;
 
-    LValue Result;
-    Result.set(VD, Info.CurrentCall->Index);
-    APValue &Val = Info.CurrentCall->createTemporary(VD, true);
+  LValue Result;
+  Result.set(VD, Info.CurrentCall->Index);
+  APValue &Val = Info.CurrentCall->createTemporary(VD, true);
 
-    const Expr *InitE = VD->getInit();
-    if (!InitE) {
-      Info.FFDiag(D->getLocStart(), diag::note_constexpr_uninitialized)
-        << false << VD->getType();
-      Val = APValue();
-      return false;
-    }
+  const Expr *InitE = VD->getInit();
+  if (!InitE) {
+    Info.FFDiag(VD->getLocStart(), diag::note_constexpr_uninitialized)
+      << false << VD->getType();
+    Val = APValue();
+    return false;
+  }
 
-    if (InitE->isValueDependent())
-      return false;
+  if (InitE->isValueDependent())
+    return false;
 
-    if (!EvaluateInPlace(Val, Info, Result, InitE)) {
-      // Wipe out any partially-computed value, to allow tracking that this
-      // evaluation failed.
-      Val = APValue();
-      return false;
-    }
+  if (!EvaluateInPlace(Val, Info, Result, InitE)) {
+    // Wipe out any partially-computed value, to allow tracking that this
+    // evaluation failed.
+    Val = APValue();
+    return false;
   }
 
   return true;
 }
+
+static bool EvaluateDecl(EvalInfo &Info, const Decl *D) {
+  bool OK = true;
+
+  if (const VarDecl *VD = dyn_cast<VarDecl>(D))
+    OK &= EvaluateVarDecl(Info, VD);
+
+  if (const DecompositionDecl *DD = dyn_cast<DecompositionDecl>(D))
+    for (auto *BD : DD->bindings())
+      if (auto *VD = BD->getHoldingVar())
+        OK &= EvaluateDecl(Info, VD);
+
+  return OK;
+}
+
 
 /// Evaluate a condition (either a variable declaration or an expression).
 static bool EvaluateCond(EvalInfo &Info, const VarDecl *CondDecl,
@@ -3485,6 +3497,11 @@ static EvalStmtResult EvaluateSwitch(StmtResult &Result, EvalInfo &Info,
   APSInt Value;
   {
     FullExpressionRAII Scope(Info);
+    if (const Stmt *Init = SS->getInit()) {
+      EvalStmtResult ESR = EvaluateStmt(Result, Info, Init);
+      if (ESR != ESR_Succeeded)
+        return ESR;
+    }
     if (SS->getConditionVariable() &&
         !EvaluateDecl(Info, SS->getConditionVariable()))
       return ESR_Failed;
@@ -3667,6 +3684,11 @@ static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
 
     // Evaluate the condition, as either a var decl or as an expression.
     BlockScopeRAII Scope(Info);
+    if (const Stmt *Init = IS->getInit()) {
+      EvalStmtResult ESR = EvaluateStmt(Result, Info, Init);
+      if (ESR != ESR_Succeeded)
+        return ESR;
+    }
     bool Cond;
     if (!EvaluateCond(Info, IS->getConditionVariable(), IS->getCond(), Cond))
       return ESR_Failed;
@@ -4776,6 +4798,8 @@ bool LValueExprEvaluator::VisitDeclRefExpr(const DeclRefExpr *E) {
     return Success(FD);
   if (const VarDecl *VD = dyn_cast<VarDecl>(E->getDecl()))
     return VisitVarDecl(E, VD);
+  if (const BindingDecl *BD = dyn_cast<BindingDecl>(E->getDecl()))
+    return Visit(BD->getBinding());
   return Error(E);
 }
 
@@ -5270,8 +5294,8 @@ bool PointerExprEvaluator::VisitCallExpr(const CallExpr *E) {
 
       if (BaseAlignment < Align) {
         Result.Designator.setInvalid();
-	// FIXME: Quantities here cast to integers because the plural modifier
-	// does not work on APSInts yet.
+        // FIXME: Quantities here cast to integers because the plural modifier
+        // does not work on APSInts yet.
         CCEDiag(E->getArg(0),
                 diag::note_constexpr_baa_insufficient_alignment) << 0
           << (int) BaseAlignment.getQuantity()
@@ -6802,14 +6826,21 @@ static bool tryEvaluateBuiltinObjectSize(const Expr *E, unsigned Type,
   // struct Foo *F = (struct Foo *)malloc(sizeof(struct Foo) + strlen(Bar));
   // strcpy(&F->c[0], Bar);
   //
-  // So, if we see that we're examining a 1-length (or 0-length) array at the
-  // end of a struct with an unknown base, we give up instead of breaking code
-  // that behaves this way. Note that we only do this when Type=1, because
-  // Type=3 is a lower bound, so answering conservatively is fine.
+  // So, if we see that we're examining an array at the end of a struct with an
+  // unknown base, we give up instead of breaking code that behaves this way.
+  // Note that we only do this when Type=1, because Type=3 is a lower bound, so
+  // answering conservatively is fine.
+  //
+  // We used to be a bit more aggressive here; we'd only be conservative if the
+  // array at the end was flexible, or if it had 0 or 1 elements. This broke
+  // some common standard library extensions (PR30346), but was otherwise
+  // seemingly fine. It may be useful to reintroduce this behavior with some
+  // sort of whitelist. OTOH, it seems that GCC is always conservative with the
+  // last element in structs (if it's an array), so our current behavior is more
+  // compatible than a whitelisting approach would be.
   if (End.InvalidBase && SubobjectOnly && Type == 1 &&
       End.Designator.Entries.size() == End.Designator.MostDerivedPathLength &&
       End.Designator.MostDerivedIsArrayElement &&
-      End.Designator.MostDerivedArraySize < 2 &&
       isDesignatorAtObjectEnd(Info.Ctx, End))
     return false;
 
@@ -6863,6 +6894,8 @@ bool IntExprEvaluator::VisitCallExpr(const CallExpr *E) {
       // Reduce it to a constant now.
       return Success((Type & 2) ? 0 : -1, E);
     }
+
+    llvm_unreachable("unexpected EvalMode");
   }
 
   case Builtin::BI__builtin_bswap16:
@@ -7166,9 +7199,7 @@ class DataRecursiveIntBinOpEvaluator {
     enum { AnyExprKind, BinOpKind, BinOpVisitedLHSKind } Kind;
 
     Job() = default;
-    Job(Job &&J)
-        : E(J.E), LHSResult(J.LHSResult), Kind(J.Kind),
-          SpecEvalRAII(std::move(J.SpecEvalRAII)) {}
+    Job(Job &&) = default;
 
     void startSpeculativeEval(EvalInfo &Info) {
       SpecEvalRAII = SpeculativeEvaluationRAII(Info);
@@ -8045,6 +8076,7 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
   case CK_ZeroToOCLEvent:
   case CK_NonAtomicToAtomic:
   case CK_AddressSpaceConversion:
+  case CK_IntToOCLSampler:
     llvm_unreachable("invalid cast kind for integral value");
 
   case CK_BitCast:
@@ -8536,6 +8568,7 @@ bool ComplexExprEvaluator::VisitCastExpr(const CastExpr *E) {
   case CK_ZeroToOCLEvent:
   case CK_NonAtomicToAtomic:
   case CK_AddressSpaceConversion:
+  case CK_IntToOCLSampler:
     llvm_unreachable("invalid cast kind for complex value");
 
   case CK_LValueToRValue:
@@ -9392,6 +9425,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::ObjCPropertyRefExprClass:
   case Expr::ObjCSubscriptRefExprClass:
   case Expr::ObjCIsaExprClass:
+  case Expr::ObjCAvailabilityCheckExprClass:
   case Expr::ShuffleVectorExprClass:
   case Expr::ConvertVectorExprClass:
   case Expr::BlockExprClass:

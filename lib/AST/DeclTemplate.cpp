@@ -31,9 +31,11 @@ using namespace clang;
 TemplateParameterList::TemplateParameterList(SourceLocation TemplateLoc,
                                              SourceLocation LAngleLoc,
                                              ArrayRef<NamedDecl *> Params,
-                                             SourceLocation RAngleLoc)
+                                             SourceLocation RAngleLoc,
+                                             Expr *RequiresClause)
   : TemplateLoc(TemplateLoc), LAngleLoc(LAngleLoc), RAngleLoc(RAngleLoc),
-    NumParams(Params.size()), ContainsUnexpandedParameterPack(false) {
+    NumParams(Params.size()), ContainsUnexpandedParameterPack(false),
+    HasRequiresClause(static_cast<bool>(RequiresClause)) {
   assert(this->NumParams == NumParams && "Too many template parameters");
   for (unsigned Idx = 0; Idx < NumParams; ++Idx) {
     NamedDecl *P = Params[Idx];
@@ -52,15 +54,21 @@ TemplateParameterList::TemplateParameterList(SourceLocation TemplateLoc,
       // template parameter list does too.
     }
   }
+  if (RequiresClause) {
+    *getTrailingObjects<Expr *>() = RequiresClause;
+  }
 }
 
-TemplateParameterList *TemplateParameterList::Create(
-    const ASTContext &C, SourceLocation TemplateLoc, SourceLocation LAngleLoc,
-    ArrayRef<NamedDecl *> Params, SourceLocation RAngleLoc) {
-  void *Mem = C.Allocate(totalSizeToAlloc<NamedDecl *>(Params.size()),
-                         llvm::alignOf<TemplateParameterList>());
+TemplateParameterList *
+TemplateParameterList::Create(const ASTContext &C, SourceLocation TemplateLoc,
+                              SourceLocation LAngleLoc,
+                              ArrayRef<NamedDecl *> Params,
+                              SourceLocation RAngleLoc, Expr *RequiresClause) {
+  void *Mem = C.Allocate(totalSizeToAlloc<NamedDecl *, Expr *>(
+                             Params.size(), RequiresClause ? 1u : 0u),
+                         alignof(TemplateParameterList));
   return new (Mem) TemplateParameterList(TemplateLoc, LAngleLoc, Params,
-                                         RAngleLoc);
+                                         RAngleLoc, RequiresClause);
 }
 
 unsigned TemplateParameterList::getMinRequiredArguments() const {
@@ -822,7 +830,7 @@ ClassTemplateSpecializationDecl::getSourceRange() const {
              getSpecializationKind() == TSK_ExplicitInstantiationDefinition);
       if (getExternLoc().isValid())
         Begin = getExternLoc();
-      SourceLocation End = getRBraceLoc();
+      SourceLocation End = getBraceRange().getEnd();
       if (End.isInvalid())
         End = getTypeAsWritten()->getTypeLoc().getEndLoc();
       return SourceRange(Begin, End);
@@ -1213,7 +1221,7 @@ createMakeIntegerSeqParameterList(const ASTContext &C, DeclContext *DC) {
   // <typename T, T ...Ints>
   NamedDecl *P[2] = {T, N};
   auto *TPL = TemplateParameterList::Create(
-      C, SourceLocation(), SourceLocation(), P, SourceLocation());
+      C, SourceLocation(), SourceLocation(), P, SourceLocation(), nullptr);
 
   // template <typename T, ...Ints> class IntSeq
   auto *TemplateTemplateParm = TemplateTemplateParmDecl::Create(
@@ -1238,7 +1246,7 @@ createMakeIntegerSeqParameterList(const ASTContext &C, DeclContext *DC) {
 
   // template <template <typename T, T ...Ints> class IntSeq, typename T, T N>
   return TemplateParameterList::Create(C, SourceLocation(), SourceLocation(),
-                                       Params, SourceLocation());
+                                       Params, SourceLocation(), nullptr);
 }
 
 static TemplateParameterList *
@@ -1259,7 +1267,7 @@ createTypePackElementParameterList(const ASTContext &C, DeclContext *DC) {
   NamedDecl *Params[] = {Index, Ts};
   return TemplateParameterList::Create(C, SourceLocation(), SourceLocation(),
                                        llvm::makeArrayRef(Params),
-                                       SourceLocation());
+                                       SourceLocation(), nullptr);
 }
 
 static TemplateParameterList *createBuiltinTemplateParameterList(

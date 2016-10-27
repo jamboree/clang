@@ -26,7 +26,6 @@
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Support/DataTypes.h"
@@ -41,6 +40,7 @@ struct fltSemantics;
 namespace clang {
 class DiagnosticsEngine;
 class LangOptions;
+class CodeGenOptions;
 class MacroBuilder;
 class SourceLocation;
 class SourceManager;
@@ -76,6 +76,7 @@ protected:
   unsigned short MaxVectorAlign;
   unsigned short MaxTLSAlign;
   unsigned short SimdDefaultAlign;
+  unsigned short NewAlign;
   std::unique_ptr<llvm::DataLayout> DataLayout;
   const char *MCountName;
   const llvm::fltSemantics *HalfFormat, *FloatFormat, *DoubleFormat,
@@ -92,6 +93,8 @@ protected:
   unsigned ComplexLongDoubleUsesFP2Ret : 1;
 
   unsigned HasBuiltinMSVaList : 1;
+
+  unsigned IsRenderScriptTarget : 1;
 
   // TargetInfo Constructor.  Default initializes all fields.
   TargetInfo(const llvm::Triple &T);
@@ -292,6 +295,11 @@ public:
     return AddrSpace == 0 ? PointerAlign : getPointerAlignV(AddrSpace);
   }
 
+  /// \brief Return the maximum width of pointers on this target.
+  virtual uint64_t getMaxPointerWidth() const {
+    return PointerWidth;
+  }
+
   /// \brief Return the size of '_Bool' and C++ 'bool' for this target, in bits.
   unsigned getBoolWidth() const { return BoolWidth; }
 
@@ -345,6 +353,13 @@ public:
   /// getMinGlobalAlign - Return the minimum alignment of a global variable,
   /// unless its alignment is explicitly reduced via attributes.
   unsigned getMinGlobalAlign() const { return MinGlobalAlign; }
+
+  /// Return the largest alignment for which a suitably-sized allocation with
+  /// '::operator new(size_t)' is guaranteed to produce a correctly-aligned
+  /// pointer.
+  unsigned getNewAlign() const {
+    return NewAlign ? NewAlign : std::max(LongDoubleAlign, LongLongAlign);
+  }
 
   /// getWCharWidth/Align - Return the size of 'wchar_t' for this target, in
   /// bits.
@@ -565,6 +580,9 @@ public:
   /// Returns whether or not type \c __builtin_ms_va_list type is
   /// available on this target.
   bool hasBuiltinMSVaList() const { return HasBuiltinMSVaList; }
+
+  /// Returns true for RenderScript.
+  bool isRenderScriptTarget() const { return IsRenderScriptTarget; }
 
   /// \brief Returns whether the passed in string is a valid clobber in an
   /// inline asm statement.
@@ -793,6 +811,10 @@ public:
   /// language options which change the target configuration.
   virtual void adjust(const LangOptions &Opts);
 
+  /// \brief Adjust target options based on codegen options.
+  virtual void adjustTargetOptions(const CodeGenOptions &CGOpts,
+                                   TargetOptions &TargetOpts) const {}
+
   /// \brief Initialize the map with the default set of target features for the
   /// CPU this should include all legal feature strings on the target.
   ///
@@ -925,6 +947,7 @@ public:
   VersionTuple getPlatformMinVersion() const { return PlatformMinVersion; }
 
   bool isBigEndian() const { return BigEndian; }
+  bool isLittleEndian() const { return !BigEndian; }
 
   enum CallingConvMethodType {
     CCMT_Unknown,
@@ -980,6 +1003,11 @@ public:
   /// \brief Get const supported OpenCL extensions and optional core features.
   const OpenCLOptions &getSupportedOpenCLOpts() const {
       return getTargetOpts().SupportedOpenCLOptions;
+  }
+
+  /// \brief Get OpenCL image type address space.
+  virtual LangAS::ID getOpenCLImageAddrSpace() const {
+    return LangAS::opencl_global;
   }
 
   /// \brief Check the target is valid after it is fully initialized.

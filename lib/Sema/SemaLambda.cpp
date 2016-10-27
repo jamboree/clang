@@ -235,7 +235,7 @@ getGenericLambdaTemplateParameterList(LambdaScopeInfo *LSI, Sema &SemaRef) {
         /*Template kw loc*/ SourceLocation(), LAngleLoc,
         llvm::makeArrayRef((NamedDecl *const *)LSI->AutoTemplateParams.data(),
                            LSI->AutoTemplateParams.size()),
-        RAngleLoc);
+        RAngleLoc, nullptr);
   }
   return LSI->GLTemplateParameterList;
 }
@@ -311,18 +311,20 @@ Sema::getCurrentMangleNumberContext(const DeclContext *DC,
   bool IsInNonspecializedTemplate =
     !ActiveTemplateInstantiations.empty() || CurContext->isDependentContext();
   switch (Kind) {
-  case Normal:
+  case Normal: {
     //  -- the bodies of non-exported nonspecialized template functions
     //  -- the bodies of inline functions
+    auto *CD = dyn_cast<CapturedDecl>(CurContext);
     if ((IsInNonspecializedTemplate &&
          !(ManglingContextDecl && isa<ParmVarDecl>(ManglingContextDecl))) ||
-        isInInlineFunction(CurContext)) {
+        isInInlineFunction(CurContext) || CD) {
       ManglingContextDecl = nullptr;
-      return &Context.getManglingNumberContext(DC);
+      return &Context.getManglingNumberContext(CD ? CD->getParent() : DC);
     }
 
     ManglingContextDecl = nullptr;
     return nullptr;
+  }
 
   case StaticDataMember:
     //  -- the initializers of nonspecialized static members of template classes
@@ -886,7 +888,12 @@ void Sema::ActOnStartOfLambdaDefinition(LambdaIntroducer &Intro,
   
   // Attributes on the lambda apply to the method.  
   ProcessDeclAttributes(CurScope, Method, ParamInfo);
-  
+
+  // CUDA lambdas get implicit attributes based on the scope in which they're
+  // declared.
+  if (getLangOpts().CUDA)
+    CUDASetLambdaAttrs(Method);
+
   // Introduce the function call operator as the current declaration context.
   PushDeclContext(CurScope, Method);
     
@@ -1144,14 +1151,16 @@ void Sema::ActOnLambdaError(SourceLocation StartLoc, Scope *CurScope,
 
 /// \brief Add a lambda's conversion to function pointer, as described in
 /// C++11 [expr.prim.lambda]p6.
-static void addFunctionPointerConversion(Sema &S, 
+static void addFunctionPointerConversion(Sema &S,
                                          SourceRange IntroducerRange,
                                          CXXRecordDecl *Class,
                                          CXXMethodDecl *CallOperator) {
   // This conversion is explicitly disabled if the lambda's function has
   // pass_object_size attributes on any of its parameters.
-  if (llvm::any_of(CallOperator->parameters(),
-                   std::mem_fn(&ParmVarDecl::hasAttr<PassObjectSizeAttr>)))
+  auto HasPassObjectSizeAttr = [](const ParmVarDecl *P) {
+    return P->hasAttr<PassObjectSizeAttr>();
+  };
+  if (llvm::any_of(CallOperator->parameters(), HasPassObjectSizeAttr))
     return;
 
   // Add the conversion to function pointer.

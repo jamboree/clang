@@ -1,8 +1,6 @@
-// RUN: %clang_cc1 %s -triple=x86_64-apple-darwin -target-feature +sse2 -emit-llvm -o - -Werror | FileCheck %s
-// RUN: %clang_cc1 %s -triple=x86_64-apple-darwin -target-feature +sse2 -fno-signed-char -emit-llvm -o - -Werror | FileCheck %s
+// RUN: %clang_cc1 -ffreestanding %s -triple=x86_64-apple-darwin -target-feature +sse2 -emit-llvm -o - -Wall -Werror | FileCheck %s
+// RUN: %clang_cc1 -ffreestanding %s -triple=x86_64-apple-darwin -target-feature +sse2 -fno-signed-char -emit-llvm -o - -Wall -Werror | FileCheck %s
 
-// Don't include mm_malloc.h, it's system specific.
-#define __MM_MALLOC_H
 
 #include <x86intrin.h>
 
@@ -73,7 +71,7 @@ __m128i test_mm_adds_epu16(__m128i A, __m128i B) {
 
 __m128d test_mm_and_pd(__m128d A, __m128d B) {
   // CHECK-LABEL: test_mm_and_pd
-  // CHECK: and <4 x i32>
+  // CHECK: and <2 x i64>
   return _mm_and_pd(A, B);
 }
 
@@ -85,8 +83,8 @@ __m128i test_mm_and_si128(__m128i A, __m128i B) {
 
 __m128d test_mm_andnot_pd(__m128d A, __m128d B) {
   // CHECK-LABEL: test_mm_andnot_pd
-  // CHECK: xor <4 x i32> %{{.*}}, <i32 -1, i32 -1, i32 -1, i32 -1>
-  // CHECK: and <4 x i32>
+  // CHECK: xor <2 x i64> %{{.*}}, <i64 -1, i64 -1>
+  // CHECK: and <2 x i64>
   return _mm_andnot_pd(A, B);
 }
 
@@ -507,7 +505,7 @@ long long test_mm_cvtsd_si64(__m128d A) {
 
 __m128 test_mm_cvtsd_ss(__m128 A, __m128d B) {
   // CHECK-LABEL: test_mm_cvtsd_ss
-  // CHECK: fptrunc double %{{.*}} to float
+  // CHECK: call <4 x float> @llvm.x86.sse2.cvtsd2ss(<4 x float> %{{.*}}, <2 x double> %{{.*}})
   return _mm_cvtsd_ss(A, B);
 }
 
@@ -569,21 +567,19 @@ __m128i test_mm_cvttpd_epi32(__m128d A) {
 
 __m128i test_mm_cvttps_epi32(__m128 A) {
   // CHECK-LABEL: test_mm_cvttps_epi32
-  // CHECK: fptosi <4 x float> %{{.*}} to <4 x i32>
+  // CHECK: call <4 x i32> @llvm.x86.sse2.cvttps2dq(<4 x float> %{{.*}})
   return _mm_cvttps_epi32(A);
 }
 
 int test_mm_cvttsd_si32(__m128d A) {
   // CHECK-LABEL: test_mm_cvttsd_si32
-  // CHECK: extractelement <2 x double> %{{.*}}, i32 0
-  // CHECK: fptosi double %{{.*}} to i32
+  // CHECK: call i32 @llvm.x86.sse2.cvttsd2si(<2 x double> %{{.*}})
   return _mm_cvttsd_si32(A);
 }
 
 long long test_mm_cvttsd_si64(__m128d A) {
   // CHECK-LABEL: test_mm_cvttsd_si64
-  // CHECK: extractelement <2 x double> %{{.*}}, i32 0
-  // CHECK: fptosi double %{{.*}} to i64
+  // CHECK: call i64 @llvm.x86.sse2.cvttsd2si64(<2 x double> %{{.*}})
   return _mm_cvttsd_si64(A);
 }
 
@@ -847,7 +843,7 @@ __m128i test_mm_mullo_epi16(__m128i A, __m128i B) {
 
 __m128d test_mm_or_pd(__m128d A, __m128d B) {
   // CHECK-LABEL: test_mm_or_pd
-  // CHECK: or <4 x i32> %{{.*}}, %{{.*}}
+  // CHECK: or <2 x i64> %{{.*}}, %{{.*}}
   return _mm_or_pd(A, B);
 }
 
@@ -1531,7 +1527,7 @@ __m128d test_mm_unpacklo_pd(__m128d A, __m128d B) {
 
 __m128d test_mm_xor_pd(__m128d A, __m128d B) {
   // CHECK-LABEL: test_mm_xor_pd
-  // CHECK: xor <4 x i32> %{{.*}}, %{{.*}}
+  // CHECK: xor <2 x i64> %{{.*}}, %{{.*}}
   return _mm_xor_pd(A, B);
 }
 

@@ -690,6 +690,9 @@ public:
     case CK_ConstructorConversion:
       return C;
 
+    case CK_IntToOCLSampler:
+      llvm_unreachable("global sampler variables are not generated");
+
     case CK_Dependent: llvm_unreachable("saw dependent cast!");
 
     case CK_BuiltinFnToFnPtr:
@@ -1529,7 +1532,8 @@ static llvm::Constant *EmitNullConstant(CodeGenModule &CGM,
       cast<CXXRecordDecl>(I.getType()->castAs<RecordType>()->getDecl());
 
     // Ignore empty bases.
-    if (base->isEmpty())
+    if (base->isEmpty() ||
+        CGM.getContext().getASTRecordLayout(base).getNonVirtualSize().isZero())
       continue;
     
     unsigned fieldIndex = layout.getNonVirtualBaseLLVMFieldNo(base);

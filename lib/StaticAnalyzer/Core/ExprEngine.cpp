@@ -27,10 +27,9 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/LoopWidening.h"
-#include "llvm/ADT/ImmutableList.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/SaveAndRestore.h"
+#include "llvm/Support/raw_ostream.h"
 
 #ifndef NDEBUG
 #include "llvm/Support/GraphWriter.h"
@@ -846,6 +845,10 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::OMPDistributeParallelForDirectiveClass:
     case Stmt::OMPDistributeParallelForSimdDirectiveClass:
     case Stmt::OMPDistributeSimdDirectiveClass:
+    case Stmt::OMPTargetParallelForSimdDirectiveClass:
+    case Stmt::OMPTargetSimdDirectiveClass:
+    case Stmt::OMPTeamsDistributeDirectiveClass:
+    case Stmt::OMPTeamsDistributeSimdDirectiveClass:
       llvm_unreachable("Stmt should not be in analyzer evaluation loop");
 
     case Stmt::ObjCSubscriptRefExprClass:
@@ -915,6 +918,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::CXXScalarValueInitExprClass:
     case Stmt::CXXBoolLiteralExprClass:
     case Stmt::ObjCBoolLiteralExprClass:
+    case Stmt::ObjCAvailabilityCheckExprClass:
     case Stmt::FloatingLiteralClass:
     case Stmt::NoInitExprClass:
     case Stmt::SizeOfPackExprClass:
@@ -1209,16 +1213,8 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::ObjCBridgedCastExprClass: {
       Bldr.takeNodes(Pred);
       const CastExpr *C = cast<CastExpr>(S);
-      // Handle the previsit checks.
-      ExplodedNodeSet dstPrevisit;
-      getCheckerManager().runCheckersForPreStmt(dstPrevisit, Pred, C, *this);
-
-      // Handle the expression itself.
       ExplodedNodeSet dstExpr;
-      for (ExplodedNodeSet::iterator i = dstPrevisit.begin(),
-                                     e = dstPrevisit.end(); i != e ; ++i) {
-        VisitCast(C, C->getSubExpr(), *i, dstExpr);
-      }
+      VisitCast(C, C->getSubExpr(), Pred, dstExpr);
 
       // Handle the postvisit checks.
       getCheckerManager().runCheckersForPostStmt(Dst, dstExpr, C, *this);
@@ -1771,7 +1767,8 @@ void ExprEngine::processBeginOfFunction(NodeBuilderContext &BC,
 /// ProcessEndPath - Called by CoreEngine.  Used to generate end-of-path
 ///  nodes when the control reaches the end of a function.
 void ExprEngine::processEndOfFunction(NodeBuilderContext& BC,
-                                      ExplodedNode *Pred) {
+                                      ExplodedNode *Pred,
+                                      const ReturnStmt *RS) {
   // FIXME: Assert that stackFrameDoesNotContainInitializedTemporaries(*Pred)).
   // We currently cannot enable this assert, as lifetime extended temporaries
   // are not modelled correctly.
@@ -1793,7 +1790,7 @@ void ExprEngine::processEndOfFunction(NodeBuilderContext& BC,
     getCheckerManager().runCheckersForEndFunction(BC, Dst, Pred, *this);
   }
 
-  Engine.enqueueEndOfFunction(Dst);
+  Engine.enqueueEndOfFunction(Dst, RS);
 }
 
 /// ProcessSwitch - Called by CoreEngine.  Used to generate successor
@@ -1973,24 +1970,26 @@ void ExprEngine::VisitLvalArraySubscriptExpr(const ArraySubscriptExpr *A,
   const Expr *Base = A->getBase()->IgnoreParens();
   const Expr *Idx  = A->getIdx()->IgnoreParens();
 
-  ExplodedNodeSet checkerPreStmt;
-  getCheckerManager().runCheckersForPreStmt(checkerPreStmt, Pred, A, *this);
+  ExplodedNodeSet CheckerPreStmt;
+  getCheckerManager().runCheckersForPreStmt(CheckerPreStmt, Pred, A, *this);
 
-  StmtNodeBuilder Bldr(checkerPreStmt, Dst, *currBldrCtx);
+  ExplodedNodeSet EvalSet;
+  StmtNodeBuilder Bldr(CheckerPreStmt, EvalSet, *currBldrCtx);
   assert(A->isGLValue() ||
           (!AMgr.getLangOpts().CPlusPlus &&
            A->getType().isCForbiddenLValueType()));
 
-  for (ExplodedNodeSet::iterator it = checkerPreStmt.begin(),
-                                 ei = checkerPreStmt.end(); it != ei; ++it) {
-    const LocationContext *LCtx = (*it)->getLocationContext();
-    ProgramStateRef state = (*it)->getState();
+  for (auto *Node : CheckerPreStmt) {
+    const LocationContext *LCtx = Node->getLocationContext();
+    ProgramStateRef state = Node->getState();
     SVal V = state->getLValue(A->getType(),
                               state->getSVal(Idx, LCtx),
                               state->getSVal(Base, LCtx));
-    Bldr.generateNode(A, *it, state->BindExpr(A, LCtx, V), nullptr,
+    Bldr.generateNode(A, Node, state->BindExpr(A, LCtx, V), nullptr,
                       ProgramPoint::PostLValueKind);
   }
+
+  getCheckerManager().runCheckersForPostStmt(Dst, EvalSet, A, *this);
 }
 
 /// VisitMemberExpr - Transfer function for member expressions.
@@ -2049,7 +2048,7 @@ void ExprEngine::VisitMemberExpr(const MemberExpr *M, ExplodedNode *Pred,
         if (!M->isGLValue()) {
           assert(M->getType()->isArrayType());
           const ImplicitCastExpr *PE =
-            dyn_cast<ImplicitCastExpr>((*I)->getParentMap().getParent(M));
+            dyn_cast<ImplicitCastExpr>((*I)->getParentMap().getParentIgnoreParens(M));
           if (!PE || PE->getCastKind() != CK_ArrayToPointerDecay) {
             llvm_unreachable("should always be wrapped in ArrayToPointerDecay");
           }
@@ -2519,26 +2518,10 @@ struct DOTGraphTraits<ExplodedNode*> :
   // FIXME: Since we do not cache error nodes in ExprEngine now, this does not
   // work.
   static std::string getNodeAttributes(const ExplodedNode *N, void*) {
-
-#if 0
-      // FIXME: Replace with a general scheme to tell if the node is
-      // an error node.
-    if (GraphPrintCheckerState->isImplicitNullDeref(N) ||
-        GraphPrintCheckerState->isExplicitNullDeref(N) ||
-        GraphPrintCheckerState->isUndefDeref(N) ||
-        GraphPrintCheckerState->isUndefStore(N) ||
-        GraphPrintCheckerState->isUndefControlFlow(N) ||
-        GraphPrintCheckerState->isUndefResult(N) ||
-        GraphPrintCheckerState->isBadCall(N) ||
-        GraphPrintCheckerState->isUndefArg(N))
-      return "color=\"red\",style=\"filled\"";
-
-    if (GraphPrintCheckerState->isNoReturnCall(N))
-      return "color=\"blue\",style=\"filled\"";
-#endif
     return "";
   }
 
+  // De-duplicate some source location pretty-printing.
   static void printLocation(raw_ostream &Out, SourceLocation SLoc) {
     if (SLoc.isFileID()) {
       Out << "\\lline="
@@ -2547,6 +2530,12 @@ struct DOTGraphTraits<ExplodedNode*> :
         << GraphPrintSourceManager->getExpansionColumnNumber(SLoc)
         << "\\l";
     }
+  }
+  static void printLocation2(raw_ostream &Out, SourceLocation SLoc) {
+    if (SLoc.isFileID() && GraphPrintSourceManager->isInMainFile(SLoc))
+      Out << "line " << GraphPrintSourceManager->getExpansionLineNumber(SLoc);
+    else
+      SLoc.print(Out, *GraphPrintSourceManager);
   }
 
   static std::string getNodeLabel(const ExplodedNode *N, void*){
@@ -2561,12 +2550,6 @@ struct DOTGraphTraits<ExplodedNode*> :
       case ProgramPoint::BlockEntranceKind: {
         Out << "Block Entrance: B"
             << Loc.castAs<BlockEntrance>().getBlock()->getBlockID();
-        if (const NamedDecl *ND =
-                    dyn_cast<NamedDecl>(Loc.getLocationContext()->getDecl())) {
-          Out << " (";
-          ND->printName(Out);
-          Out << ")";
-        }
         break;
       }
 
@@ -2691,13 +2674,6 @@ struct DOTGraphTraits<ExplodedNode*> :
           Out << "\\l";
         }
 
-#if 0
-          // FIXME: Replace with a general scheme to determine
-          // the name of the check.
-        if (GraphPrintCheckerState->isUndefControlFlow(N)) {
-          Out << "\\|Control-flow based on\\lUndefined value.\\l";
-        }
-#endif
         break;
       }
 
@@ -2719,27 +2695,6 @@ struct DOTGraphTraits<ExplodedNode*> :
         else if (Loc.getAs<PostLValue>())
           Out << "\\lPostLValue\\l";
 
-#if 0
-          // FIXME: Replace with a general scheme to determine
-          // the name of the check.
-        if (GraphPrintCheckerState->isImplicitNullDeref(N))
-          Out << "\\|Implicit-Null Dereference.\\l";
-        else if (GraphPrintCheckerState->isExplicitNullDeref(N))
-          Out << "\\|Explicit-Null Dereference.\\l";
-        else if (GraphPrintCheckerState->isUndefDeref(N))
-          Out << "\\|Dereference of undefialied value.\\l";
-        else if (GraphPrintCheckerState->isUndefStore(N))
-          Out << "\\|Store to Undefined Loc.";
-        else if (GraphPrintCheckerState->isUndefResult(N))
-          Out << "\\|Result of operation is undefined.";
-        else if (GraphPrintCheckerState->isNoReturnCall(N))
-          Out << "\\|Call to function marked \"noreturn\".";
-        else if (GraphPrintCheckerState->isBadCall(N))
-          Out << "\\|Call to NULL/Undefined.";
-        else if (GraphPrintCheckerState->isUndefArg(N))
-          Out << "\\|Argument in call is undefined";
-#endif
-
         break;
       }
     }
@@ -2747,6 +2702,40 @@ struct DOTGraphTraits<ExplodedNode*> :
     ProgramStateRef state = N->getState();
     Out << "\\|StateID: " << (const void*) state.get()
         << " NodeID: " << (const void*) N << "\\|";
+
+    // Analysis stack backtrace.
+    Out << "Location context stack (from current to outer):\\l";
+    const LocationContext *LC = Loc.getLocationContext();
+    unsigned Idx = 0;
+    for (; LC; LC = LC->getParent(), ++Idx) {
+      Out << Idx << ". (" << (const void *)LC << ") ";
+      switch (LC->getKind()) {
+      case LocationContext::StackFrame:
+        if (const NamedDecl *D = dyn_cast<NamedDecl>(LC->getDecl()))
+          Out << "Calling " << D->getQualifiedNameAsString();
+        else
+          Out << "Calling anonymous code";
+        if (const Stmt *S = cast<StackFrameContext>(LC)->getCallSite()) {
+          Out << " at ";
+          printLocation2(Out, S->getLocStart());
+        }
+        break;
+      case LocationContext::Block:
+        Out << "Invoking block";
+        if (const Decl *D = cast<BlockInvocationContext>(LC)->getBlockDecl()) {
+          Out << " defined at ";
+          printLocation2(Out, D->getLocStart());
+        }
+        break;
+      case LocationContext::Scope:
+        Out << "Entering scope";
+        // FIXME: Add more info once ScopeContext is activated.
+        break;
+      }
+      Out << "\\l";
+    }
+    Out << "\\l";
+
     state->printDOT(Out);
 
     Out << "\\l";

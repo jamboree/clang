@@ -12,9 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/Sema/Lookup.h"
 #include "clang/AST/ASTContext.h"
-#include "clang/AST/ASTMutationListener.h"
 #include "clang/AST/CXXInheritance.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
@@ -29,6 +27,7 @@
 #include "clang/Lex/ModuleLoader.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Sema/DeclSpec.h"
+#include "clang/Sema/Lookup.h"
 #include "clang/Sema/Overload.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ScopeInfo.h"
@@ -37,17 +36,13 @@
 #include "clang/Sema/TemplateDeduction.h"
 #include "clang/Sema/TypoCorrection.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/ADT/edit_distance.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <algorithm>
 #include <iterator>
-#include <limits>
 #include <list>
-#include <map>
 #include <set>
 #include <utility>
 #include <vector>
@@ -1393,8 +1388,9 @@ Module *Sema::getOwningModule(Decl *Entity) {
       auto &SrcMgr = PP.getSourceManager();
       SourceLocation StartLoc =
           SrcMgr.getLocForStartOfFile(SrcMgr.getMainFileID());
-      auto &TopLevel =
-          VisibleModulesStack.empty() ? VisibleModules : VisibleModulesStack[0];
+      auto &TopLevel = ModuleScopes.empty()
+                           ? VisibleModules
+                           : ModuleScopes[0].OuterVisibleModules;
       TopLevel.setVisible(CachedFakeTopLevelModule, StartLoc);
     }
 
@@ -1565,12 +1561,17 @@ bool LookupResult::isVisibleSlow(Sema &SemaRef, NamedDecl *D) {
   // If this declaration is not at namespace scope nor module-private,
   // then it is visible if its lexical parent has a visible definition.
   DeclContext *DC = D->getLexicalDeclContext();
-  if (!D->isModulePrivate() &&
-      DC && !DC->isFileContext() && !isa<LinkageSpecDecl>(DC)) {
+  if (!D->isModulePrivate() && DC && !DC->isFileContext() &&
+      !isa<LinkageSpecDecl>(DC) && !isa<ExportDecl>(DC)) {
     // For a parameter, check whether our current template declaration's
     // lexical context is visible, not whether there's some other visible
     // definition of it, because parameters aren't "within" the definition.
-    if ((D->isTemplateParameter() || isa<ParmVarDecl>(D))
+    //
+    // In C++ we need to check for a visible definition due to ODR merging,
+    // and in C we must not because each declaration of a function gets its own
+    // set of declarations for tags in prototype scope.
+    if ((D->isTemplateParameter() || isa<ParmVarDecl>(D)
+         || (isa<FunctionDecl>(DC) && !SemaRef.getLangOpts().CPlusPlus))
             ? isVisible(SemaRef, cast<NamedDecl>(DC))
             : SemaRef.hasVisibleDefinition(cast<NamedDecl>(DC))) {
       if (SemaRef.ActiveTemplateInstantiations.empty() &&
@@ -4972,8 +4973,8 @@ void Sema::diagnoseTypo(const TypoCorrection &Correction,
 static NamedDecl *getDefinitionToImport(NamedDecl *D) {
   if (VarDecl *VD = dyn_cast<VarDecl>(D))
     return VD->getDefinition();
-  if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
-    return FD->isDefined(FD) ? const_cast<FunctionDecl*>(FD) : nullptr;
+  if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
+    return FD->getDefinition();
   if (TagDecl *TD = dyn_cast<TagDecl>(D))
     return TD->getDefinition();
   if (ObjCInterfaceDecl *ID = dyn_cast<ObjCInterfaceDecl>(D))

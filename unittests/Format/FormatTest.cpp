@@ -9,7 +9,7 @@
 
 #include "clang/Format/Format.h"
 
-#include "../Tooling/RewriterTestContext.h"
+#include "../Tooling/ReplacementTest.h"
 #include "FormatTestUtils.h"
 
 #include "clang/Frontend/TextDiagnosticPrinter.h"
@@ -18,6 +18,9 @@
 #include "gtest/gtest.h"
 
 #define DEBUG_TYPE "format-test"
+
+using clang::tooling::ReplacementTest;
+using clang::tooling::toReplacements;
 
 namespace clang {
 namespace format {
@@ -47,10 +50,10 @@ protected:
       EXPECT_EQ(ExpectedIncompleteFormat, IncompleteFormat) << Code << "\n\n";
     }
     ReplacementCount = Replaces.size();
-    std::string Result = applyAllReplacements(Code, Replaces);
-    EXPECT_NE("", Result);
-    DEBUG(llvm::errs() << "\n" << Result << "\n\n");
-    return Result;
+    auto Result = applyAllReplacements(Code, Replaces);
+    EXPECT_TRUE(static_cast<bool>(Result));
+    DEBUG(llvm::errs() << "\n" << *Result << "\n\n");
+    return *Result;
   }
 
   FormatStyle getLLVMStyleWithColumns(unsigned ColumnLimit) {
@@ -1933,6 +1936,10 @@ TEST_F(FormatTest, UnderstandsAccessSpecifiers) {
   verifyFormat("for (Signals signals : f()) {\n}");
   verifyFormat("{\n"
                "  signals.set(); // This needs indentation.\n"
+               "}");
+  verifyFormat("void f() {\n"
+               "label:\n"
+               "  signals.baz();\n"
                "}");
 }
 
@@ -4795,6 +4802,8 @@ TEST_F(FormatTest, DeclarationsOfMultipleVariables) {
   verifyFormat("aaaaaaaaa *a = aaaaaaaaaaaaaaaaaaa, *b = bbbbbbbbbbbbbbbbbbb,\n"
                "          *b = bbbbbbbbbbbbbbbbbbb, *d = ddddddddddddddddddd;",
                Style);
+  verifyFormat("vector<int*> a, b;", Style);
+  verifyFormat("for (int *p, *q; p != q; p = p->next) {\n}", Style);
 }
 
 TEST_F(FormatTest, ConditionalExpressionsInBrackets) {
@@ -10184,6 +10193,7 @@ TEST_F(FormatTest, ParsesConfigurationBools) {
   CHECK_PARSE_BOOL(SpacesInContainerLiterals);
   CHECK_PARSE_BOOL(SpacesInCStyleCastParentheses);
   CHECK_PARSE_BOOL(SpaceAfterCStyleCast);
+  CHECK_PARSE_BOOL(SpaceAfterTemplateKeyword);
   CHECK_PARSE_BOOL(SpaceBeforeAssignmentOperators);
 
   CHECK_PARSE_NESTED_BOOL(BraceWrapping, AfterClass);
@@ -11147,6 +11157,8 @@ TEST_F(FormatTest, FormatsBlocks) {
                "  }\n"
                "});");
   verifyFormat("Block b = ^int *(A *a, B *b) {}");
+  verifyFormat("BOOL (^aaa)(void) = ^BOOL {\n"
+               "};");
 
   FormatStyle FourIndent = getLLVMStyle();
   FourIndent.ObjCBlockIndentWidth = 4;
@@ -11320,6 +11332,12 @@ TEST_F(FormatTest, SpacesInAngles) {
 
   Spaces.SpacesInAngles = false;
   verifyFormat("A<A<int>>();", Spaces);
+}
+
+TEST_F(FormatTest, SpaceAfterTemplateKeyword) {
+  FormatStyle Style = getLLVMStyle();
+  Style.SpaceAfterTemplateKeyword = false;
+  verifyFormat("template<int> void foo();", Style);
 }
 
 TEST_F(FormatTest, TripleAngleBrackets) {
@@ -11516,17 +11534,6 @@ TEST(FormatStyle, GetStyleOfFile) {
 
 #endif // _MSC_VER
 
-class ReplacementTest : public ::testing::Test {
-protected:
-  tooling::Replacement createReplacement(SourceLocation Start, unsigned Length,
-                                         llvm::StringRef ReplacementText) {
-    return tooling::Replacement(Context.Sources, Start, Length,
-                                ReplacementText);
-  }
-
-  RewriterTestContext Context;
-};
-
 TEST_F(ReplacementTest, FormatCodeAfterReplacements) {
   // Column limit is 20.
   std::string Code = "Type *a =\n"
@@ -11541,20 +11548,24 @@ TEST_F(ReplacementTest, FormatCodeAfterReplacements) {
                          "  mm);\n"
                          "int  bad     = format   ;";
   FileID ID = Context.createInMemoryFile("format.cpp", Code);
-  tooling::Replacements Replaces;
-  Replaces.insert(tooling::Replacement(
-      Context.Sources, Context.getLocation(ID, 1, 1), 6, "auto "));
-  Replaces.insert(tooling::Replacement(
-      Context.Sources, Context.getLocation(ID, 3, 10), 1, "nullptr"));
-  Replaces.insert(tooling::Replacement(
-      Context.Sources, Context.getLocation(ID, 4, 3), 1, "nullptr"));
-  Replaces.insert(tooling::Replacement(
-      Context.Sources, Context.getLocation(ID, 4, 13), 1, "nullptr"));
+  tooling::Replacements Replaces = toReplacements(
+      {tooling::Replacement(Context.Sources, Context.getLocation(ID, 1, 1), 6,
+                            "auto "),
+       tooling::Replacement(Context.Sources, Context.getLocation(ID, 3, 10), 1,
+                            "nullptr"),
+       tooling::Replacement(Context.Sources, Context.getLocation(ID, 4, 3), 1,
+                            "nullptr"),
+       tooling::Replacement(Context.Sources, Context.getLocation(ID, 4, 13), 1,
+                            "nullptr")});
 
   format::FormatStyle Style = format::getLLVMStyle();
   Style.ColumnLimit = 20; // Set column limit to 20 to increase readibility.
-  EXPECT_EQ(Expected, applyAllReplacements(
-                          Code, formatReplacements(Code, Replaces, Style)));
+  auto FormattedReplaces = formatReplacements(Code, Replaces, Style);
+  EXPECT_TRUE(static_cast<bool>(FormattedReplaces))
+      << llvm::toString(FormattedReplaces.takeError()) << "\n";
+  auto Result = applyAllReplacements(Code, *FormattedReplaces);
+  EXPECT_TRUE(static_cast<bool>(Result));
+  EXPECT_EQ(Expected, *Result);
 }
 
 TEST_F(ReplacementTest, SortIncludesAfterReplacement) {
@@ -11572,14 +11583,18 @@ TEST_F(ReplacementTest, SortIncludesAfterReplacement) {
                          "  return 0;\n"
                          "}";
   FileID ID = Context.createInMemoryFile("fix.cpp", Code);
-  tooling::Replacements Replaces;
-  Replaces.insert(tooling::Replacement(
-      Context.Sources, Context.getLocation(ID, 1, 1), 0, "#include \"b.h\"\n"));
+  tooling::Replacements Replaces = toReplacements(
+      {tooling::Replacement(Context.Sources, Context.getLocation(ID, 1, 1), 0,
+                            "#include \"b.h\"\n")});
 
   format::FormatStyle Style = format::getLLVMStyle();
   Style.SortIncludes = true;
-  auto FinalReplaces = formatReplacements(Code, Replaces, Style);
-  EXPECT_EQ(Expected, applyAllReplacements(Code, FinalReplaces));
+  auto FormattedReplaces = formatReplacements(Code, Replaces, Style);
+  EXPECT_TRUE(static_cast<bool>(FormattedReplaces))
+      << llvm::toString(FormattedReplaces.takeError()) << "\n";
+  auto Result = applyAllReplacements(Code, *FormattedReplaces);
+  EXPECT_TRUE(static_cast<bool>(Result));
+  EXPECT_EQ(Expected, *Result);
 }
 
 } // end namespace

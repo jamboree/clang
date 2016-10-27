@@ -125,10 +125,15 @@ static llvm::Constant *buildBlockDescriptor(CodeGenModule &CGM,
 
   llvm::Constant *init = llvm::ConstantStruct::getAnon(elements);
 
+  unsigned AddrSpace = 0;
+  if (C.getLangOpts().OpenCL)
+    AddrSpace = C.getTargetAddressSpace(LangAS::opencl_constant);
   llvm::GlobalVariable *global =
     new llvm::GlobalVariable(CGM.getModule(), init->getType(), true,
                              llvm::GlobalValue::InternalLinkage,
-                             init, "__block_descriptor_tmp");
+                             init, "__block_descriptor_tmp", nullptr,
+                             llvm::GlobalValue::NotThreadLocal,
+                             AddrSpace);
 
   return llvm::ConstantExpr::getBitCast(global, CGM.getBlockDescriptorType());
 }
@@ -194,13 +199,14 @@ namespace {
     Qualifiers::ObjCLifetime Lifetime;
     const BlockDecl::Capture *Capture; // null for 'this'
     llvm::Type *Type;
+    QualType FieldType;
 
     BlockLayoutChunk(CharUnits align, CharUnits size,
                      Qualifiers::ObjCLifetime lifetime,
                      const BlockDecl::Capture *capture,
-                     llvm::Type *type)
+                     llvm::Type *type, QualType fieldType)
       : Alignment(align), Size(size), Lifetime(lifetime),
-        Capture(capture), Type(type) {}
+        Capture(capture), Type(type), FieldType(fieldType) {}
 
     /// Tell the block info that this chunk has the given field index.
     void setIndex(CGBlockInfo &info, unsigned index, CharUnits offset) {
@@ -208,8 +214,8 @@ namespace {
         info.CXXThisIndex = index;
         info.CXXThisOffset = offset;
       } else {
-        info.Captures.insert({Capture->getVariable(),
-                              CGBlockInfo::Capture::makeIndex(index, offset)});
+        auto C = CGBlockInfo::Capture::makeIndex(index, offset, FieldType);
+        info.Captures.insert({Capture->getVariable(), C});
       }
     }
   };
@@ -358,7 +364,7 @@ static void computeBlockInfo(CodeGenModule &CGM, CodeGenFunction *CGF,
 
     layout.push_back(BlockLayoutChunk(tinfo.second, tinfo.first,
                                       Qualifiers::OCL_None,
-                                      nullptr, llvmType));
+                                      nullptr, llvmType, thisType));
   }
 
   // Next, all the block captures.
@@ -375,7 +381,7 @@ static void computeBlockInfo(CodeGenModule &CGM, CodeGenFunction *CGF,
 
       layout.push_back(BlockLayoutChunk(align, CGM.getPointerSize(),
                                         Qualifiers::OCL_None, &CI,
-                                        CGM.VoidPtrTy));
+                                        CGM.VoidPtrTy, variable->getType()));
       continue;
     }
 
@@ -431,6 +437,14 @@ static void computeBlockInfo(CodeGenModule &CGM, CodeGenFunction *CGF,
     }
 
     QualType VT = variable->getType();
+
+    // If the variable is captured by an enclosing block or lambda expression,
+    // use the type of the capture field.
+    if (CGF->BlockInfo && CI.isNested())
+      VT = CGF->BlockInfo->getCapture(variable).fieldType();
+    else if (auto *FD = CGF->LambdaCaptureFields.lookup(variable))
+      VT = FD->getType();
+
     CharUnits size = C.getTypeSizeInChars(VT);
     CharUnits align = C.getDeclAlign(variable);
     
@@ -439,7 +453,8 @@ static void computeBlockInfo(CodeGenModule &CGM, CodeGenFunction *CGF,
     llvm::Type *llvmType =
       CGM.getTypes().ConvertTypeForMem(VT);
     
-    layout.push_back(BlockLayoutChunk(align, size, lifetime, &CI, llvmType));
+    layout.push_back(
+        BlockLayoutChunk(align, size, lifetime, &CI, llvmType, VT));
   }
 
   // If that was everything, we're done here.
@@ -770,7 +785,7 @@ llvm::Value *CodeGenFunction::EmitBlockLiteral(const CGBlockInfo &blockInfo) {
     // Ignore constant captures.
     if (capture.isConstant()) continue;
 
-    QualType type = variable->getType();
+    QualType type = capture.fieldType();
 
     // This will be a [[type]]*, except that a byref entry will just be
     // an i8**.
@@ -927,7 +942,10 @@ llvm::Type *CodeGenModule::getBlockDescriptorType() {
                              UnsignedLongTy, UnsignedLongTy, nullptr);
 
   // Now form a pointer to that.
-  BlockDescriptorType = llvm::PointerType::getUnqual(BlockDescriptorType);
+  unsigned AddrSpace = 0;
+  if (getLangOpts().OpenCL)
+    AddrSpace = getContext().getTargetAddressSpace(LangAS::opencl_constant);
+  BlockDescriptorType = llvm::PointerType::get(BlockDescriptorType, AddrSpace);
   return BlockDescriptorType;
 }
 
@@ -1025,9 +1043,8 @@ Address CodeGenFunction::GetAddrOfBlockDecl(const VarDecl *variable,
                                  variable->getName());
   }
 
-  if (auto refType = variable->getType()->getAs<ReferenceType>()) {
+  if (auto refType = capture.fieldType()->getAs<ReferenceType>())
     addr = EmitLoadOfReference(addr, refType);
-  }
 
   return addr;
 }

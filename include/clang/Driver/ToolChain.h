@@ -18,7 +18,6 @@
 #include "clang/Driver/Util.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Triple.h"
-#include "llvm/Support/Path.h"
 #include "llvm/Target/TargetOptions.h"
 #include <memory>
 #include <string>
@@ -41,6 +40,7 @@ namespace driver {
   class Compilation;
   class Driver;
   class JobAction;
+  class RegisterEffectiveTriple;
   class SanitizerArgs;
   class Tool;
 
@@ -92,6 +92,14 @@ private:
 
   mutable std::unique_ptr<SanitizerArgs> SanitizerArguments;
 
+  /// The effective clang triple for the current Job.
+  mutable llvm::Triple EffectiveTriple;
+
+  /// Set the toolchain's effective clang triple.
+  void setEffectiveTriple(llvm::Triple ET) const { EffectiveTriple = ET; }
+
+  friend class RegisterEffectiveTriple;
+
 protected:
   MultilibSet Multilibs;
   const char *DefaultLinker = "ld";
@@ -142,6 +150,12 @@ public:
     return Triple.getTriple();
   }
 
+  /// Get the toolchain's effective clang triple.
+  const llvm::Triple &getEffectiveTriple() const {
+    assert(!EffectiveTriple.getTriple().empty() && "No effective triple");
+    return EffectiveTriple;
+  }
+
   path_list &getFilePaths() { return FilePaths; }
   const path_list &getFilePaths() const { return FilePaths; }
 
@@ -181,7 +195,7 @@ public:
   /// \param BoundArch - The bound architecture name, or 0.
   virtual llvm::opt::DerivedArgList *
   TranslateArgs(const llvm::opt::DerivedArgList &Args,
-                const char *BoundArch) const {
+                StringRef BoundArch) const {
     return nullptr;
   }
 
@@ -219,7 +233,7 @@ public:
 
   /// LookupTypeForExtension - Return the default language type to use for the
   /// given extension.
-  virtual types::ID LookupTypeForExtension(const char *Ext) const;
+  virtual types::ID LookupTypeForExtension(StringRef Ext) const;
 
   /// IsBlocksDefault - Does this tool chain enable -fblocks by default.
   virtual bool IsBlocksDefault() const { return false; }
@@ -431,6 +445,19 @@ public:
   /// \brief On Windows, returns the version of cl.exe.  On other platforms,
   /// returns an empty VersionTuple.
   virtual VersionTuple getMSVCVersionFromExe() const { return VersionTuple(); }
+};
+
+/// Set a ToolChain's effective triple. Reset it when the registration object
+/// is destroyed.
+class RegisterEffectiveTriple {
+  const ToolChain &TC;
+
+public:
+  RegisterEffectiveTriple(const ToolChain &TC, llvm::Triple T) : TC(TC) {
+    TC.setEffectiveTriple(T);
+  }
+
+  ~RegisterEffectiveTriple() { TC.setEffectiveTriple(llvm::Triple()); }
 };
 
 } // end namespace driver

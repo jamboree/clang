@@ -114,6 +114,9 @@ def analyzer_disable_all_checks : Flag<["-"], "analyzer-disable-all-checks">,
 def analyzer_checker_help : Flag<["-"], "analyzer-checker-help">,
   HelpText<"Display the list of analyzer checkers that are available">;
 
+def analyzer_list_enabled_checkers : Flag<["-"], "analyzer-list-enabled-checkers">,
+  HelpText<"Display the list of enabled analyzer checkers">;
+
 def analyzer_config : Separate<["-"], "analyzer-config">,
   HelpText<"Choose analyzer options to enable">;
 
@@ -189,9 +192,14 @@ def femit_coverage_notes : Flag<["-"], "femit-coverage-notes">,
   HelpText<"Emit a gcov coverage notes file when compiling.">;
 def femit_coverage_data: Flag<["-"], "femit-coverage-data">,
   HelpText<"Instrument the program to emit gcov coverage data when run.">;
-def coverage_file : Separate<["-"], "coverage-file">,
-  HelpText<"Emit coverage data to this filename. The extension will be replaced.">;
-def coverage_file_EQ : Joined<["-"], "coverage-file=">, Alias<coverage_file>;
+def coverage_data_file : Separate<["-"], "coverage-data-file">,
+  HelpText<"Emit coverage data to this filename.">;
+def coverage_data_file_EQ : Joined<["-"], "coverage-data-file=">,
+  Alias<coverage_data_file>;
+def coverage_notes_file : Separate<["-"], "coverage-notes-file">,
+  HelpText<"Emit coverage notes to this filename.">;
+def coverage_notes_file_EQ : Joined<["-"], "coverage-notes-file=">,
+  Alias<coverage_notes_file>;
 def coverage_cfg_checksum : Flag<["-"], "coverage-cfg-checksum">,
   HelpText<"Emit CFG checksum for functions in .gcno files.">;
 def coverage_no_function_names_in_data : Flag<["-"], "coverage-no-function-names-in-data">,
@@ -269,12 +277,21 @@ def fsanitize_coverage_trace_bb
 def fsanitize_coverage_trace_cmp
     : Flag<["-"], "fsanitize-coverage-trace-cmp">,
       HelpText<"Enable cmp instruction tracing in sanitizer coverage">;
+def fsanitize_coverage_trace_div
+    : Flag<["-"], "fsanitize-coverage-trace-div">,
+      HelpText<"Enable div instruction tracing in sanitizer coverage">;
+def fsanitize_coverage_trace_gep
+    : Flag<["-"], "fsanitize-coverage-trace-gep">,
+      HelpText<"Enable gep instruction tracing in sanitizer coverage">;
 def fsanitize_coverage_8bit_counters
     : Flag<["-"], "fsanitize-coverage-8bit-counters">,
       HelpText<"Enable frequency counters in sanitizer coverage">;
 def fsanitize_coverage_trace_pc
     : Flag<["-"], "fsanitize-coverage-trace-pc">,
       HelpText<"Enable PC tracing in sanitizer coverage">;
+def fsanitize_coverage_trace_pc_guard
+    : Flag<["-"], "fsanitize-coverage-trace-pc-guard">,
+      HelpText<"Enable PC tracing with guard in sanitizer coverage">;
 def fprofile_instrument_EQ : Joined<["-"], "fprofile-instrument=">,
     HelpText<"Enable PGO instrumentation. The accepted value is clang, llvm, "
              "or none">;
@@ -454,6 +471,8 @@ def print_decl_contexts : Flag<["-"], "print-decl-contexts">,
   HelpText<"Print DeclContexts and their Decls">;
 def emit_module : Flag<["-"], "emit-module">,
   HelpText<"Generate pre-compiled module file from a module map">;
+def emit_module_interface : Flag<["-"], "emit-module-interface">,
+  HelpText<"Generate pre-compiled module file from a C++ module interface">;
 def emit_pth : Flag<["-"], "emit-pth">,
   HelpText<"Generate pre-tokenized header file">;
 def emit_pch : Flag<["-"], "emit-pch">,
@@ -488,8 +507,13 @@ def arcmt_modify : Flag<["-"], "arcmt-modify">,
 def arcmt_migrate : Flag<["-"], "arcmt-migrate">,
   HelpText<"Apply modifications and produces temporary files that conform to ARC">;
 
+def opt_record_file : Separate<["-"], "opt-record-file">,
+  HelpText<"File name to use for YAML optimization record output">;
+
 def print_stats : Flag<["-"], "print-stats">,
   HelpText<"Print performance metrics and statistics">;
+def stats_file : Joined<["-"], "stats-file=">,
+  HelpText<"Filename to write statistics to">;
 def fdump_record_layouts : Flag<["-"], "fdump-record-layouts">,
   HelpText<"Dump record layout information">;
 def fdump_record_layouts_simple : Flag<["-"], "fdump-record-layouts-simple">,
@@ -509,6 +533,8 @@ def find_pch_source_EQ : Joined<["-"], "find-pch-source=">,
   HelpText<"When building a pch, try to find the input file in include "
            "directories, as if it had been included by the argument passed "
            "to this flag.">;
+def fno_pch_timestamp : Flag<["-"], "fno-pch-timestamp">,
+  HelpText<"Disable inclusion of timestamp in precompiled headers">;
   
 //===----------------------------------------------------------------------===//
 // Language Options
@@ -614,10 +640,6 @@ def fdefault_calling_conv_EQ : Joined<["-"], "fdefault-calling-conv=">,
   HelpText<"Set default MS calling convention">;
 def finclude_default_header : Flag<["-"], "finclude-default-header">,
   HelpText<"Include the default header file for OpenCL">;
-
-// C++ TSes.
-def fcoroutines : Flag<["-"], "fcoroutines">,
-  HelpText<"Enable support for the C++ Coroutines TS">;
 
 //===----------------------------------------------------------------------===//
 // Header Search Options

@@ -129,6 +129,7 @@ void ASTStmtWriter::VisitAttributedStmt(AttributedStmt *S) {
 void ASTStmtWriter::VisitIfStmt(IfStmt *S) {
   VisitStmt(S);
   Record.push_back(S->isConstexpr());
+  Record.AddStmt(S->getInit());
   Record.AddDeclRef(S->getConditionVariable());
   Record.AddStmt(S->getCond());
   Record.AddStmt(S->getThen());
@@ -140,6 +141,7 @@ void ASTStmtWriter::VisitIfStmt(IfStmt *S) {
 
 void ASTStmtWriter::VisitSwitchStmt(SwitchStmt *S) {
   VisitStmt(S);
+  Record.AddStmt(S->getInit());
   Record.AddDeclRef(S->getConditionVariable());
   Record.AddStmt(S->getCond());
   Record.AddStmt(S->getBody());
@@ -1140,6 +1142,13 @@ void ASTStmtWriter::VisitObjCBoolLiteralExpr(ObjCBoolLiteralExpr *E) {
   Code = serialization::EXPR_OBJC_BOOL_LITERAL;
 }
 
+void ASTStmtWriter::VisitObjCAvailabilityCheckExpr(ObjCAvailabilityCheckExpr *E) {
+  VisitExpr(E);
+  Record.AddSourceRange(E->getSourceRange());
+  Record.AddVersionTuple(E->getVersion());
+  Code = serialization::EXPR_OBJC_AVAILABILITY_CHECK;
+}
+
 //===----------------------------------------------------------------------===//
 // C++ Expressions and Statements.
 //===----------------------------------------------------------------------===//
@@ -1383,6 +1392,7 @@ void ASTStmtWriter::VisitCXXNewExpr(CXXNewExpr *E) {
   VisitExpr(E);
   Record.push_back(E->isGlobalNew());
   Record.push_back(E->isArray());
+  Record.push_back(E->passAlignment());
   Record.push_back(E->doesUsualArrayDeleteWantSize());
   Record.push_back(E->getNumPlacementArgs());
   Record.push_back(E->StoredInitializationStyle);
@@ -1567,6 +1577,7 @@ void ASTStmtWriter::VisitArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {
   Record.push_back(E->getValue());
   Record.AddSourceRange(E->getSourceRange());
   Record.AddTypeSourceInfo(E->getQueriedTypeSourceInfo());
+  Record.AddStmt(E->getDimensionExpression());
   Code = serialization::EXPR_ARRAY_TYPE_TRAIT;
 }
 
@@ -2140,6 +2151,50 @@ void OMPClauseWriter::VisitOMPFromClause(OMPFromClause *C) {
   }
 }
 
+void OMPClauseWriter::VisitOMPUseDevicePtrClause(OMPUseDevicePtrClause *C) {
+  Record.push_back(C->varlist_size());
+  Record.push_back(C->getUniqueDeclarationsNum());
+  Record.push_back(C->getTotalComponentListNum());
+  Record.push_back(C->getTotalComponentsNum());
+  Record.AddSourceLocation(C->getLParenLoc());
+  for (auto *E : C->varlists())
+    Record.AddStmt(E);
+  for (auto *VE : C->private_copies())
+    Record.AddStmt(VE);
+  for (auto *VE : C->inits())
+    Record.AddStmt(VE);
+  for (auto *D : C->all_decls())
+    Record.AddDeclRef(D);
+  for (auto N : C->all_num_lists())
+    Record.push_back(N);
+  for (auto N : C->all_lists_sizes())
+    Record.push_back(N);
+  for (auto &M : C->all_components()) {
+    Record.AddStmt(M.getAssociatedExpression());
+    Record.AddDeclRef(M.getAssociatedDeclaration());
+  }
+}
+
+void OMPClauseWriter::VisitOMPIsDevicePtrClause(OMPIsDevicePtrClause *C) {
+  Record.push_back(C->varlist_size());
+  Record.push_back(C->getUniqueDeclarationsNum());
+  Record.push_back(C->getTotalComponentListNum());
+  Record.push_back(C->getTotalComponentsNum());
+  Record.AddSourceLocation(C->getLParenLoc());
+  for (auto *E : C->varlists())
+    Record.AddStmt(E);
+  for (auto *D : C->all_decls())
+    Record.AddDeclRef(D);
+  for (auto N : C->all_num_lists())
+    Record.push_back(N);
+  for (auto N : C->all_lists_sizes())
+    Record.push_back(N);
+  for (auto &M : C->all_components()) {
+    Record.AddStmt(M.getAssociatedExpression());
+    Record.AddDeclRef(M.getAssociatedDeclaration());
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // OpenMP Directives.
 //===----------------------------------------------------------------------===//
@@ -2446,6 +2501,29 @@ void ASTStmtWriter::VisitOMPDistributeSimdDirective(
     OMPDistributeSimdDirective *D) {
   VisitOMPLoopDirective(D);
   Code = serialization::STMT_OMP_DISTRIBUTE_SIMD_DIRECTIVE;
+}
+
+void ASTStmtWriter::VisitOMPTargetParallelForSimdDirective(
+    OMPTargetParallelForSimdDirective *D) {
+  VisitOMPLoopDirective(D);
+  Code = serialization::STMT_OMP_TARGET_PARALLEL_FOR_SIMD_DIRECTIVE;
+}
+
+void ASTStmtWriter::VisitOMPTargetSimdDirective(OMPTargetSimdDirective *D) {
+  VisitOMPLoopDirective(D);
+  Code = serialization::STMT_OMP_TARGET_SIMD_DIRECTIVE;
+}
+
+void ASTStmtWriter::VisitOMPTeamsDistributeDirective(
+    OMPTeamsDistributeDirective *D) {
+  VisitOMPLoopDirective(D);
+  Code = serialization::STMT_OMP_TEAMS_DISTRIBUTE_DIRECTIVE;
+}
+
+void ASTStmtWriter::VisitOMPTeamsDistributeSimdDirective(
+    OMPTeamsDistributeSimdDirective *D) {
+  VisitOMPLoopDirective(D);
+  Code = serialization::STMT_OMP_TEAMS_DISTRIBUTE_SIMD_DIRECTIVE;
 }
 
 //===----------------------------------------------------------------------===//

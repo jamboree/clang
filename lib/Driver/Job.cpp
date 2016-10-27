@@ -7,18 +7,19 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/Driver/Job.h"
 #include "InputInfo.h"
 #include "clang/Driver/Driver.h"
 #include "clang/Driver/DriverDiagnostic.h"
-#include "clang/Driver/Job.h"
 #include "clang/Driver/Tool.h"
 #include "clang/Driver/ToolChain.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringSwitch.h"
-#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cassert>
@@ -79,8 +80,8 @@ static int skipArgs(const char *Flag, bool HaveCrashVFS) {
   return 0;
 }
 
-void Command::printArg(raw_ostream &OS, const char *Arg, bool Quote) {
-  const bool Escape = std::strpbrk(Arg, "\"\\$");
+void Command::printArg(raw_ostream &OS, StringRef Arg, bool Quote) {
+  const bool Escape = Arg.find_first_of("\"\\$") != StringRef::npos;
 
   if (!Quote && !Escape) {
     OS << Arg;
@@ -89,7 +90,7 @@ void Command::printArg(raw_ostream &OS, const char *Arg, bool Quote) {
 
   // Quote and escape. This isn't really complete, but good enough.
   OS << '"';
-  while (const char c = *Arg++) {
+  for (const char c : Arg) {
     if (c == '"' || c == '\\' || c == '$')
       OS << '\\';
     OS << c;
