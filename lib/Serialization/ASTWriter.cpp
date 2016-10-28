@@ -5242,7 +5242,6 @@ void ASTRecordWriter::AddDeclarationName(DeclarationName Name) {
     break;
 
   case DeclarationName::CXXUsingDirective:
-  case DeclarationName::SubstTemplatedName:
     // No extra data to emit
     break;
 
@@ -5250,10 +5249,17 @@ void ASTRecordWriter::AddDeclarationName(DeclarationName Name) {
     AddDeclRef(Name.getCXXTemplatedNameParmDecl());
     break;
 
+  case DeclarationName::SubstTemplatedName: {
+    SubstTemplateDeclNameParmName *Subst =
+        Name.getAsSubstTemplateDeclNameParmName();
+    AddDeclarationName(Subst->getReplacedParameter());
+    AddDeclarationName(Subst->getReplacementName());
+    break;
+  }
   case DeclarationName::SubstTemplatedPackName: {
     SubstTemplateDeclNameParmPackName *SubstPack =
-        Name.getAsSubstTemplateDeclNameParmPack();
-    AddDeclRef(SubstPack->getParameterPack());
+        Name.getAsSubstTemplateDeclNameParmPackName();
+    AddDeclarationName(SubstPack->getReplacedParameter());
     AddTemplateArgument(SubstPack->getArgumentPack());
     break;
   }

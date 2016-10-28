@@ -997,7 +997,7 @@ DeclarationNameInfo TemplateInstantiator::TransformDeclarationNameInfo(
   }
 
   if (SubstTemplateDeclNameParmPackName *SubstPack =
-          NameInfo.getName().getAsSubstTemplateDeclNameParmPack()) {
+          NameInfo.getName().getAsSubstTemplateDeclNameParmPackName()) {
     if (getSema().ArgumentPackSubstitutionIndex == -1)
       return NameInfo;
 

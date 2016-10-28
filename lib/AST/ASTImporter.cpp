@@ -7231,7 +7231,7 @@ DeclarationName ASTImporter::Import(DeclarationName FromName) {
   }
   case DeclarationName::SubstTemplatedPackName: {
     SubstTemplateDeclNameParmPackName *SubstPack =
-        FromName.getAsSubstTemplateDeclNameParmPack();
+        FromName.getAsSubstTemplateDeclNameParmPackName();
     CXXTemplateDeclNameParmName *TN = Import(SubstPack->getReplacedParameter())
                                           .getAsCXXTemplateDeclNameParmName();
     if (!TN)

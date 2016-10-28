@@ -237,7 +237,7 @@ void DeclarationName::print(raw_ostream &OS, const PrintingPolicy &Policy) {
     return;
   }
   case DeclarationName::SubstTemplatedPackName: {
-    TemplateDeclNameParmDecl *TDP = N.getAsSubstTemplateDeclNameParmPack()
+    TemplateDeclNameParmDecl *TDP = N.getAsSubstTemplateDeclNameParmPackName()
                                         ->getReplacedParameter()
                                         ->getDecl();
     if (IdentifierInfo *Id = TDP->getIdentifier())
@@ -325,7 +325,7 @@ bool DeclarationName::containsUnexpandedParameterPack() const {
   if (TemplateDeclNameParmDecl *TDP = getCXXTemplatedNameParmDecl()) {
     return TDP->isParameterPack();
   }
-  return getAsSubstTemplateDeclNameParmPack() != nullptr;
+  return getAsSubstTemplateDeclNameParmPackName() != nullptr;
 }
 
 std::string DeclarationName::getAsString() const {

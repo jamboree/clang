@@ -242,7 +242,7 @@ public:
   /// \returns The storage for the substituted template declname parameter pack,
   /// if known. Otherwise, returns NULL.
   SubstTemplateDeclNameParmPackName *
-  getAsSubstTemplateDeclNameParmPack() const {
+  getAsSubstTemplateDeclNameParmPackName() const {
     if (getNameKind() == SubstTemplatedPackName)
       return reinterpret_cast<SubstTemplateDeclNameParmPackName *>(Ptr &
                                                                       ~PtrMask);
