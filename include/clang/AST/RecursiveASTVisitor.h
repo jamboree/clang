@@ -782,7 +782,7 @@ bool RecursiveASTVisitor<Derived>::TraverseDeclarationNameInfo(
   case DeclarationName::CXXLiteralOperatorName:
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::CXXTemplatedName:
-  case DeclarationName::SubstTemplateDeclNameParmPack:
+  case DeclarationName::SubstTemplatedPackName:
   case DeclarationName::SubstTemplatedName:
     break;
   }

@@ -38,7 +38,7 @@ namespace clang {
   class TypeSourceInfo;
   class UsingDirectiveDecl;
   class TemplateDeclNameParmDecl;
-  class SubstTemplateDeclNameParmPackStorage;
+  class SubstTemplateDeclNameParmPackName;
   class SubstTemplateDeclNameParmName;
   class TemplateArgument;
 
@@ -66,7 +66,7 @@ public:
     CXXLiteralOperatorName,
     CXXUsingDirective,
     CXXTemplatedName,
-    SubstTemplateDeclNameParmPack,
+    SubstTemplatedPackName,
     SubstTemplatedName
   };
   static const unsigned NumNameKinds = SubstTemplatedName + 1;
@@ -173,13 +173,6 @@ public:
     Ptr |= StoredDeclarationNameExtra;
   }
 
-  DeclarationName(SubstTemplateDeclNameParmPackStorage *Name)
-      : Ptr(reinterpret_cast<uintptr_t>(Name)) {
-    assert((Ptr & PtrMask) == 0 &&
-           "Improperly aligned SubstTemplateDeclNameParmPackStorage");
-    Ptr |= StoredDeclarationNameExtra;
-  }
-
   /// getUsingDirectiveName - Return name for all using-directives.
   static DeclarationName getUsingDirectiveName();
 
@@ -248,10 +241,10 @@ public:
   ///
   /// \returns The storage for the substituted template declname parameter pack,
   /// if known. Otherwise, returns NULL.
-  SubstTemplateDeclNameParmPackStorage *
+  SubstTemplateDeclNameParmPackName *
   getAsSubstTemplateDeclNameParmPack() const {
-    if (getNameKind() == SubstTemplateDeclNameParmPack)
-      return reinterpret_cast<SubstTemplateDeclNameParmPackStorage *>(Ptr &
+    if (getNameKind() == SubstTemplatedPackName)
+      return reinterpret_cast<SubstTemplateDeclNameParmPackName *>(Ptr &
                                                                       ~PtrMask);
     return nullptr;
   }
@@ -350,6 +343,21 @@ public:
   void dump() const;
 };
 
+inline DeclarationNameExtra::DeclarationNameExtra()
+    : CanonicalPtr(DeclarationName(this).getAsOpaqueInteger()) {}
+
+inline DeclarationNameExtra::DeclarationNameExtra(ExtraKind Kind)
+    : ExtraKindOrNumArgs(Kind),
+      CanonicalPtr(DeclarationName(this).getAsOpaqueInteger()) {}
+
+inline DeclarationNameExtra::DeclarationNameExtra(ExtraKind Kind,
+                                                  DeclarationName Canon)
+    : ExtraKindOrNumArgs(Kind) {
+  if (!Canon)
+    Canon = DeclarationName(this);
+  CanonicalPtr = Canon.getAsOpaqueInteger();
+}
+
 raw_ostream &operator<<(raw_ostream &OS, DeclarationName N);
 
 /// Ordering on two declaration names. If both names are identifiers,
@@ -425,34 +433,35 @@ DeclarationName::getCXXTemplatedNameParmDecl() const {
   return nullptr;
 }
 
-// TODO: remove this entirely.
-class SubstTemplateDeclNameParmPackStorage : public DeclarationNameExtra,
-                                             public llvm::FoldingSetNode {
-  unsigned Size;
-  TemplateDeclNameParmDecl *Parameter;
+class SubstTemplateDeclNameParmPackName : public DeclarationNameExtra,
+                                          public llvm::FoldingSetNode {
+  /// \brief The original declname parameter.
+  CXXTemplateDeclNameParmName *Replaced;
+
+  /// \brief A pointer to the set of template arguments that this
+  /// parameter pack is instantiated with.
   const TemplateArgument *Arguments;
 
+  /// \brief The number of template arguments in \c Arguments.
+  unsigned NumArguments;
+
+
 public:
-  SubstTemplateDeclNameParmPackStorage(TemplateDeclNameParmDecl *Parameter,
-                                       unsigned Size,
-                                       const TemplateArgument *Arguments)
-      : Size(Size), Parameter(Parameter), Arguments(Arguments) {
-    ExtraKindOrNumArgs = SubstTemplateDeclNameParmPack;
-  }
+  SubstTemplateDeclNameParmPackName(CXXTemplateDeclNameParmName *Param,
+                                    DeclarationName Canon,
+                                    const TemplateArgument &ArgPack);
 
-  unsigned size() const { return Size; }
-
-  /// \brief Retrieve the template declname parameter pack being substituted.
-  TemplateDeclNameParmDecl *getParameterPack() const { return Parameter; }
+  /// Gets the template parameter that was substituted for.
+  CXXTemplateDeclNameParmName *getReplacedParameter() const { return Replaced; }
 
   /// \brief Retrieve the template declname argument pack with which this
   /// parameter was substituted.
   TemplateArgument getArgumentPack() const;
 
-  void Profile(llvm::FoldingSetNodeID &ID, ASTContext &Context);
+  void Profile(llvm::FoldingSetNodeID &ID);
 
-  static void Profile(llvm::FoldingSetNodeID &ID, ASTContext &Context,
-                      TemplateDeclNameParmDecl *Parameter,
+  static void Profile(llvm::FoldingSetNodeID &ID,
+                      const CXXTemplateDeclNameParmName *Replaced,
                       const TemplateArgument &ArgPack);
 };
 
@@ -463,14 +472,10 @@ class SubstTemplateDeclNameParmName : public DeclarationNameExtra,
 public:
   SubstTemplateDeclNameParmName(CXXTemplateDeclNameParmName *Param,
                                 DeclarationName Canon)
-      : Replaced(Param) {
-    ExtraKindOrNumArgs = SubstTemplatedName;
-    CanonicalPtr = Canon.getAsOpaqueInteger();
-  }
+      : DeclarationNameExtra(SubstTemplatedName, Canon), Replaced(Param) {}
+
   /// Gets the template parameter that was substituted for.
-  CXXTemplateDeclNameParmName *getReplacedParameter() const {
-    return Replaced;
-  }
+  CXXTemplateDeclNameParmName *getReplacedParameter() const { return Replaced; }
 
   /// Gets the type that was substituted for the template
   /// parameter.
@@ -528,8 +533,9 @@ class DeclarationNameTable {
   void *CXXSpecialNamesImpl; // Actually a FoldingSet<CXXSpecialName> *
   CXXOperatorIdName *CXXOperatorNames; // Operator names
   void *CXXLiteralOperatorNames; // Actually a CXXOperatorIdName*
-  void *CXXTemplatedNames; // FoldingSet<CXXTemplateDeclNameParmName> *
-  void *SubstTemplatedNames; // FoldingSet<SubstTemplateDeclNameParmName> *
+  void *CXXTemplatedNames;
+  void *SubstTemplatedNames;
+  void *SubstTemplatedPackNames;
 
   DeclarationNameTable(const DeclarationNameTable&) = delete;
   void operator=(const DeclarationNameTable&) = delete;
@@ -578,6 +584,10 @@ public:
   DeclarationName
   getSubstTemplatedName(CXXTemplateDeclNameParmName *Replaced,
                         DeclarationName Replacement);
+
+  DeclarationName
+  getSubstTemplatedNamePack(CXXTemplateDeclNameParmName *Replaced,
+                            const TemplateArgument &ArgPack);
 };
 
 /// DeclarationNameLoc - Additional source/type location info

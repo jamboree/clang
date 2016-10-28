@@ -5250,8 +5250,8 @@ void ASTRecordWriter::AddDeclarationName(DeclarationName Name) {
     AddDeclRef(Name.getCXXTemplatedNameParmDecl());
     break;
 
-  case DeclarationName::SubstTemplateDeclNameParmPack: {
-    SubstTemplateDeclNameParmPackStorage *SubstPack =
+  case DeclarationName::SubstTemplatedPackName: {
+    SubstTemplateDeclNameParmPackName *SubstPack =
         Name.getAsSubstTemplateDeclNameParmPack();
     AddDeclRef(SubstPack->getParameterPack());
     AddTemplateArgument(SubstPack->getArgumentPack());

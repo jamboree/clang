@@ -808,7 +808,7 @@ public:
     CXXLiteralOperator,
     CXXUsingDirective,
     CXXTemplatedName,
-    SubstTemplateDeclNameParmPack,
+    SubstTemplatedPackName,
     SubstTemplatedName,
     NUM_EXTRA_KINDS
   };
@@ -824,6 +824,10 @@ public:
   /// DeclarationNameExtra is also a MultiKeywordSelector.
   unsigned ExtraKindOrNumArgs;
   uintptr_t CanonicalPtr;
+
+  DeclarationNameExtra();
+  DeclarationNameExtra(ExtraKind Kind);
+  DeclarationNameExtra(ExtraKind Kind, DeclarationName Canon);
 };
 
 }  // end namespace clang

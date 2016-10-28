@@ -7229,12 +7229,12 @@ DeclarationName ASTImporter::Import(DeclarationName FromName) {
     return ToContext.DeclarationNames.getCXXTemplatedName(
         TDP->getDepth(), TDP->getIndex(), TDP->isParameterPack(), TDP);
   }
-  case DeclarationName::SubstTemplateDeclNameParmPack: {
-    SubstTemplateDeclNameParmPackStorage *SubstPack =
+  case DeclarationName::SubstTemplatedPackName: {
+    SubstTemplateDeclNameParmPackName *SubstPack =
         FromName.getAsSubstTemplateDeclNameParmPack();
-    TemplateDeclNameParmDecl *Param = cast_or_null<TemplateDeclNameParmDecl>(
-        Import(SubstPack->getParameterPack()));
-    if (!Param)
+    CXXTemplateDeclNameParmName *TN = Import(SubstPack->getReplacedParameter())
+                                          .getAsCXXTemplateDeclNameParmName();
+    if (!TN)
       return DeclarationName();
 
     ASTNodeImporter Importer(*this);
@@ -7243,7 +7243,7 @@ DeclarationName ASTImporter::Import(DeclarationName FromName) {
     if (ArgPack.isNull())
       return DeclarationName();
 
-    return ToContext.getSubstTemplateDeclNameParmPack(Param, ArgPack);
+    return ToContext.DeclarationNames.getSubstTemplatedNamePack(TN, ArgPack);
   }
   case DeclarationName::SubstTemplatedName: {
     SubstTemplateDeclNameParmName *Subst =

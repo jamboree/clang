@@ -3569,6 +3569,7 @@ TreeTransform<Derived>
   case DeclarationName::CXXLiteralOperatorName:
   case DeclarationName::CXXUsingDirective:
   case DeclarationName::SubstTemplatedName:
+  case DeclarationName::SubstTemplatedPackName:
     return NameInfo;
 
   case DeclarationName::CXXConstructorName:
@@ -3618,8 +3619,6 @@ TreeTransform<Derived>
     NewNameInfo.setName(NewName);
     return NewNameInfo;
   }
-  // FIXME
-  // case DeclarationName::SubstTemplateDeclNameParmPack:
   }
 
   llvm_unreachable("Unknown name kind.");

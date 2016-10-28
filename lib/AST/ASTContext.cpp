@@ -743,7 +743,6 @@ ASTContext::ASTContext(LangOptions &LOpts, SourceManager &SM,
     : FunctionProtoTypes(this_()), TemplateSpecializationTypes(this_()),
       DependentTemplateSpecializationTypes(this_()),
       SubstTemplateTemplateParmPacks(this_()),
-      SubstTemplateDeclNameParmPacks(this_()),
       GlobalNestedNameSpecifier(nullptr), Int128Decl(nullptr),
       UInt128Decl(nullptr), BuiltinVaListDecl(nullptr),
       BuiltinMSVaListDecl(nullptr), ObjCIdDecl(nullptr), ObjCSelDecl(nullptr),
@@ -7148,27 +7147,6 @@ ASTContext::getSubstTemplateTemplateParmPack(TemplateTemplateParmDecl *Param,
   }
 
   return TemplateName(Subst);
-}
-
-DeclarationName
-ASTContext::getSubstTemplateDeclNameParmPack(TemplateDeclNameParmDecl *Param,
-                                       const TemplateArgument &ArgPack) const {
-  ASTContext &Self = const_cast<ASTContext &>(*this);
-  llvm::FoldingSetNodeID ID;
-  SubstTemplateDeclNameParmPackStorage::Profile(ID, Self, Param, ArgPack);
-
-  void *InsertPos = nullptr;
-  SubstTemplateDeclNameParmPackStorage *Subst
-    = SubstTemplateDeclNameParmPacks.FindNodeOrInsertPos(ID, InsertPos);
-  
-  if (!Subst) {
-    Subst = new (*this) SubstTemplateDeclNameParmPackStorage(Param, 
-                                                           ArgPack.pack_size(),
-                                                         ArgPack.pack_begin());
-    SubstTemplateDeclNameParmPacks.InsertNode(Subst, InsertPos);
-  }
-
-  return DeclarationName(Subst);
 }
 
 /// getFromTargetType - Given one of the integer types provided by
