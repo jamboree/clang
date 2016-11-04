@@ -827,7 +827,10 @@ SubstTemplateDeclNameParmPackName::SubstTemplateDeclNameParmPackName(
     CXXTemplateDeclNameParmName *Param, DeclarationName Canon,
     const TemplateArgument &ArgPack)
     : DeclarationNameExtra(SubstTemplatedPackName, Canon), Replaced(Param),
-      Arguments(ArgPack.pack_begin()), NumArguments(ArgPack.pack_size()) {}
+      Arguments(ArgPack.pack_begin()), NumArguments(ArgPack.pack_size()) {
+  if (!Canon)
+    CanonicalPtr = DeclarationName(this).getAsOpaqueInteger();
+}
 
 TemplateArgument SubstTemplateDeclNameParmPackName::getArgumentPack() const {
   return TemplateArgument(llvm::makeArrayRef(Arguments, NumArguments));

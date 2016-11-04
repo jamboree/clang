@@ -352,11 +352,8 @@ inline DeclarationNameExtra::DeclarationNameExtra(ExtraKind Kind)
 
 inline DeclarationNameExtra::DeclarationNameExtra(ExtraKind Kind,
                                                   DeclarationName Canon)
-    : ExtraKindOrNumArgs(Kind) {
-  if (!Canon)
-    Canon = DeclarationName(this);
-  CanonicalPtr = Canon.getAsOpaqueInteger();
-}
+    : ExtraKindOrNumArgs(Kind),
+      CanonicalPtr(Canon.getAsOpaqueInteger()) {}
 
 raw_ostream &operator<<(raw_ostream &OS, DeclarationName N);
 
