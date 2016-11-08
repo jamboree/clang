@@ -5589,7 +5589,7 @@ static ExprResult CopyObject(Sema &S,
       S, Loc, CurInitExpr, CandidateSet, Ctors, Best,
       /*CopyInitializing=*/false, /*AllowExplicit=*/true,
       /*OnlyListConstructors=*/false, /*IsListInit=*/false,
-      /*SecondStepOfCopyInit=*/true)) {
+      /*HasDesig=*/false, /*SecondStepOfCopyInit=*/true)) {
   case OR_Success:
     break;
 
@@ -5729,7 +5729,7 @@ static void CheckCXX98CompatAccessibleCopy(Sema &S,
       S, Loc, CurInitExpr, CandidateSet, Ctors, Best,
       /*CopyInitializing=*/false, /*AllowExplicit=*/true,
       /*OnlyListConstructors=*/false, /*IsListInit=*/false,
-      /*SecondStepOfCopyInit=*/true);
+      /*HasDesig=*/false, /*SecondStepOfCopyInit=*/true);
 
   PartialDiagnostic Diag = S.PDiag(diag::warn_cxx98_compat_temp_copy)
     << OR << (int)Entity.getKind() << CurInitExpr->getType()
