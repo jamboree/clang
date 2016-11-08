@@ -421,6 +421,12 @@ static DeclT *getPreviousDeclForInstantiation(DeclT *D) {
   return Result;
 }
 
+static inline DeclarationNameInfo
+getNameInfoForLookup(const DeclarationNameInfo &NameInfo) {
+  return DeclarationNameInfo(NameInfo.getName().getCanonicalName(),
+                             NameInfo.getLoc());
+}
+
 Decl *
 TemplateDeclInstantiator::VisitTranslationUnitDecl(TranslationUnitDecl *D) {
   llvm_unreachable("Translation units cannot be instantiated");
@@ -543,8 +549,8 @@ Decl *TemplateDeclInstantiator::InstantiateTypedefNameDecl(TypedefNameDecl *D,
 
   Typedef->setAccess(D->getAccess());
 
-  LookupResult Previous(SemaRef, NameInfo, Sema::LookupOrdinaryName,
-                        Sema::ForRedeclaration);
+  LookupResult Previous(SemaRef, getNameInfoForLookup(NameInfo),
+                        Sema::LookupOrdinaryName, Sema::ForRedeclaration);
   SemaRef.LookupQualifiedName(Previous, Owner);
   SemaRef.CheckNameRedeclaration(Typedef, Previous);
 
@@ -757,8 +763,8 @@ Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
   DeclarationNameInfo NameInfo =
       SemaRef.SubstDeclarationNameInfo(D->getNameInfo(), TemplateArgs);
 
-  LookupResult Previous(SemaRef, NameInfo, Sema::LookupOrdinaryName,
-                        Sema::ForRedeclaration);
+  LookupResult Previous(SemaRef, getNameInfoForLookup(NameInfo),
+                        Sema::LookupOrdinaryName, Sema::ForRedeclaration);
   SemaRef.LookupQualifiedName(Previous, Owner);
   NamedDecl *PrevDecl = Previous.getAsSingle<NamedDecl>();
 
@@ -991,8 +997,8 @@ Decl *TemplateDeclInstantiator::VisitEnumDecl(EnumDecl *D) {
     SemaRef.Context.addTypedefNameForUnnamedTagDecl(Enum, TND);
   if (SubstQualifier(D, Enum)) return nullptr;
 
-  LookupResult Previous(SemaRef, NameInfo, Sema::LookupTagName,
-                        Sema::ForRedeclaration);
+  LookupResult Previous(SemaRef, getNameInfoForLookup(NameInfo),
+                        Sema::LookupTagName, Sema::ForRedeclaration);
   SemaRef.LookupQualifiedName(Previous, Owner);
   SemaRef.CheckNameRedeclaration(Enum, Previous);
 
@@ -1076,8 +1082,8 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
 
       EnumConst->setAccess(Enum->getAccess());
 
-      LookupResult Previous(SemaRef, NameInfo, Sema::LookupOrdinaryName,
-                            Sema::ForRedeclaration);
+      LookupResult Previous(SemaRef, getNameInfoForLookup(NameInfo),
+                            Sema::LookupOrdinaryName, Sema::ForRedeclaration);
       SemaRef.LookupQualifiedName(Previous, Owner);
       if (Previous.isSingleTagDecl())
         Previous.clear();
@@ -1527,8 +1533,8 @@ Decl *TemplateDeclInstantiator::VisitCXXRecordDecl(CXXRecordDecl *D) {
     SemaRef.Context.addTypedefNameForUnnamedTagDecl(Record, TND);
 
   if (!D->isInjectedClassName()) {
-    LookupResult Previous(SemaRef, NameInfo, Sema::LookupTagName,
-                          Sema::ForRedeclaration);
+    LookupResult Previous(SemaRef, getNameInfoForLookup(NameInfo),
+                          Sema::LookupTagName, Sema::ForRedeclaration);
     SemaRef.LookupQualifiedName(Previous, Owner);
     SemaRef.CheckNameRedeclaration(Record, Previous);
   }
@@ -2038,8 +2044,8 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
   if (InitMethodInstantiation(Method, D))
     Method->setInvalidDecl();
 
-  LookupResult Previous(SemaRef, NameInfo, Sema::LookupOrdinaryName,
-                        Sema::ForRedeclaration);
+  LookupResult Previous(SemaRef, getNameInfoForLookup(NameInfo),
+                        Sema::LookupOrdinaryName, Sema::ForRedeclaration);
 
   if (!FunctionTemplate || TemplateParams || isFriend) {
     SemaRef.LookupQualifiedName(Previous, Record);

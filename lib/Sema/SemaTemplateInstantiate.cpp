@@ -1837,7 +1837,8 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
 
   NewParm->setHasInheritedDefaultArg(OldParm->hasInheritedDefaultArg());
 
-  NewParm->setDesignatable(OldParm->isDesignatable() && NameInfo.getName());
+  NewParm->setDesignatable(OldParm->isDesignatable() &&
+                           NameInfo.getName().getCanonicalName());
 
   if (OldParm->isParameterPack() && !NumExpansions &&
       !NewParm->isParameterPack()) {

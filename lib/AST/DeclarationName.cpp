@@ -846,5 +846,5 @@ void SubstTemplateDeclNameParmPackName::Profile(
   ID.AddPointer(Replaced);
   ID.AddInteger(ArgPack.pack_size());
   for (const auto &P : ArgPack.pack_elements())
-      ID.AddPointer(P.getAsType().getAsOpaquePtr());
+      ID.AddPointer(P.getAsDeclName().getAsOpaquePtr());
 }
