@@ -921,21 +921,10 @@ DeduceTemplateArguments(Sema &S,
       continue;
     }
 
-    Optional<unsigned> NumExpansions = Expansion->getNumExpansions();
     QualType Pattern = Expansion->getPattern();
     TemplateArgument FullPattern = Pattern;
-    unsigned N = 0;
     unsigned ArgEnd = NumArgs;
-    if (NumExpansions) {
-      N = *NumExpansions;
-      unsigned SentinelIdx = ParamIdx + N;
-      const PackExpansionType *Sentinel =
-          cast<PackExpansionType>(Params[SentinelIdx]);
-      if (Sentinel->getNumExpansions() || SentinelIdx + 1 < NumParams)
-        ArgEnd = std::min(ArgIdx + N, ArgEnd);
-      else
-        FullPattern = Sentinel->getPattern();
-    } else if (ParamIdx + 1 < NumParams) {
+    if (ParamIdx + 1 < NumParams) {
       // C++0x [temp.deduct.type]p5:
       //   The non-deduced contexts are:
       //     - A function parameter pack that does not occur at the end of the
@@ -964,15 +953,6 @@ DeduceTemplateArguments(Sema &S,
         return Result;
 
       PackScope.nextPackElement();
-
-      // Move to next pattern.
-      if (N) {
-        --N;
-        ++ParamIdx;
-        assert(ParamIdx != NumParams);
-        Expansion = cast<PackExpansionType>(Params[ParamIdx]);
-        Pattern = Expansion->getPattern();
-      }
     }
 
     // Build argument packs for each of the parameter packs expanded by this
@@ -2042,24 +2022,10 @@ DeduceTemplateArguments(Sema &S, TemplateParameterList *TemplateParams,
     // Expands the argument pack first.
     hasTemplateArgumentForDeduction(Args, ArgIdx, NumArgs);
 
-    Optional<unsigned> NumExpansions = Params[ParamIdx].getNumExpansions();
     TemplateArgument Pattern = Params[ParamIdx].getPackExpansionPattern();
     TemplateArgument FullPattern = Pattern;
-    unsigned N = 0;
     unsigned ArgEnd = NumArgs;
-    if (NumExpansions) {
-      N = *NumExpansions;
-      unsigned SentinelIdx = ParamIdx + N;
-      TemplateArgument Sentinel = Params[SentinelIdx];
-      if (Sentinel.getNumExpansions() || SentinelIdx + 1 < NumParams) {
-        ArgEnd = ArgIdx + N;
-        if (NumArgs < ArgEnd)
-          return NumberOfArgumentsMustMatch
-                     ? Sema::TDK_MiscellaneousDeductionFailure
-                     : Sema::TDK_Success;
-      } else
-        FullPattern = Sentinel.getPackExpansionPattern();
-    } else if (ParamIdx + 1 < NumParams) {
+    if (ParamIdx + 1 < NumParams) {
       // C++0x [temp.deduct.type]p5:
       //   The non-deduced contexts are:
       //     - A function parameter pack that does not occur at the end of the
@@ -2088,14 +2054,6 @@ DeduceTemplateArguments(Sema &S, TemplateParameterList *TemplateParams,
         return Result;
 
       PackScope.nextPackElement();
-
-      // Move to next pattern.
-      if (N) {
-        --N;
-        ++ParamIdx;
-        assert(ParamIdx != NumParams);
-        Pattern = Params[ParamIdx].getPackExpansionPattern();
-      }
     }
 
     // Build argument packs for each of the parameter packs expanded by this
@@ -3772,24 +3730,12 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
       continue;
     }
 
-    Optional<unsigned> NumExpansions = ParamExpansion->getNumExpansions();
     QualType ParamPattern = ParamExpansion->getPattern();
     TemplateArgument FullPattern[2] = {ParamPattern,
                                        ParamDecls[ParamIdx]->getDeclName()};
-    unsigned N = 0;
+
     unsigned ArgEnd = Args.size();
-    if (NumExpansions) {
-      N = *NumExpansions;
-      unsigned SentinelIdx = ParamIdx + N;
-      const PackExpansionType *Sentinel =
-          cast<PackExpansionType>(ParamTypes[SentinelIdx]);
-      if (Sentinel->getNumExpansions() || SentinelIdx + 1 < NumParamTypes)
-        ArgEnd = ArgIdx + N;
-      else {
-        FullPattern[0] = Sentinel->getPattern();
-        FullPattern[1] = ParamDecls[SentinelIdx]->getDeclName();
-      }
-    } else if (ParamIdx + 1 < NumParamTypes) {
+    if (ParamIdx + 1 < NumParamTypes) {
       // C++0x [temp.deduct.call]p1:
       //   For a function parameter pack that occurs at the end of the
       //   parameter-declaration-list, the type A of each remaining argument of
@@ -3863,15 +3809,6 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
       }
 
       PackScope.nextPackElement();
-
-      // Move to next pattern.
-      if (N) {
-        --N;
-        ++ParamIdx;
-        assert(ParamIdx != NumParamTypes);
-        ParamExpansion = cast<PackExpansionType>(ParamTypes[ParamIdx]);
-        ParamPattern = ParamExpansion->getPattern();
-      }
     }
 
     // Build argument packs for each of the parameter packs expanded by this

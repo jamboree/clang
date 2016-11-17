@@ -598,13 +598,11 @@ bool Sema::CheckParameterPacksForExpansion(
     SourceLocation EllipsisLoc, SourceRange PatternRange,
     ArrayRef<UnexpandedParameterPack> Unexpanded,
     const MultiLevelTemplateArgumentList &TemplateArgs, bool &ShouldExpand,
-    RetainExpansionMode &RetainExpansion, Optional<unsigned> &NumExpansions) {
-  bool AllowPartialExpansion = ShouldExpand;
+    bool &RetainExpansion, Optional<unsigned> &NumExpansions) {
   ShouldExpand = true;
-  RetainExpansion = REM_None;
+  RetainExpansion = false;
   std::pair<IdentifierInfo *, SourceLocation> FirstPack;
   bool HaveFirstPack = false;
-  bool AnyToExpand = false;
 
   for (ArrayRef<UnexpandedParameterPack>::iterator i = Unexpanded.begin(),
                                                  end = Unexpanded.end();
@@ -641,7 +639,6 @@ bool Sema::CheckParameterPacksForExpansion(
       if (Instantiation->is<DeclArgumentPack *>()) {
         // We could expand this function parameter pack.
         NewPackSize = Instantiation->get<DeclArgumentPack *>()->size();
-        AnyToExpand = true;
       } else {
         // We can't expand this function parameter pack, so we can't expand
         // the pack expansion.
@@ -654,18 +651,12 @@ bool Sema::CheckParameterPacksForExpansion(
       // want to check any parameter packs we *do* have arguments for.
       if (Depth >= TemplateArgs.getNumLevels() ||
           !TemplateArgs.hasTemplateArgument(Depth, Index)) {
-        if (AllowPartialExpansion) {
-          if (!RetainExpansion)
-            RetainExpansion = REM_NoExpand;
-        } else
-          ShouldExpand = false;
-
+        ShouldExpand = false;
         continue;
       }
 
       // Determine the size of the argument pack.
       NewPackSize = TemplateArgs(Depth, Index).pack_size();
-      AnyToExpand = true;
     }
     
     // C++0x [temp.arg.explicit]p9:
@@ -678,7 +669,7 @@ bool Sema::CheckParameterPacksForExpansion(
         unsigned PartialDepth, PartialIndex;
         std::tie(PartialDepth, PartialIndex) = getDepthAndIndex(PartialPack);
         if (PartialDepth == Depth && PartialIndex == Index)
-          RetainExpansion = REM_NoSubstitute;
+          RetainExpansion = true;
       }
     }
     
@@ -695,7 +686,7 @@ bool Sema::CheckParameterPacksForExpansion(
     if (NewPackSize != *NumExpansions) {
       // In case that template arguments can be extended by template argument
       // deduction, it's ok if the pack size is less than what it should be.
-      if (RetainExpansion == REM_NoSubstitute && NewPackSize < *NumExpansions)
+      if (RetainExpansion && NewPackSize < *NumExpansions)
         continue;
 
       // C++0x [temp.variadic]p5:
@@ -712,9 +703,6 @@ bool Sema::CheckParameterPacksForExpansion(
       return true;
     }
   }
-
-  if (!AnyToExpand)
-    ShouldExpand = false;
 
   return false;
 }

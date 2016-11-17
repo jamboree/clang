@@ -686,7 +686,7 @@ namespace {
                                  SourceRange PatternRange,
                                  ArrayRef<UnexpandedParameterPack> Unexpanded,
                                  bool &ShouldExpand,
-                                 Sema::RetainExpansionMode &RetainExpansion,
+                                 bool &RetainExpansion,
                                  Optional<unsigned> &NumExpansions) {
       return getSema().CheckParameterPacksForExpansion(EllipsisLoc, 
                                                        PatternRange, Unexpanded,
@@ -1912,7 +1912,7 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
       collectUnexpandedParameterPacks(Base.getTypeSourceInfo()->getTypeLoc(),
                                       Unexpanded);
       bool ShouldExpand = false;
-      Sema::RetainExpansionMode RetainExpansion = Sema::REM_None;
+      bool RetainExpansion = false;
       Optional<unsigned> NumExpansions;
       if (CheckParameterPacksForExpansion(Base.getEllipsisLoc(), 
                                           Base.getSourceRange(),

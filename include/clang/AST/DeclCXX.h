@@ -3468,7 +3468,73 @@ public:
   friend TrailingObjects;
   friend class ASTDeclReader;
 };
+#if 0
+/// \brief Represents a pack expansion of declarations.
+///
+/// For example:
+/// \code
+///   template<declname... a>
+///   void f(int.a...);
+/// \endcode
+///
+/// Here, the pack expansion \c int.a... is represented via a
+/// PackExpansionDecl whose pattern is int.a.
+class PackExpansionDecl : public Decl {
+  /// \brief The number of expansions that will be produced by this pack
+  /// expansion expression, if known.
+  ///
+  /// When zero, the number of expansions is not known. Otherwise, this value
+  /// is the number of expansions + 1.
+  unsigned NumExpansions;
 
+  Decl *Pattern;
+
+protected:
+  PackExpansionDecl(DeclContext *DC, Decl *Pattern, SourceLocation EllipsisLoc,
+                    Optional<unsigned> NumExpansions)
+      : Decl(PackExpansion, DC, EllipsisLoc),
+        NumExpansions(NumExpansions ? *NumExpansions + 1 : 0),
+        Pattern(Pattern) {}
+
+public:
+  static PackExpansionDecl *Create(const ASTContext &C, DeclContext *DC,
+                                   Decl *Pattern, SourceLocation EllipsisLoc,
+                                   Optional<unsigned> NumExpansions);
+
+  static PackExpansionDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+
+  /// \brief Retrieve the pattern of the pack expansion.
+  Decl *getPattern() const { return Pattern; }
+
+  /// \brief Determine the number of expansions that will be produced when
+  /// this pack expansion is instantiated, if already known.
+  Optional<unsigned> getNumExpansions() const {
+    if (NumExpansions)
+      return NumExpansions - 1;
+
+    return None;
+  }
+
+  /// \brief Retrieve the location of the ellipsis that describes this pack
+  /// expansion.
+  SourceLocation getEllipsisLoc() const { return getLocation(); }
+
+  SourceRange getSourceRange() const override LLVM_READONLY {
+    return SourceRange(Pattern->getLocStart(), getLocation());
+  }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == PackExpansion; }
+
+  friend class ASTDeclReader;
+};
+
+template <class T> inline T *getUnpacked(Decl *D) {
+  if (T *Ret = dyn_cast<T>(D))
+    return Ret;
+  return cast<T>(cast<PackExpansionDecl>(Param)->getPattern());
+}
+#endif
 /// An instance of this class represents the declaration of a property
 /// member.  This is a Microsoft extension to C++, first introduced in
 /// Visual Studio .NET 2003 as a parallel to similar features in C#

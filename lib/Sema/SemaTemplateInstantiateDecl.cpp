@@ -115,7 +115,7 @@ static void instantiateDependentAlignedAttr(
 
   // Determine whether we can expand this attribute pack yet.
   bool Expand = false;
-  Sema::RetainExpansionMode RetainExpansion = Sema::REM_None;
+  bool RetainExpansion = false;
   Optional<unsigned> NumExpansions;
   // FIXME: Use the actual location of the ellipsis.
   SourceLocation EllipsisLoc = Aligned->getLocation();
@@ -2202,7 +2202,7 @@ Decl *TemplateDeclInstantiator::VisitNonTypeTemplateParmDecl(
     // Determine whether the set of unexpanded parameter packs can and should
     // be expanded.
     bool Expand = false;
-    Sema::RetainExpansionMode RetainExpansion = Sema::REM_None;
+    bool RetainExpansion = false;
     Optional<unsigned> OrigNumExpansions
       = Expansion.getTypePtr()->getNumExpansions();
     Optional<unsigned> NumExpansions = OrigNumExpansions;
@@ -2359,7 +2359,7 @@ TemplateDeclInstantiator::VisitTemplateTemplateParmDecl(
     // Determine whether the set of unexpanded parameter packs can and should
     // be expanded.
     bool Expand = false;
-    Sema::RetainExpansionMode RetainExpansion = Sema::REM_None;
+    bool RetainExpansion = false;
     Optional<unsigned> NumExpansions;
     if (SemaRef.CheckParameterPacksForExpansion(D->getLocation(),
                                                 TempParams->getSourceRange(),
@@ -3480,7 +3480,7 @@ static bool addInstantiatedParametersToScope(Sema &S, FunctionDecl *Function,
         PatternParam->getType()->castAs<PackExpansionType>()->getPattern();
     for (unsigned Arg = 0; Arg < *NumArgumentsInExpansion; ++Arg) {
       ParmVarDecl *FunctionParam = Function->getParamDecl(FParamIdx);
-      FunctionParam->setDeclName(PatternParam->getDeclName());
+      //FunctionParam->setDeclName(PatternParam->getDeclName());
       if (!PatternDecl->getType()->isDependentType()) {
         Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(S, Arg);
         QualType T = S.SubstType(PatternType, TemplateArgs,
@@ -4416,7 +4416,7 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
       collectUnexpandedParameterPacks(BaseTL, Unexpanded);
       collectUnexpandedParameterPacks(Init->getInit(), Unexpanded);
       bool ShouldExpand = false;
-      Sema::RetainExpansionMode RetainExpansion = Sema::REM_None;
+      bool RetainExpansion = false;
       Optional<unsigned> NumExpansions;
       if (CheckParameterPacksForExpansion(Init->getEllipsisLoc(),
                                           BaseTL.getSourceRange(),

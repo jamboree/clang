@@ -230,6 +230,12 @@ static bool attributeParsedArgsUnevaluated(const IdentifierInfo &II) {
 #undef CLANG_ATTR_ARG_CONTEXT_LIST
 }
 
+static bool isNameParameterPack(Sema &S, const IdentifierInfo *Id) {
+  if (const TemplateDeclNameParmDecl *TDP = S.LookupTemplateDeclNameParm(Id))
+    return TDP->isParameterPack();
+  return false;
+}
+
 IdentifierLoc *Parser::ParseIdentifierLoc() {
   assert(Tok.is(tok::identifier) && "expected an identifier");
   IdentifierLoc *IL = IdentifierLoc::create(Actions.Context,
@@ -5450,14 +5456,14 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
          "Haven't past the location of the identifier yet?");
 
   // Parse posfix ellipsis for unexpanded templated name.
-  if (Tok.is(tok::ellipsis) && D.hasName() && !D.hasEllipsis() &&
-      !D.mayHaveDesignatorInType() &&
-      Actions.getPossiblyTemplatedName(D.getIdentifier())
-          .containsUnexpandedParameterPack()) {
-    SourceLocation EllipsisLoc = ConsumeToken();
-    D.setEllipsisLoc(EllipsisLoc);
-    D.setEllipsisPostfix(true);
-  }
+  //if (Tok.is(tok::ellipsis) && D.hasName() && !D.hasEllipsis() &&
+  //    !D.mayHaveDesignatorInType() &&
+  //    Actions.getPossiblyTemplatedName(D.getIdentifier())
+  //        .containsUnexpandedParameterPack()) {
+  //  SourceLocation EllipsisLoc = ConsumeToken();
+  //  D.setEllipsisLoc(EllipsisLoc);
+  //  D.setEllipsisPostfix(true);
+  //}
 
   // Don't parse attributes unless we have parsed an unparenthesized name.
   if (D.hasName() && !D.getNumTypeObjects())
@@ -6046,6 +6052,9 @@ void Parser::ParseParameterDeclarationClause(
 
     // Remember this parsed parameter in ParamInfo.
     IdentifierInfo *ParmII = ParmDeclarator.getIdentifier();
+    TemplateDeclNameParmDecl *TDP =
+        Actions.LookupTemplateDeclNameParm(ParmII);
+    bool IsNameParameterPack = TDP && TDP->isParameterPack();
 
     // DefArgToks is used when the parsing of default arguments needs
     // to be delayed.
@@ -6067,6 +6076,7 @@ void Parser::ParseParameterDeclarationClause(
           (NextToken().isNot(tok::r_paren) ||
            (!ParmDeclarator.getEllipsisLoc().isValid() &&
             !Actions.isUnexpandedParameterPackPermitted())) &&
+          !IsNameParameterPack &&
           Actions.containsUnexpandedParameterPacks(ParmDeclarator))
         DiagnoseMisplacedEllipsisInDeclarator(ConsumeToken(), ParmDeclarator);
 
@@ -6125,6 +6135,17 @@ void Parser::ParseParameterDeclarationClause(
         }
       }
 
+      if (IsNameParameterPack) {
+        if (TryConsumeToken(tok::ellipsis)) {
+          // FIXME: make Param a PackExpansionDecl?
+        } else {
+          UnexpandedParameterPack Pack(TDP, ParmDeclarator.getIdentifierLoc());
+          Actions.DiagnoseUnexpandedParameterPacks(
+              ParmDeclarator.getIdentifierLoc(), Sema::UPPC_DeclarationName,
+              Pack);
+        }
+      }
+
       ParamInfo.push_back(DeclaratorChunk::ParamInfo(ParmII,
                                           ParmDeclarator.getIdentifierLoc(), 
                                           Param, DefArgToks));
@@ -6137,7 +6158,7 @@ void Parser::ParseParameterDeclarationClause(
         Diag(EllipsisLoc, diag::err_missing_comma_before_ellipsis)
             << FixItHint::CreateInsertion(EllipsisLoc, ", ");
       } else if (ParmDeclarator.getEllipsisLoc().isValid() ||
-                 Actions.containsUnexpandedParameterPacks(ParmDeclarator)) {
+                  Actions.containsUnexpandedParameterPacks(ParmDeclarator)) {
         // It looks like this was supposed to be a parameter pack. Warn and
         // point out where the ellipsis should have gone.
         SourceLocation ParmEllipsis = ParmDeclarator.getEllipsisLoc();

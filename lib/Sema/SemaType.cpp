@@ -3547,7 +3547,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
   // The name we're declaring, if any.
   DeclarationName Name;
   if (D.getIdentifier())
-    Name = D.getIdentifier();
+    Name = S.getPossiblyTemplatedName(D.getIdentifier());
 
   // Does this declaration declare a typedef-name?
   bool IsTypedefName =
@@ -4573,8 +4573,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
   }
 
   if (AllowDesignator && D.hasDot())
-    T = S.BuildDesignatingType(T, S.getPossiblyTemplatedName(D.getIdentifier()),
-                               D.getIdentifierLoc());
+    T = S.BuildDesignatingType(T, Name, D.getIdentifierLoc());
 
   // If there was an ellipsis in the declarator, the declaration declares a
   // parameter pack whose type may be a pack expansion type.
@@ -4595,13 +4594,19 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
       //
       // We represent function parameter packs as function parameters whose
       // type is a pack expansion.
-      if (!T->containsUnexpandedParameterPack() && !D.isEllipsisPostfix()) {
+      if (!T->containsUnexpandedParameterPack()/* && !D.isEllipsisPostfix()*/) {
         S.Diag(D.getEllipsisLoc(),
              diag::err_function_parameter_pack_without_parameter_packs)
           << T <<  D.getSourceRange();
         D.setEllipsisLoc(SourceLocation());
       } else {
-        T = Context.getPackExpansionType(T, None);
+        TemplateDeclNameParmDecl *TDP = Name.getCXXTemplatedNameParmDecl();
+        if (TDP && TDP->isParameterPack())
+          S.Diag(D.getEllipsisLoc(),
+                 diag::err_pack_expansion_before_declarator_pack)
+              << D.getSourceRange();
+        else
+          T = Context.getPackExpansionType(T, None);
       }
       break;
     case Declarator::TemplateParamContext:

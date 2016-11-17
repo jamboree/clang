@@ -4367,6 +4367,9 @@ def err_fold_expression_empty : Error<
 def err_fold_expression_bad_operand : Error<
   "expression not permitted as operand of fold expression">;
 
+def err_pack_expansion_before_declarator_pack : Error<
+  "pack expansion preceeds a packed declarator">;
+
 def err_unexpected_typedef : Error<
   "unexpected type name %0: expected expression">;
 def err_unexpected_namespace : Error<
