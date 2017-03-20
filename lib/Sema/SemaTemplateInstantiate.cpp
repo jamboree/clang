@@ -687,13 +687,13 @@ namespace {
                                  ArrayRef<UnexpandedParameterPack> Unexpanded,
                                  bool &ShouldExpand,
                                  bool &RetainExpansion,
-                                 Optional<unsigned> &NumExpansions) {
+                                 ExpansionInfo &Info) {
       return getSema().CheckParameterPacksForExpansion(EllipsisLoc, 
                                                        PatternRange, Unexpanded,
                                                        TemplateArgs, 
                                                        ShouldExpand,
                                                        RetainExpansion,
-                                                       NumExpansions);
+                                                       Info);
     }
 
     void ExpandingFunctionParameterPack(ParmVarDecl *Pack) { 
@@ -837,7 +837,7 @@ namespace {
 
     ParmVarDecl *TransformFunctionTypeParam(ParmVarDecl *OldParm,
                                             int indexAdjustment,
-                                            Optional<unsigned> NumExpansions,
+                                            ExpansionInfo Info,
                                             bool ExpectParameterPack);
 
     /// \brief Transforms a template type parameter type by performing
@@ -1438,10 +1438,10 @@ QualType TemplateInstantiator::TransformFunctionProtoType(TypeLocBuilder &TLB,
 ParmVarDecl *
 TemplateInstantiator::TransformFunctionTypeParam(ParmVarDecl *OldParm,
                                                  int indexAdjustment,
-                                               Optional<unsigned> NumExpansions,
+                                                 ExpansionInfo Info,
                                                  bool ExpectParameterPack) {
   return SemaRef.SubstParmVarDecl(OldParm, TemplateArgs, indexAdjustment,
-                                  NumExpansions, ExpectParameterPack);
+                                  Info, ExpectParameterPack);
 }
 
 QualType
@@ -1728,7 +1728,7 @@ void Sema::SubstExceptionSpec(FunctionDecl *New, const FunctionProtoType *Proto,
 ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm, 
                             const MultiLevelTemplateArgumentList &TemplateArgs,
                                     int indexAdjustment,
-                                    Optional<unsigned> NumExpansions,
+                                    ExpansionInfo Info,
                                     bool ExpectParameterPack) {
   TypeSourceInfo *OldDI = OldParm->getTypeSourceInfo();
   TypeSourceInfo *NewDI = nullptr;
@@ -1747,8 +1747,7 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
       // We still have unexpanded parameter packs, which means that
       // our function parameter is still a function parameter pack.
       // Therefore, make its type a pack expansion type.
-      NewDI = CheckPackExpansion(NewDI, ExpansionTL.getEllipsisLoc(),
-                                 NumExpansions);
+      NewDI = CheckPackExpansion(NewDI, ExpansionTL.getEllipsisLoc(), Info);
     } else if (ExpectParameterPack) {
       // We expected to get a parameter pack but didn't (because the type
       // itself is not a pack expansion type), so complain. This can occur when
@@ -1840,7 +1839,7 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
   NewParm->setDesignatable(OldParm->isDesignatable() &&
                            NameInfo.getName().getCanonicalName());
 
-  if (OldParm->isParameterPack() && !NumExpansions &&
+  if (OldParm->isParameterPack() && !Info &&
       !NewParm->isParameterPack()) {
     // Add the new parameter to the instantiated parameter pack.
     CurrentInstantiationScope->InstantiatedLocalPackArg(OldParm, NewParm);
@@ -1913,20 +1912,20 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
                                       Unexpanded);
       bool ShouldExpand = false;
       bool RetainExpansion = false;
-      Optional<unsigned> NumExpansions;
+      ExpansionInfo Info;
       if (CheckParameterPacksForExpansion(Base.getEllipsisLoc(), 
                                           Base.getSourceRange(),
                                           Unexpanded,
                                           TemplateArgs, ShouldExpand, 
                                           RetainExpansion,
-                                          NumExpansions)) {
+                                          Info)) {
         Invalid = true;
         continue;
       }
       
       // If we should expand this pack expansion now, do so.
       if (ShouldExpand) {
-        for (unsigned I = 0; I != *NumExpansions; ++I) {
+        for (unsigned I = 0; I != Info.getNumExpansions(); ++I) {
             Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(*this, I);
           
           TypeSourceInfo *BaseTypeLoc = SubstType(Base.getTypeSourceInfo(),

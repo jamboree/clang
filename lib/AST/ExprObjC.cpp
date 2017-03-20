@@ -77,8 +77,9 @@ ObjCDictionaryLiteral::ObjCDictionaryLiteral(ArrayRef<ObjCDictionaryElement> VK,
     KeyValues[I].Value = VK[I].Value;
     if (Expansions) {
       Expansions[I].EllipsisLoc = VK[I].EllipsisLoc;
-      if (VK[I].NumExpansions)
-        Expansions[I].NumExpansionsPlusOne = *VK[I].NumExpansions + 1;
+      if (VK[I].Expansion)
+        Expansions[I].NumExpansionsPlusOne =
+            VK[I].Expansion.getNumExpansions() + 1;
       else
         Expansions[I].NumExpansionsPlusOne = 0;
     }

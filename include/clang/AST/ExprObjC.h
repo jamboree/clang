@@ -221,7 +221,7 @@ struct ObjCDictionaryElement {
   
   /// \brief The number of elements this pack expansion will expand to, if
   /// this is a pack expansion and is known.
-  Optional<unsigned> NumExpansions;
+  ExpansionInfo Expansion;
 
   /// \brief Determines whether this dictionary element is a pack expansion.
   bool isPackExpansion() const { return EllipsisLoc.isValid(); }
@@ -309,13 +309,15 @@ public:
   ObjCDictionaryElement getKeyValueElement(unsigned Index) const {
     assert((Index < NumElements) && "Arg access out of range!");
     const KeyValuePair &KV = getTrailingObjects<KeyValuePair>()[Index];
-    ObjCDictionaryElement Result = { KV.Key, KV.Value, SourceLocation(), None };
+    ObjCDictionaryElement Result = {KV.Key, KV.Value, SourceLocation(),
+                                    ExpansionInfo()};
     if (HasPackExpansions) {
       const ExpansionData &Expansion =
           getTrailingObjects<ExpansionData>()[Index];
       Result.EllipsisLoc = Expansion.EllipsisLoc;
       if (Expansion.NumExpansionsPlusOne > 0)
-        Result.NumExpansions = Expansion.NumExpansionsPlusOne - 1;
+        Result.Expansion =
+            ExpansionInfo(Expansion.NumExpansionsPlusOne - 1, false);
     }
     return Result;
   }

@@ -1310,7 +1310,7 @@ public:
       const IdentifierInfo *Name, ArrayRef<TemplateArgument> Args) const;
 
   QualType getPackExpansionType(QualType Pattern,
-                                Optional<unsigned> NumExpansions) const;
+                                ExpansionInfo Expansion) const;
 
   QualType getDesignatingType(QualType T, DeclarationName DesigName) const;
 

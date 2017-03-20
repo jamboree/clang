@@ -2865,7 +2865,7 @@ bool FunctionProtoType::isTemplateVariadic() const {
   for (unsigned ArgIdx = getNumParams(); ArgIdx; --ArgIdx)
     if (const PackExpansionType *Expansion =
             dyn_cast<PackExpansionType>(getParamType(ArgIdx - 1)))
-      if (!Expansion->getNumExpansions())
+      if (!Expansion->getExpansionInfo())
         return true;
 
   return false;

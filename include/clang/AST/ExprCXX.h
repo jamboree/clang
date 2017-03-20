@@ -3626,7 +3626,7 @@ class PackExpansionExpr : public Expr {
   ///
   /// When zero, the number of expansions is not known. Otherwise, this value
   /// is the number of expansions + 1.
-  unsigned NumExpansions;
+  ExpansionInfo Expansion;
 
   Stmt *Pattern;
 
@@ -3635,13 +3635,13 @@ class PackExpansionExpr : public Expr {
 
 public:
   PackExpansionExpr(QualType T, Expr *Pattern, SourceLocation EllipsisLoc,
-                    Optional<unsigned> NumExpansions)
+                    ExpansionInfo Expansion)
     : Expr(PackExpansionExprClass, T, Pattern->getValueKind(),
            Pattern->getObjectKind(), /*TypeDependent=*/true,
            /*ValueDependent=*/true, /*InstantiationDependent=*/true,
            /*ContainsUnexpandedParameterPack=*/false),
       EllipsisLoc(EllipsisLoc),
-      NumExpansions(NumExpansions? *NumExpansions + 1 : 0),
+      Expansion(Expansion),
       Pattern(Pattern) { }
 
   PackExpansionExpr(EmptyShell Empty) : Expr(PackExpansionExprClass, Empty) { }
@@ -3658,11 +3658,8 @@ public:
 
   /// \brief Determine the number of expansions that will be produced when
   /// this pack expansion is instantiated, if already known.
-  Optional<unsigned> getNumExpansions() const {
-    if (NumExpansions)
-      return NumExpansions - 1;
-
-    return None;
+  ExpansionInfo getExpansionInfo() const {
+    return Expansion;
   }
 
   SourceLocation getLocStart() const LLVM_READONLY {

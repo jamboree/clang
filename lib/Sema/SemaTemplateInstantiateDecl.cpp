@@ -116,19 +116,19 @@ static void instantiateDependentAlignedAttr(
   // Determine whether we can expand this attribute pack yet.
   bool Expand = false;
   bool RetainExpansion = false;
-  Optional<unsigned> NumExpansions;
+  ExpansionInfo Info;
   // FIXME: Use the actual location of the ellipsis.
   SourceLocation EllipsisLoc = Aligned->getLocation();
   if (S.CheckParameterPacksForExpansion(EllipsisLoc, Aligned->getRange(),
                                         Unexpanded, TemplateArgs, Expand,
-                                        RetainExpansion, NumExpansions))
+                                        RetainExpansion, Info))
     return;
 
   if (!Expand) {
     Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(S, -1);
     instantiateDependentAlignedAttr(S, TemplateArgs, Aligned, New, true);
   } else {
-    for (unsigned I = 0; I != *NumExpansions; ++I) {
+    for (unsigned I = 0; I != Info.getNumExpansions(); ++I) {
       Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(S, I);
       instantiateDependentAlignedAttr(S, TemplateArgs, Aligned, New, false);
     }
@@ -2122,8 +2122,9 @@ Decl *TemplateDeclInstantiator::VisitCXXConversionDecl(CXXConversionDecl *D) {
 }
 
 Decl *TemplateDeclInstantiator::VisitParmVarDecl(ParmVarDecl *D) {
-  return SemaRef.SubstParmVarDecl(D, TemplateArgs, /*indexAdjustment*/ 0, None,
-                                  /*ExpectParameterPack=*/ false);
+  return SemaRef.SubstParmVarDecl(D, TemplateArgs, /*indexAdjustment*/ 0,
+                                  ExpansionInfo(),
+                                  /*ExpectParameterPack=*/false);
 }
 
 Decl *TemplateDeclInstantiator::VisitTemplateTypeParmDecl(
@@ -2203,19 +2204,18 @@ Decl *TemplateDeclInstantiator::VisitNonTypeTemplateParmDecl(
     // be expanded.
     bool Expand = false;
     bool RetainExpansion = false;
-    Optional<unsigned> OrigNumExpansions
-      = Expansion.getTypePtr()->getNumExpansions();
-    Optional<unsigned> NumExpansions = OrigNumExpansions;
+    ExpansionInfo OrigInfo = Expansion.getTypePtr()->getExpansionInfo();
+    ExpansionInfo Info = OrigInfo;
     if (SemaRef.CheckParameterPacksForExpansion(Expansion.getEllipsisLoc(),
                                                 Pattern.getSourceRange(),
                                                 Unexpanded,
                                                 TemplateArgs,
                                                 Expand, RetainExpansion,
-                                                NumExpansions))
+                                                Info))
       return nullptr;
 
     if (Expand) {
-      for (unsigned I = 0; I != *NumExpansions; ++I) {
+      for (unsigned I = 0; I != Info.getNumExpansions(); ++I) {
         Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(SemaRef, I);
         TypeSourceInfo *NewDI = SemaRef.SubstType(Pattern, TemplateArgs,
                                                   D->getLocation(),
@@ -2249,7 +2249,7 @@ Decl *TemplateDeclInstantiator::VisitNonTypeTemplateParmDecl(
         return nullptr;
 
       DI = SemaRef.CheckPackExpansion(NewPattern, Expansion.getEllipsisLoc(),
-                                      NumExpansions);
+                                      Info);
       if (!DI)
         return nullptr;
 
@@ -2360,17 +2360,17 @@ TemplateDeclInstantiator::VisitTemplateTemplateParmDecl(
     // be expanded.
     bool Expand = false;
     bool RetainExpansion = false;
-    Optional<unsigned> NumExpansions;
+    ExpansionInfo Info;
     if (SemaRef.CheckParameterPacksForExpansion(D->getLocation(),
                                                 TempParams->getSourceRange(),
                                                 Unexpanded,
                                                 TemplateArgs,
                                                 Expand, RetainExpansion,
-                                                NumExpansions))
+                                                Info))
       return nullptr;
 
     if (Expand) {
-      for (unsigned I = 0; I != *NumExpansions; ++I) {
+      for (unsigned I = 0; I != Info.getNumExpansions(); ++I) {
         Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(SemaRef, I);
         LocalInstantiationScope Scope(SemaRef);
         TemplateParameterList *Expansion = SubstTemplateParams(TempParams);
@@ -4417,13 +4417,13 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
       collectUnexpandedParameterPacks(Init->getInit(), Unexpanded);
       bool ShouldExpand = false;
       bool RetainExpansion = false;
-      Optional<unsigned> NumExpansions;
+      ExpansionInfo Info;
       if (CheckParameterPacksForExpansion(Init->getEllipsisLoc(),
                                           BaseTL.getSourceRange(),
                                           Unexpanded,
                                           TemplateArgs, ShouldExpand,
                                           RetainExpansion,
-                                          NumExpansions)) {
+                                          Info)) {
         AnyErrors = true;
         New->setInvalidDecl();
         continue;
@@ -4431,7 +4431,7 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
       assert(ShouldExpand && "Partial instantiation of base initializer?");
 
       // Loop over all of the arguments in the argument pack(s),
-      for (unsigned I = 0; I != *NumExpansions; ++I) {
+      for (unsigned I = 0; I != Info.getNumExpansions(); ++I) {
         Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(*this, I);
 
         // Instantiate the initializer.

@@ -45,6 +45,38 @@ namespace clang {
   class Type;
   class ExtQuals;
   class QualType;
+
+  class ExpansionInfo {
+    unsigned NumExpansions;
+
+    ExpansionInfo(unsigned Encoded) : NumExpansions(Encoded) {}
+
+  public:
+    ExpansionInfo() : NumExpansions(0) {}
+
+    ExpansionInfo(unsigned NumExpansions, bool Extensible)
+        : NumExpansions(((NumExpansions + 1) << 1) | Extensible) {}
+
+    bool isNull() const { return !NumExpansions; }
+
+    explicit operator bool() const { return !isNull(); }
+
+    unsigned getNumExpansions() const {
+      assert(!isNull() && "ExpansionInfo is null");
+      return (NumExpansions >> 1) - 1;
+    }
+
+    bool isExtensible() const {
+      assert(!isNull() && "ExpansionInfo is null");
+      return NumExpansions & 1;
+    }
+
+    unsigned getAsEncodedValue() const { return NumExpansions; }
+
+    static ExpansionInfo getFromEncodedValue(unsigned Encoded) {
+      return ExpansionInfo(Encoded);
+    }
+  };
 }
 
 namespace llvm {
@@ -4684,16 +4716,16 @@ class PackExpansionType : public Type, public llvm::FoldingSetNode {
   /// This field will only have a non-zero value when some of the parameter
   /// packs that occur within the pattern have been substituted but others have
   /// not.
-  unsigned NumExpansions;
+  ExpansionInfo Expansion;
 
   PackExpansionType(QualType Pattern, QualType Canon,
-                    Optional<unsigned> NumExpansions)
+                    ExpansionInfo Expansion)
     : Type(PackExpansion, Canon, /*Dependent=*/Pattern->isDependentType(),
            /*InstantiationDependent=*/true,
            /*VariablyModified=*/Pattern->isVariablyModifiedType(),
            /*ContainsUnexpandedParameterPack=*/false),
       Pattern(Pattern),
-      NumExpansions(NumExpansions? *NumExpansions + 1: 0) { }
+      Expansion(Expansion) { }
 
   friend class ASTContext;  // ASTContext creates these
 
@@ -4705,26 +4737,21 @@ public:
 
   /// \brief Retrieve the number of expansions that this pack expansion will
   /// generate, if known.
-  Optional<unsigned> getNumExpansions() const {
-    if (NumExpansions)
-      return NumExpansions - 1;
-
-    return None;
+  ExpansionInfo getExpansionInfo() const {
+    return Expansion;
   }
 
   bool isSugared() const { return !Pattern->isDependentType(); }
   QualType desugar() const { return isSugared() ? Pattern : QualType(this, 0); }
 
   void Profile(llvm::FoldingSetNodeID &ID) {
-    Profile(ID, getPattern(), getNumExpansions());
+    Profile(ID, getPattern(), getExpansionInfo());
   }
 
   static void Profile(llvm::FoldingSetNodeID &ID, QualType Pattern,
-                      Optional<unsigned> NumExpansions) {
+                      ExpansionInfo Expansion) {
     ID.AddPointer(Pattern.getAsOpaquePtr());
-    ID.AddBoolean(NumExpansions.hasValue());
-    if (NumExpansions)
-      ID.AddInteger(*NumExpansions);
+    ID.AddInteger(Expansion.getAsEncodedValue());
   }
 
   static bool classof(const Type *T) {

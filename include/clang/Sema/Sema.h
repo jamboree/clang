@@ -6484,14 +6484,14 @@ public:
   /// expansion.
   TypeSourceInfo *CheckPackExpansion(TypeSourceInfo *Pattern,
                                      SourceLocation EllipsisLoc,
-                                     Optional<unsigned> NumExpansions);
+                                     ExpansionInfo Expansion);
 
   /// \brief Construct a pack expansion type from the pattern of the pack
   /// expansion.
   QualType CheckPackExpansion(QualType Pattern,
                               SourceRange PatternRange,
                               SourceLocation EllipsisLoc,
-                              Optional<unsigned> NumExpansions);
+                              ExpansionInfo Expansion);
 
   /// \brief Invoked when parsing an expression followed by an ellipsis, which
   /// creates a pack expansion.
@@ -6510,7 +6510,7 @@ public:
   ///
   /// \param EllipsisLoc The location of the ellipsis.
   ExprResult CheckPackExpansion(Expr *Pattern, SourceLocation EllipsisLoc,
-                                Optional<unsigned> NumExpansions);
+                                ExpansionInfo Expansion);
 
   /// \brief Determine whether we could expand a pack expansion with the
   /// given set of parameter packs into separate arguments by repeatedly
@@ -6552,7 +6552,7 @@ public:
                              const MultiLevelTemplateArgumentList &TemplateArgs,
                                        bool &ShouldExpand,
                                        bool &RetainExpansion,
-                                       Optional<unsigned> &NumExpansions);
+                                       ExpansionInfo& Info);
 
   /// \brief Determine the number of arguments in the given parameter pack.
   ///
@@ -6592,7 +6592,7 @@ public:
   TemplateArgumentLoc getTemplateArgumentPackExpansionPattern(
       TemplateArgumentLoc OrigLoc,
       SourceLocation &Ellipsis,
-      Optional<unsigned> &NumExpansions) const;
+      ExpansionInfo &Info) const;
 
   /// Given a template argument that contains an unexpanded parameter pack, but
   /// which has already been substituted, attempt to determine the number of
@@ -7381,7 +7381,7 @@ public:
   ParmVarDecl *SubstParmVarDecl(ParmVarDecl *D,
                             const MultiLevelTemplateArgumentList &TemplateArgs,
                                 int indexAdjustment,
-                                Optional<unsigned> NumExpansions,
+                                ExpansionInfo Info,
                                 bool ExpectParameterPack);
   bool SubstParmTypes(SourceLocation Loc, ArrayRef<ParmVarDecl *> Params,
                       const FunctionProtoType::ExtParameterInfo *ExtParamInfos,

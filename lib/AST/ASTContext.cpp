@@ -3884,9 +3884,9 @@ ASTContext::getDependentTemplateSpecializationType(
 
 QualType
 ASTContext::getPackExpansionType(QualType Pattern,
-                                 Optional<unsigned> NumExpansions) const {
+                                 ExpansionInfo Expansion) const {
   llvm::FoldingSetNodeID ID;
-  PackExpansionType::Profile(ID, Pattern, NumExpansions);
+  PackExpansionType::Profile(ID, Pattern, Expansion);
 
   //assert(Pattern->containsUnexpandedParameterPack() &&
   //       "Pack expansions must expand one or more parameter packs");
@@ -3903,7 +3903,7 @@ ASTContext::getPackExpansionType(QualType Pattern,
     // contains an alias template specialization which ignores one of its
     // parameters.
     if (Canon->containsUnexpandedParameterPack()) {
-      Canon = getPackExpansionType(Canon, NumExpansions);
+      Canon = getPackExpansionType(Canon, Expansion);
 
       // Find the insert position again, in case we inserted an element into
       // PackExpansionTypes and invalidated our insert position.
@@ -3912,7 +3912,7 @@ ASTContext::getPackExpansionType(QualType Pattern,
   }
 
   T = new (*this, TypeAlignment)
-      PackExpansionType(Pattern, Canon, NumExpansions);
+      PackExpansionType(Pattern, Canon, Expansion);
   Types.push_back(T);
   PackExpansionTypes.InsertNode(T, InsertPos);
   return QualType(T, 0);
@@ -4578,7 +4578,7 @@ CanQualType ASTContext::getCanonicalParamType(QualType T) const {
   if (Desig)
     Result = getDesignatingType(Result, Desig->getDesigName());
   if (Expansion)
-    Result = getPackExpansionType(Result, Expansion->getNumExpansions());
+    Result = getPackExpansionType(Result, Expansion->getExpansionInfo());
 
   return CanQualType::CreateUnsafe(Result);
 }
@@ -4848,7 +4848,7 @@ ASTContext::getCanonicalTemplateArgument(const TemplateArgument &Arg) const {
     case TemplateArgument::TemplateExpansion:
       return TemplateArgument(getCanonicalTemplateName(
                                          Arg.getAsTemplateOrTemplatePattern()),
-                              Arg.getNumTemplateExpansions());
+                              Arg.getTemplateExpansionInfo());
 
     case TemplateArgument::Integral:
       return TemplateArgument(Arg, getCanonicalType(Arg.getIntegralType()));
@@ -4877,7 +4877,7 @@ ASTContext::getCanonicalTemplateArgument(const TemplateArgument &Arg) const {
     case TemplateArgument::DeclNameExpansion:
       return TemplateArgument(
           Arg.getAsDeclNameOrDeclNamePattern().getCanonicalName(),
-          Arg.getNumDeclNameExpansions());
+          Arg.getDeclNameExpansionInfo());
   }
 
   // Silence GCC warning
@@ -5009,7 +5009,7 @@ QualType ASTContext::getAdjustedParameterType(QualType T) const {
     if (Desig)
       T = getDesignatingType(T, Desig->getDesigName());
     if (Expansion)
-      T = getPackExpansionType(T, Expansion->getNumExpansions());
+      T = getPackExpansionType(T, Expansion->getExpansionInfo());
   }
   return T;
 }

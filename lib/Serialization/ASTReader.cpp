@@ -5633,10 +5633,8 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
     QualType Pattern = readType(*Loc.F, Record, Idx);
     if (Pattern.isNull())
       return QualType();
-    Optional<unsigned> NumExpansions;
-    if (Record[1])
-      NumExpansions = Record[1] - 1;
-    return Context.getPackExpansionType(Pattern, NumExpansions);
+    ExpansionInfo Info = ExpansionInfo::getFromEncodedValue(Record[1]);
+    return Context.getPackExpansionType(Pattern, Info);
   }
 
   case TYPE_ELABORATED: {
@@ -8055,10 +8053,8 @@ TemplateArgument ASTReader::ReadTemplateArgument(ModuleFile &F,
     return TemplateArgument(ReadTemplateName(F, Record, Idx));
   case TemplateArgument::TemplateExpansion: {
     TemplateName Name = ReadTemplateName(F, Record, Idx);
-    Optional<unsigned> NumTemplateExpansions;
-    if (unsigned NumExpansions = Record[Idx++])
-      NumTemplateExpansions = NumExpansions - 1;
-    return TemplateArgument(Name, NumTemplateExpansions);
+    ExpansionInfo Info = ExpansionInfo::getFromEncodedValue(Record[Idx++]);
+    return TemplateArgument(Name, Info);
   }
   case TemplateArgument::Expression:
     return TemplateArgument(ReadExpr(F));

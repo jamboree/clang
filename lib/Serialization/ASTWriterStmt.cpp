@@ -950,8 +950,8 @@ void ASTStmtWriter::VisitObjCDictionaryLiteral(ObjCDictionaryLiteral *E) {
     if (E->HasPackExpansions) {
       Record.AddSourceLocation(Element.EllipsisLoc);
       unsigned NumExpansions = 0;
-      if (Element.NumExpansions)
-        NumExpansions = *Element.NumExpansions + 1;
+      if (Element.Expansion)
+        NumExpansions = Element.Expansion.getNumExpansions() + 1;
       Record.push_back(NumExpansions);
     }
   }
@@ -1601,7 +1601,7 @@ void ASTStmtWriter::VisitCXXNoexceptExpr(CXXNoexceptExpr *E) {
 void ASTStmtWriter::VisitPackExpansionExpr(PackExpansionExpr *E) {
   VisitExpr(E);
   Record.AddSourceLocation(E->getEllipsisLoc());
-  Record.push_back(E->NumExpansions);
+  Record.push_back(E->Expansion.getAsEncodedValue());
   Record.AddStmt(E->getPattern());
   Code = serialization::EXPR_PACK_EXPANSION;
 }

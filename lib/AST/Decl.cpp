@@ -2890,8 +2890,8 @@ unsigned FunctionDecl::getMinRequiredArguments() const {
     ParmVarDecl *Parm = *I;
     if (const PackExpansionType *Expansion =
             dyn_cast<PackExpansionType>(Parm->getType())) {
-      if (Optional<unsigned> NumExpansions = Expansion->getNumExpansions()) {
-        NumRequiredArgs += *NumExpansions;
+      if (ExpansionInfo Info = Expansion->getExpansionInfo()) {
+        NumRequiredArgs += Info.getNumExpansions();
         continue;
       }
     } else if (!Parm->hasDefaultArg())

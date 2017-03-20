@@ -627,7 +627,7 @@ static TemplateArgumentLoc translateTemplateArgument(Sema &SemaRef,
     TemplateName Template = Arg.getAsTemplate().get();
     TemplateArgument TArg;
     if (Arg.getEllipsisLoc().isValid())
-      TArg = TemplateArgument(Template, Optional<unsigned int>());
+      TArg = TemplateArgument(Template, ExpansionInfo());
     else
       TArg = Template;
     return TemplateArgumentLoc(TArg,
@@ -641,7 +641,7 @@ static TemplateArgumentLoc translateTemplateArgument(Sema &SemaRef,
     DeclarationName Name = Arg.getAsDeclName().get();
     TemplateArgument TArg;
     if (Arg.getEllipsisLoc().isValid())
-      TArg = TemplateArgument(Name, Optional<unsigned int>());
+      TArg = TemplateArgument(Name, ExpansionInfo());
     else
       TArg = Name;
     return TemplateArgumentLoc(TArg, Arg.getLocation(), Arg.getEllipsisLoc());

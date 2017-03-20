@@ -451,10 +451,7 @@ ASTTypeWriter::VisitDependentTemplateSpecializationType(
 
 void ASTTypeWriter::VisitPackExpansionType(const PackExpansionType *T) {
   Record.AddTypeRef(T->getPattern());
-  if (Optional<unsigned> NumExpansions = T->getNumExpansions())
-    Record.push_back(*NumExpansions + 1);
-  else
-    Record.push_back(0);
+  Record.push_back(T->getExpansionInfo().getAsEncodedValue());
   Code = TYPE_PACK_EXPANSION;
 }
 
@@ -5509,10 +5506,7 @@ void ASTRecordWriter::AddTemplateArgument(const TemplateArgument &Arg) {
     break;
   case TemplateArgument::TemplateExpansion:
     AddTemplateName(Arg.getAsTemplateOrTemplatePattern());
-    if (Optional<unsigned> NumExpansions = Arg.getNumTemplateExpansions())
-      Record->push_back(*NumExpansions + 1);
-    else
-      Record->push_back(0);
+    Record->push_back(Arg.getTemplateExpansionInfo().getAsEncodedValue());
     break;
   case TemplateArgument::Expression:
     AddStmt(Arg.getAsExpr());
@@ -5528,10 +5522,7 @@ void ASTRecordWriter::AddTemplateArgument(const TemplateArgument &Arg) {
     break;
   case TemplateArgument::DeclNameExpansion:
     AddDeclarationName(Arg.getAsDeclNameOrDeclNamePattern());
-    if (Optional<unsigned> NumExpansions = Arg.getNumDeclNameExpansions())
-      Record->push_back(*NumExpansions + 1);
-    else
-      Record->push_back(0);
+    Record->push_back(Arg.getDeclNameExpansionInfo().getAsEncodedValue());
     break;
   }
 }

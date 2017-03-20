@@ -411,7 +411,11 @@ namespace  {
       dumpTypeAsChild(T->getOriginalType());
     }
     void VisitPackExpansionType(const PackExpansionType *T) {
-      if (auto N = T->getNumExpansions()) OS << " expansions " << *N;
+      if (auto Info = T->getExpansionInfo()) {
+        OS << " expansions " << Info.getNumExpansions();
+        if (Info.isExtensible())
+          OS << " extensible";
+      }
       if (!T->isSugared())
         dumpTypeAsChild(T->getPattern());
     }

@@ -4606,7 +4606,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
                  diag::err_pack_expansion_before_declarator_pack)
               << D.getSourceRange();
         else
-          T = Context.getPackExpansionType(T, None);
+          T = Context.getPackExpansionType(T, ExpansionInfo());
       }
       break;
     case Declarator::TemplateParamContext:
@@ -4619,7 +4619,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
       // parameter packs in the type of the non-type template parameter, then
       // it expands those parameter packs.
       if (T->containsUnexpandedParameterPack())
-        T = Context.getPackExpansionType(T, None);
+        T = Context.getPackExpansionType(T, ExpansionInfo());
       else
         S.Diag(D.getEllipsisLoc(),
                LangOpts.CPlusPlus11

@@ -3574,7 +3574,7 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
         return I->second;
       for (; Index != End; ++Index) {
         if (auto Expansion = dyn_cast<PackExpansionType>(ParamTypes[Index]))
-          if (!Expansion->getNumExpansions()) {
+          if (!Expansion->getExpansionInfo()) {
             if (Index + 1 != End) {
               ++SkipCount;
               continue;

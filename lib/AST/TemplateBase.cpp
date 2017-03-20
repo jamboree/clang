@@ -251,20 +251,14 @@ bool TemplateArgument::containsUnexpandedParameterPack() const {
   return false;
 }
 
-Optional<unsigned> TemplateArgument::getNumTemplateExpansions() const {
+ExpansionInfo TemplateArgument::getTemplateExpansionInfo() const {
   assert(getKind() == TemplateExpansion);
-  if (TemplateArg.NumExpansions)
-    return TemplateArg.NumExpansions - 1;
-  
-  return None; 
+  return ExpansionInfo::getFromEncodedValue(TemplateArg.ExpansionInfo);
 }
 
-Optional<unsigned> TemplateArgument::getNumDeclNameExpansions() const {
+ExpansionInfo TemplateArgument::getDeclNameExpansionInfo() const {
   assert(getKind() == DeclNameExpansion);
-  if (TemplateArg.NumExpansions)
-    return TemplateArg.NumExpansions - 1;
-  
-  return None; 
+  return ExpansionInfo::getFromEncodedValue(TemplateArg.ExpansionInfo);
 }
 
 void TemplateArgument::Profile(llvm::FoldingSetNodeID &ID,
@@ -401,21 +395,21 @@ TemplateArgument TemplateArgument::getPackExpansionPattern() const {
   llvm_unreachable("Invalid TemplateArgument Kind!");
 }
 
-Optional<unsigned> TemplateArgument::getNumExpansions() const {
+ExpansionInfo TemplateArgument::getExpansionInfo() const {
   assert(isPackExpansion());
 
   switch (getKind()) {
   case Type:
-    return getAsType()->getAs<PackExpansionType>()->getNumExpansions();
+    return getAsType()->getAs<PackExpansionType>()->getExpansionInfo();
 
   case Expression:
-    return cast<PackExpansionExpr>(getAsExpr())->getNumExpansions();
+    return cast<PackExpansionExpr>(getAsExpr())->getExpansionInfo();
 
   case TemplateExpansion:
-    return getNumTemplateExpansions();
+    return getTemplateExpansionInfo();
 
   case DeclNameExpansion:
-    return getNumDeclNameExpansions();
+    return getDeclNameExpansionInfo();
 
   case Declaration:
   case Integral:
@@ -424,7 +418,7 @@ Optional<unsigned> TemplateArgument::getNumExpansions() const {
   case Template:
   case DeclName:
   case NullPtr:
-    return None;
+    return ExpansionInfo();
   }
 
   llvm_unreachable("Invalid TemplateArgument Kind!");

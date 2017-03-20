@@ -513,7 +513,8 @@ TypeResult Sema::ActOnPackExpansion(ParsedType Type,
   if (!TSInfo)
     return true;
 
-  TypeSourceInfo *TSResult = CheckPackExpansion(TSInfo, EllipsisLoc, None);
+  TypeSourceInfo *TSResult =
+      CheckPackExpansion(TSInfo, EllipsisLoc, ExpansionInfo());
   if (!TSResult)
     return true;
   
@@ -522,11 +523,11 @@ TypeResult Sema::ActOnPackExpansion(ParsedType Type,
 
 TypeSourceInfo *
 Sema::CheckPackExpansion(TypeSourceInfo *Pattern, SourceLocation EllipsisLoc,
-                         Optional<unsigned> NumExpansions) {
+                         ExpansionInfo Expansion) {
   // Create the pack expansion type and source-location information.
   QualType Result = CheckPackExpansion(Pattern->getType(), 
                                        Pattern->getTypeLoc().getSourceRange(),
-                                       EllipsisLoc, NumExpansions);
+                                       EllipsisLoc, Expansion);
   if (Result.isNull())
     return nullptr;
 
@@ -540,7 +541,7 @@ Sema::CheckPackExpansion(TypeSourceInfo *Pattern, SourceLocation EllipsisLoc,
 
 QualType Sema::CheckPackExpansion(QualType Pattern, SourceRange PatternRange,
                                   SourceLocation EllipsisLoc,
-                                  Optional<unsigned> NumExpansions) {
+                                  ExpansionInfo Expansion) {
   // C++0x [temp.variadic]p5:
   //   The pattern of a pack expansion shall name one or more
   //   parameter packs that are not expanded by a nested pack
@@ -551,15 +552,15 @@ QualType Sema::CheckPackExpansion(QualType Pattern, SourceRange PatternRange,
     return QualType();
   }
 
-  return Context.getPackExpansionType(Pattern, NumExpansions);
+  return Context.getPackExpansionType(Pattern, Expansion);
 }
 
 ExprResult Sema::ActOnPackExpansion(Expr *Pattern, SourceLocation EllipsisLoc) {
-  return CheckPackExpansion(Pattern, EllipsisLoc, None);
+  return CheckPackExpansion(Pattern, EllipsisLoc, ExpansionInfo());
 }
 
 ExprResult Sema::CheckPackExpansion(Expr *Pattern, SourceLocation EllipsisLoc,
-                                    Optional<unsigned> NumExpansions) {
+                                    ExpansionInfo Expansion) {
   if (!Pattern)
     return ExprError();
   
@@ -575,7 +576,7 @@ ExprResult Sema::CheckPackExpansion(Expr *Pattern, SourceLocation EllipsisLoc,
   
   // Create the pack expansion expression and source-location information.
   return new (Context)
-    PackExpansionExpr(Context.DependentTy, Pattern, EllipsisLoc, NumExpansions);
+    PackExpansionExpr(Context.DependentTy, Pattern, EllipsisLoc, Expansion);
 }
 
 /// \brief Retrieve the depth and index of a parameter pack.
@@ -598,7 +599,7 @@ bool Sema::CheckParameterPacksForExpansion(
     SourceLocation EllipsisLoc, SourceRange PatternRange,
     ArrayRef<UnexpandedParameterPack> Unexpanded,
     const MultiLevelTemplateArgumentList &TemplateArgs, bool &ShouldExpand,
-    bool &RetainExpansion, Optional<unsigned> &NumExpansions) {
+    bool &RetainExpansion, ExpansionInfo& Info) {
   ShouldExpand = true;
   RetainExpansion = false;
   std::pair<IdentifierInfo *, SourceLocation> FirstPack;
@@ -673,20 +674,20 @@ bool Sema::CheckParameterPacksForExpansion(
       }
     }
     
-    if (!NumExpansions) {
+    if (!Info) {
       // The is the first pack we've seen for which we have an argument. 
       // Record it.
-      NumExpansions = NewPackSize;
+      Info = ExpansionInfo(NewPackSize, false);
       FirstPack.first = Name;
       FirstPack.second = i->second;
       HaveFirstPack = true;
       continue;
     }
     
-    if (NewPackSize != *NumExpansions) {
+    if (NewPackSize != Info.getNumExpansions()) {
       // In case that template arguments can be extended by template argument
       // deduction, it's ok if the pack size is less than what it should be.
-      if (RetainExpansion && NewPackSize < *NumExpansions)
+      if (RetainExpansion && NewPackSize < Info.getNumExpansions())
         continue;
 
       // C++0x [temp.variadic]p5:
@@ -694,15 +695,18 @@ bool Sema::CheckParameterPacksForExpansion(
       //   the same number of arguments specified.
       if (HaveFirstPack)
         Diag(EllipsisLoc, diag::err_pack_expansion_length_conflict)
-          << FirstPack.first << Name << *NumExpansions << NewPackSize
+          << FirstPack.first << Name << Info.getNumExpansions() << NewPackSize
           << SourceRange(FirstPack.second) << SourceRange(i->second);
       else
         Diag(EllipsisLoc, diag::err_pack_expansion_length_conflict_multilevel)
-          << Name << *NumExpansions << NewPackSize
+          << Name << Info.getNumExpansions() << NewPackSize
           << SourceRange(i->second);
       return true;
     }
   }
+
+  if (Info && RetainExpansion)
+    Info = ExpansionInfo(Info.getNumExpansions(), true);
 
   return false;
 }
@@ -713,20 +717,12 @@ Optional<unsigned> Sema::getNumArgumentsInExpansion(const ParmVarDecl *Parm,
   const PackExpansionType *Expansion = cast<PackExpansionType>(T);
   QualType Pattern = Expansion->getPattern();
 
-  if (Optional<unsigned> NumExpansions = Expansion->getNumExpansions()) {
-    // If it's already expanded and not empty, return none.
-    if (*NumExpansions)
-      return None;
-    return 0;
-  }
-
   SmallVector<UnexpandedParameterPack, 2> Unexpanded;
   CollectUnexpandedParameterPacksVisitor Visitor(Unexpanded);
   Visitor.TraverseType(Pattern);
   Visitor.TraverseDeclarationNameInfo(Parm->getNameInfo());
 
   Optional<unsigned> Result;
-  bool Pad = false;
   for (unsigned I = 0, N = Unexpanded.size(); I != N; ++I) {
     // Compute the depth and index for this parameter pack.
     unsigned Depth;
@@ -760,7 +756,6 @@ Optional<unsigned> Sema::getNumArgumentsInExpansion(const ParmVarDecl *Parm,
     }
     if (Depth >= TemplateArgs.getNumLevels() ||
         !TemplateArgs.hasTemplateArgument(Depth, Index)) {
-      Pad = true;
       // The pattern refers to an unknown template argument. We're not ready to
       // expand this pack yet.
       continue;
@@ -771,9 +766,6 @@ Optional<unsigned> Sema::getNumArgumentsInExpansion(const ParmVarDecl *Parm,
     assert((!Result || *Result == Size) && "inconsistent pack sizes");
     Result = Size;
   }
-
-  if (Pad && Result)
-    ++*Result;
 
   return Result;
 }
@@ -961,7 +953,7 @@ ExprResult Sema::ActOnSizeofParameterPackExpr(Scope *S,
 TemplateArgumentLoc
 Sema::getTemplateArgumentPackExpansionPattern(
       TemplateArgumentLoc OrigLoc,
-      SourceLocation &Ellipsis, Optional<unsigned> &NumExpansions) const {
+      SourceLocation &Ellipsis, ExpansionInfo &Info) const {
   const TemplateArgument &Argument = OrigLoc.getArgument();
   assert(Argument.isPackExpansion());
   switch (Argument.getKind()) {
@@ -977,7 +969,7 @@ Sema::getTemplateArgumentPackExpansionPattern(
     Ellipsis = Expansion.getEllipsisLoc();
 
     TypeLoc Pattern = Expansion.getPatternLoc();
-    NumExpansions = Expansion.getTypePtr()->getNumExpansions();
+    Info = Expansion.getTypePtr()->getExpansionInfo();
 
     // We need to copy the TypeLoc because TemplateArgumentLocs store a
     // TypeSourceInfo.
@@ -995,20 +987,20 @@ Sema::getTemplateArgumentPackExpansionPattern(
       = cast<PackExpansionExpr>(Argument.getAsExpr());
     Expr *Pattern = Expansion->getPattern();
     Ellipsis = Expansion->getEllipsisLoc();
-    NumExpansions = Expansion->getNumExpansions();
+    Info = Expansion->getExpansionInfo();
     return TemplateArgumentLoc(Pattern, Pattern);
   }
 
   case TemplateArgument::TemplateExpansion:
     Ellipsis = OrigLoc.getTemplateEllipsisLoc();
-    NumExpansions = Argument.getNumTemplateExpansions();
+    Info = Argument.getTemplateExpansionInfo();
     return TemplateArgumentLoc(Argument.getPackExpansionPattern(),
                                OrigLoc.getTemplateQualifierLoc(),
                                OrigLoc.getTemplateNameLoc());
 
   case TemplateArgument::DeclNameExpansion:
     Ellipsis = OrigLoc.getDeclNameEllipsisLoc();
-    NumExpansions = Argument.getNumDeclNameExpansions();
+    Info = Argument.getDeclNameExpansionInfo();
     return TemplateArgumentLoc(Argument.getPackExpansionPattern(),
                                OrigLoc.getDeclNameLoc());
 

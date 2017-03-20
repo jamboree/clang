@@ -2410,7 +2410,7 @@ ASTNodeImporter::ImportTemplateArgument(const TemplateArgument &From) {
     if (ToTemplate.isNull())
       return TemplateArgument();
     
-    return TemplateArgument(ToTemplate, From.getNumTemplateExpansions());
+    return TemplateArgument(ToTemplate, From.getTemplateExpansionInfo());
   }
 
   case TemplateArgument::Expression:
@@ -2436,7 +2436,7 @@ ASTNodeImporter::ImportTemplateArgument(const TemplateArgument &From) {
   case TemplateArgument::DeclNameExpansion: {
     DeclarationName ToName =
         Importer.Import(From.getAsDeclNameOrDeclNamePattern());
-    return TemplateArgument(ToName, From.getNumDeclNameExpansions());
+    return TemplateArgument(ToName, From.getDeclNameExpansionInfo());
   }
   }
   
