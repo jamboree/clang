@@ -2341,22 +2341,14 @@ UnresolvedUsingTypenameDecl::Create(ASTContext &C, DeclContext *DC,
                                     SourceLocation EllipsisLoc) {
   return new (C, DC) UnresolvedUsingTypenameDecl(
       DC, UsingLoc, TypenameLoc, QualifierLoc, TargetNameLoc,
-<<<<<<< HEAD
-      TargetName);
-=======
-      TargetName.getAsIdentifierInfo(), EllipsisLoc);
->>>>>>> master
+      TargetName, EllipsisLoc);
 }
 
 UnresolvedUsingTypenameDecl *
 UnresolvedUsingTypenameDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) UnresolvedUsingTypenameDecl(
       nullptr, SourceLocation(), SourceLocation(), NestedNameSpecifierLoc(),
-<<<<<<< HEAD
-      SourceLocation(), {});
-=======
-      SourceLocation(), nullptr, SourceLocation());
->>>>>>> master
+      SourceLocation(), {}, SourceLocation());
 }
 
 void StaticAssertDecl::anchor() { }

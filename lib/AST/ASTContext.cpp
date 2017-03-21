@@ -3905,7 +3905,7 @@ TemplateArgument ASTContext::getInjectedTemplateArg(NamedDecl *Param) {
   if (auto *TTP = dyn_cast<TemplateTypeParmDecl>(Param)) {
     QualType ArgType = getTypeDeclType(TTP);
     if (TTP->isParameterPack())
-      ArgType = getPackExpansionType(ArgType, None);
+      ArgType = getPackExpansionType(ArgType, ExpansionInfo());
 
     Arg = TemplateArgument(ArgType);
   } else if (auto *NTTP = dyn_cast<NonTypeTemplateParmDecl>(Param)) {
@@ -3916,12 +3916,12 @@ TemplateArgument ASTContext::getInjectedTemplateArg(NamedDecl *Param) {
 
     if (NTTP->isParameterPack())
       E = new (*this) PackExpansionExpr(DependentTy, E, NTTP->getLocation(),
-                                        None);
+                                        ExpansionInfo());
     Arg = TemplateArgument(E);
   } else {
     auto *TTP = cast<TemplateTemplateParmDecl>(Param);
     if (TTP->isParameterPack())
-      Arg = TemplateArgument(TemplateName(TTP), Optional<unsigned>());
+      Arg = TemplateArgument(TemplateName(TTP), ExpansionInfo());
     else
       Arg = TemplateArgument(TemplateName(TTP));
   }
@@ -3942,7 +3942,7 @@ ASTContext::getInjectedTemplateArgs(const TemplateParameterList *Params,
 }
 
 QualType ASTContext::getPackExpansionType(QualType Pattern,
-                                          ExpansionInfo Expansion) {
+                                          ExpansionInfo Expansion) const {
   llvm::FoldingSetNodeID ID;
   PackExpansionType::Profile(ID, Pattern, Expansion);
 

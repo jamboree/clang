@@ -2063,10 +2063,7 @@ public:
     setParams(getASTContext(), NewParamInfo);
   }
 
-  ArrayRef<NamedDecl *> getDeclsInPrototypeScope() const {
-    return DeclsInPrototypeScope;
-  }
-  void setDeclsInPrototypeScope(ArrayRef<NamedDecl *> NewDecls);
+  const FunctionProtoType *getDesigProtoType() const { return DesigProto; }
 
   /// getMinRequiredArguments - Returns the minimum number of arguments
   /// needed to call this function. This may be fewer than the number of

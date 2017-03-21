@@ -439,9 +439,9 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
 
   switch (NNS1->getKind()) {
-  case NestedNameSpecifier::Identifier:
-    return IsStructurallyEquivalent(NNS1->getAsIdentifier(),
-                                    NNS2->getAsIdentifier());
+  case NestedNameSpecifier::DeclName:
+    return IsStructurallyEquivalent(Context, NNS1->getAsDeclName(),
+                                    NNS2->getAsDeclName());
   case NestedNameSpecifier::Namespace:
     return IsStructurallyEquivalent(Context, NNS1->getAsNamespace(),
                                     NNS2->getAsNamespace());
@@ -530,7 +530,7 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                      DeclarationName N1,
                                      DeclarationName N2) {
   // FIXME: Is this correct?
-  return N1 == N2;
+  return N1.getCanonicalName() == N2.getCanonicalName();
 }
 
 /// \brief Determine whether two template arguments are equivalent.
@@ -7176,9 +7176,9 @@ NestedNameSpecifierLoc ASTImporter::Import(NestedNameSpecifierLoc FromNNS) {
 
     NestedNameSpecifier::SpecifierKind Kind = Spec->getKind();
     switch (Kind) {
-    case NestedNameSpecifier::Identifier:
+    case NestedNameSpecifier::DeclName:
       Builder.Extend(getToContext(),
-                     Spec->getAsIdentifier(),
+                     Spec->getAsDeclName(),
                      Import(NNS.getLocalBeginLoc()),
                      Import(NNS.getLocalEndLoc()));
       break;

@@ -1003,10 +1003,7 @@ DeduceTemplateArguments(Sema &S,
 
     PackDeductionScope PackScope(S, TemplateParams, Deduced, Info, FullPattern);
 
-    bool HasAnyArguments = false;
     for (; ArgIdx < ArgEnd; ++ArgIdx) {
-      HasAnyArguments = true;
-
       // Deduce template arguments from the pattern.
       if (Sema::TemplateDeductionResult Result
             = DeduceTemplateArgumentsByTypeMatch(S, TemplateParams, Pattern,
@@ -1019,7 +1016,7 @@ DeduceTemplateArguments(Sema &S,
 
     // Build argument packs for each of the parameter packs expanded by this
     // pack expansion.
-    if (auto Result = PackScope.finish(HasAnyArguments))
+    if (auto Result = PackScope.finish())
       return Result;
   }
 
@@ -2066,7 +2063,7 @@ DeduceTemplateArguments(Sema &S, TemplateParameterList *TemplateParams,
       // The simple case: deduce template arguments by matching Pi and Ai.
 
       // Check whether we have enough arguments.
-      if (!hasTemplateArgumentForDeduction(Args, ArgIdx, NumArgs))
+      if (!hasTemplateArgumentForDeduction(Args, ArgIdx))
         return NumberOfArgumentsMustMatch
                    ? Sema::TDK_MiscellaneousDeductionFailure
                    : Sema::TDK_Success;
@@ -2098,12 +2095,11 @@ DeduceTemplateArguments(Sema &S, TemplateParameterList *TemplateParams,
     //   template parameter packs expanded by Pi.
 
     // Expands the argument pack first.
-    hasTemplateArgumentForDeduction(Args, ArgIdx, NumArgs);
+    hasTemplateArgumentForDeduction(Args, ArgIdx);
 
     TemplateArgument Pattern = Params[ParamIdx].getPackExpansionPattern();
     TemplateArgument FullPattern = Pattern;
-    unsigned ArgEnd = NumArgs;
-    if (ParamIdx + 1 < NumParams) {
+    if (ParamIdx + 1 < Params.size()) {
       // C++0x [temp.deduct.type]p5:
       //   The non-deduced contexts are:
       //     - A function parameter pack that does not occur at the end of the
@@ -2121,10 +2117,7 @@ DeduceTemplateArguments(Sema &S, TemplateParameterList *TemplateParams,
     // Keep track of the deduced template arguments for each parameter pack
     // expanded by this pack expansion (the outer index) and for each
     // template argument (the inner SmallVectors).
-    bool HasAnyArguments = false;
-    for (; hasTemplateArgumentForDeduction(Args, ArgIdx, ArgEnd); ++ArgIdx) {
-      HasAnyArguments = true;
-
+    for (; hasTemplateArgumentForDeduction(Args, ArgIdx); ++ArgIdx) {
       // Deduce template arguments from the pattern.
       if (Sema::TemplateDeductionResult Result
             = DeduceTemplateArguments(S, TemplateParams, Pattern, Args[ArgIdx],
@@ -2136,7 +2129,7 @@ DeduceTemplateArguments(Sema &S, TemplateParameterList *TemplateParams,
 
     // Build argument packs for each of the parameter packs expanded by this
     // pack expansion.
-    if (auto Result = PackScope.finish(HasAnyArguments))
+    if (auto Result = PackScope.finish())
       return Result;
   }
 
@@ -3061,7 +3054,7 @@ static unsigned getPackIndexForParam(Sema &S,
   for (auto *PD : FunctionTemplate->getTemplatedDecl()->parameters()) {
     if (PD->isParameterPack()) {
       unsigned NumExpansions =
-          S.getNumArgumentsInExpansion(PD->getType(), Args).getValueOr(1);
+          S.getNumArgumentsInExpansion(PD, Args).getValueOr(1);
       if (Idx + NumExpansions > ParamIdx)
         return ParamIdx - Idx;
       Idx += NumExpansions;
@@ -3827,9 +3820,9 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
       // If the parameter type contains an explicitly-specified pack that we
       // could not expand, skip the number of parameters notionally created
       // by the expansion.
-      Optional<unsigned> NumExpansions = ParamExpansion->getNumExpansions();
-      if (NumExpansions && !PackScope.isPartiallyExpanded()) {
-        for (unsigned I = 0; I != *NumExpansions && ArgIdx < Args.size();
+      ExpansionInfo Info = ParamExpansion->getExpansionInfo();
+      if (Info && !PackScope.isPartiallyExpanded()) {
+        for (unsigned I = 0; I != Info.getNumExpansions() && ArgIdx < Args.size();
              ++I, ++ArgIdx) {
           ParamTypesForArgChecking.push_back(ParamPattern);
           // FIXME: Should we add OriginalCallArgs for these? What if the
@@ -3975,7 +3968,7 @@ Sema::TemplateDeductionResult Sema::DeduceTemplateArguments(
     HasDeducedReturnType = true;
   }
 
-  if (InOverloadResolution) {
+  if (IsAddressOfFunction) {
     if (const FunctionProtoType *Proto =
             FunctionType->getAs<FunctionProtoType>()) {
       QualType DesigFunctionType = Context.getCanonicalDesigFunctionType(

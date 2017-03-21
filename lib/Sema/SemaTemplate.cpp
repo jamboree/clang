@@ -1619,7 +1619,7 @@ struct ConvertConstructorToDeductionGuideTransform {
     SmallVector<ParmVarDecl*, 4> Params;
     for (auto T : ParamTypes) {
       ParmVarDecl *NewParam = ParmVarDecl::Create(
-          SemaRef.Context, DC, Loc, Loc, nullptr, T,
+          SemaRef.Context, DC, Loc, Loc, {}, T,
           SemaRef.Context.getTrivialTypeSourceInfo(T, Loc), SC_None, nullptr);
       NewParam->setScopeInfo(0, Params.size());
       FPTL.setParam(Params.size(), NewParam);
@@ -9540,8 +9540,8 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
       if (Keyword == ETK_Typename && LookupRD && FoundRD &&
           FoundRD->isInjectedClassName() &&
           declaresSameEntity(LookupRD, cast<Decl>(FoundRD->getParent())))
-        Diag(IILoc, diag::ext_out_of_line_qualified_id_type_names_constructor)
-            << &II << 1 << 0 /*'typename' keyword used*/;
+        Diag(NameLoc, diag::ext_out_of_line_qualified_id_type_names_constructor)
+            << Name << 1 << 0 /*'typename' keyword used*/;
 
       // We found a type. Build an ElaboratedType, since the
       // typename-specifier was just sugar.

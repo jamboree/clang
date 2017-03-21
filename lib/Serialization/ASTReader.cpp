@@ -6326,7 +6326,7 @@ void TypeLocReader::VisitPackExpansionTypeLoc(PackExpansionTypeLoc TL) {
   TL.setEllipsisLoc(ReadSourceLocation());
 }
 void TypeLocReader::VisitDesignatingTypeLoc(DesignatingTypeLoc TL) {
-  TL.setDotLoc(ReadSourceLocation(Record, Idx));
+  TL.setDotLoc(ReadSourceLocation());
 }
 void TypeLocReader::VisitObjCInterfaceTypeLoc(ObjCInterfaceTypeLoc TL) {
   TL.setNameLoc(ReadSourceLocation());

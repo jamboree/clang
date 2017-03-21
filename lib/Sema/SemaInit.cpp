@@ -8482,6 +8482,8 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
   OverloadCandidateSet Candidates(Kind.getLocation(),
                                   OverloadCandidateSet::CSK_Normal);
   OverloadCandidateSet::iterator Best;
+  bool HasDesig = AnyDesignated(Inits);
+  SmallVector<Expr *, 32> MappedArgs;
   auto tryToResolveOverload =
       [&](bool OnlyListConstructors) -> OverloadingResult {
     Candidates.clear();
@@ -8536,11 +8538,12 @@ QualType Sema::DeduceTemplateSpecializationFromInitializer(
 
       if (TD)
         AddTemplateOverloadCandidate(TD, I.getPair(), /*ExplicitArgs*/ nullptr,
-                                     Inits, Candidates,
+                                     Inits, MappedArgs, Candidates, HasDesig,
                                      SuppressUserConversions);
       else
-        AddOverloadCandidate(GD, I.getPair(), Inits, Candidates,
-                             SuppressUserConversions);
+        AddOverloadCandidate(GD, I.getPair(), Inits, MappedArgs, Candidates,
+                             HasDesig, SuppressUserConversions);
+      MappedArgs.clear();
     }
     return Candidates.BestViableFunction(*this, Kind.getLocation(), Best);
   };

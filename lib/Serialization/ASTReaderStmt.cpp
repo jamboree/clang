@@ -1574,7 +1574,8 @@ void ASTStmtReader::VisitCXXNoexceptExpr(CXXNoexceptExpr *E) {
 void ASTStmtReader::VisitPackExpansionExpr(PackExpansionExpr *E) {
   VisitExpr(E);
   E->EllipsisLoc = ReadSourceLocation();
-  E->NumExpansions = Record.readInt();
+  //jamboree: FIXME
+  //E->NumExpansions = Record.readInt();
   E->Pattern = Record.readSubExpr();
 }
 

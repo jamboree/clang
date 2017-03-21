@@ -6011,7 +6011,7 @@ Sema::AddOverloadCandidate(FunctionDecl *Function,
   auto AddCandidate = [&, RawArgs = Args.size() ](unsigned NumArgs, bool Viable,
                                                   ArrayRef<Expr *> Ordered = {})
                           ->OverloadCandidate & {
-    OverloadCandidate &Candidate = CandidateSet.addCandidate(NumArgs, Ordered, EarlyConversions);
+    OverloadCandidate &Candidate = CandidateSet.addCandidate(NumArgs, EarlyConversions, Ordered);
     Candidate.FoundDecl = FoundDecl;
     Candidate.Function = Function;
     Candidate.Viable = Viable;
@@ -6534,7 +6534,7 @@ Sema::AddMethodCandidate(CXXMethodDecl *Method, DeclAccessPair FoundDecl,
   auto AddCandidate = [&, RawArgs = Args.size() ](unsigned NumArgs, bool Viable,
                                                   ArrayRef<Expr *> Ordered = {})
                           ->OverloadCandidate & {
-    OverloadCandidate &Candidate = CandidateSet.addCandidate(NumArgs, Ordered, EarlyConversions);
+    OverloadCandidate &Candidate = CandidateSet.addCandidate(NumArgs, EarlyConversions, Ordered);
     Candidate.FoundDecl = FoundDecl;
     Candidate.Function = Method;
     Candidate.Viable = Viable;
@@ -7099,7 +7099,7 @@ void Sema::AddSurrogateCandidate(
   auto AddCandidate = [&, RawArgs = Args.size() ](unsigned NumArgs, bool Viable,
                                                   ArrayRef<Expr *> Ordered = {})
                           ->OverloadCandidate & {
-    OverloadCandidate &Candidate = CandidateSet.addCandidate(NumArgs, Ordered);
+    OverloadCandidate &Candidate = CandidateSet.addCandidate(NumArgs, None, Ordered);
     Candidate.FoundDecl = FoundDecl;
     Candidate.Function = nullptr;
     Candidate.Surrogate = Conversion;
@@ -10138,11 +10138,10 @@ static void DiagnoseBadDeduction(Sema &S, NamedDecl *Found, Decl *Templated,
       }
 
       which = 1;
-    else if (isa<TemplateTemplateParmDecl>(ParamD))
-        which = 2;
-    else {
+    } else if (isa<TemplateTemplateParmDecl>(ParamD))
+      which = 2;
+    else
       which = 3;
-    }
 
     S.Diag(Templated->getLocation(),
            diag::note_ovl_candidate_inconsistent_deduction)

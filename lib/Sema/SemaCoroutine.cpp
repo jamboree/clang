@@ -821,11 +821,11 @@ bool SubStmtBuilder::makeNewAndDeleteExpr() {
   FunctionDecl *OperatorDelete = nullptr;
   FunctionDecl *UnusedResult = nullptr;
   bool PassAlignment = false;
-
+  SmallVector<Expr *, 4> PlaceArgs; // Dummy.
   S.FindAllocationFunctions(Loc, SourceRange(),
                             /*UseGlobal*/ false, PromiseType,
                             /*isArray*/ false, PassAlignment,
-                            /*PlacementArgs*/ None, OperatorNew, UnusedResult);
+                            PlaceArgs, OperatorNew, UnusedResult);
 
   OperatorDelete = findDeleteForPromise(S, Loc, PromiseType);
 

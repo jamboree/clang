@@ -1010,7 +1010,7 @@ public:
       if (!DeducedTSTContext) {
         if (auto *Deduced = dyn_cast_or_null<DeducedTemplateSpecializationType>(
                 T.isNull() ? nullptr : T->getContainedDeducedType())) {
-          SemaRef.Diag(IdLoc, diag::err_dependent_deduced_tst)
+          SemaRef.Diag(NameLoc, diag::err_dependent_deduced_tst)
             << (int)SemaRef.getTemplateNameKindForDiagnostics(
                    Deduced->getTemplateName())
             << QualType(QualifierLoc.getNestedNameSpecifier()->getAsType(), 0);
