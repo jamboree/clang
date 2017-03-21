@@ -2667,7 +2667,7 @@ Decl *TemplateDeclInstantiator::instantiateUnresolvedUsingDecl(
     //
     // Sadly we can't just reject this in the template definition because it
     // could be valid if the pack is empty or has exactly one expansion.
-    if (D->getDeclContext()->isFunctionOrMethod() && *NumExpansions > 1) {
+    if (D->getDeclContext()->isFunctionOrMethod() && Info.getNumExpansions() > 1) {
       SemaRef.Diag(D->getEllipsisLoc(),
                    diag::err_using_decl_redeclaration_expansion);
       return nullptr;
@@ -2675,7 +2675,7 @@ Decl *TemplateDeclInstantiator::instantiateUnresolvedUsingDecl(
 
     // Instantiate the slices of this pack and build a UsingPackDecl.
     SmallVector<NamedDecl*, 8> Expansions;
-    for (unsigned I = 0; I != *NumExpansions; ++I) {
+    for (unsigned I = 0; I != Info.getNumExpansions(); ++I) {
       Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(SemaRef, I);
       Decl *Slice = instantiateUnresolvedUsingDecl(D, true);
       if (!Slice)
