@@ -72,10 +72,21 @@ __DEVICE__ int fpclassify(double __x) {
 __DEVICE__ float frexp(float __arg, int *__exp) {
   return ::frexpf(__arg, __exp);
 }
+
+// For inscrutable reasons, the CUDA headers define these functions for us on
+// Windows.
+#ifndef _MSC_VER
 __DEVICE__ bool isinf(float __x) { return ::__isinff(__x); }
 __DEVICE__ bool isinf(double __x) { return ::__isinf(__x); }
 __DEVICE__ bool isfinite(float __x) { return ::__finitef(__x); }
-__DEVICE__ bool isfinite(double __x) { return ::__finite(__x); }
+// For inscrutable reasons, __finite(), the double-precision version of
+// __finitef, does not exist when compiling for MacOS.  __isfinited is available
+// everywhere and is just as good.
+__DEVICE__ bool isfinite(double __x) { return ::__isfinited(__x); }
+__DEVICE__ bool isnan(float __x) { return ::__isnanf(__x); }
+__DEVICE__ bool isnan(double __x) { return ::__isnan(__x); }
+#endif
+
 __DEVICE__ bool isgreater(float __x, float __y) {
   return __builtin_isgreater(__x, __y);
 }
@@ -106,8 +117,6 @@ __DEVICE__ bool islessgreater(float __x, float __y) {
 __DEVICE__ bool islessgreater(double __x, double __y) {
   return __builtin_islessgreater(__x, __y);
 }
-__DEVICE__ bool isnan(float __x) { return ::__isnanf(__x); }
-__DEVICE__ bool isnan(double __x) { return ::__isnan(__x); }
 __DEVICE__ bool isnormal(float __x) { return __builtin_isnormal(__x); }
 __DEVICE__ bool isnormal(double __x) { return __builtin_isnormal(__x); }
 __DEVICE__ bool isunordered(float __x, float __y) {
@@ -141,7 +150,7 @@ __DEVICE__ double pow(double __base, int __iexp) {
   return ::powi(__base, __iexp);
 }
 __DEVICE__ bool signbit(float __x) { return ::__signbitf(__x); }
-__DEVICE__ bool signbit(double __x) { return ::__signbit(__x); }
+__DEVICE__ bool signbit(double __x) { return ::__signbitd(__x); }
 __DEVICE__ float sin(float __x) { return ::sinf(__x); }
 __DEVICE__ float sinh(float __x) { return ::sinhf(__x); }
 __DEVICE__ float sqrt(float __x) { return ::sqrtf(__x); }

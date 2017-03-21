@@ -471,7 +471,7 @@ void Preprocessor::SkipExcludedConditionalBlock(SourceLocation IfTokenLoc,
       Directive = RI;
     } else {
       std::string DirectiveStr = getSpelling(Tok);
-      unsigned IdLen = DirectiveStr.size();
+      size_t IdLen = DirectiveStr.size();
       if (IdLen >= 20) {
         CurPPLexer->ParsingPreprocessorDirective = false;
         // Restore comment saving mode.
@@ -801,8 +801,7 @@ const FileEntry *Preprocessor::LookupFile(
     // headers included by quoted include directives.
     // See: http://msdn.microsoft.com/en-us/library/36k2cdd4.aspx
     if (LangOpts.MSVCCompat && !isAngled) {
-      for (unsigned i = 0, e = IncludeMacroStack.size(); i != e; ++i) {
-        IncludeStackInfo &ISEntry = IncludeMacroStack[e - i - 1];
+      for (IncludeStackInfo &ISEntry : llvm::reverse(IncludeMacroStack)) {
         if (IsFileLexer(ISEntry))
           if ((FileEnt = ISEntry.ThePPLexer->getFileEntry()))
             Includers.push_back(std::make_pair(FileEnt, FileEnt->getDir()));
@@ -865,8 +864,7 @@ const FileEntry *Preprocessor::LookupFile(
     }
   }
 
-  for (unsigned i = 0, e = IncludeMacroStack.size(); i != e; ++i) {
-    IncludeStackInfo &ISEntry = IncludeMacroStack[e-i-1];
+  for (IncludeStackInfo &ISEntry : llvm::reverse(IncludeMacroStack)) {
     if (IsFileLexer(ISEntry)) {
       if ((CurFileEnt = ISEntry.ThePPLexer->getFileEntry())) {
         if ((FE = HeaderInfo.LookupSubframeworkHeader(
@@ -1014,11 +1012,11 @@ void Preprocessor::HandleDirective(Token &Result) {
     case tok::pp_define:
       return HandleDefineDirective(Result, ImmediatelyAfterTopLevelIfndef);
     case tok::pp_undef:
-      return HandleUndefDirective(Result);
+      return HandleUndefDirective();
 
     // C99 6.10.4 - Line Control.
     case tok::pp_line:
-      return HandleLineDirective(Result);
+      return HandleLineDirective();
 
     // C99 6.10.5 - Error Directive.
     case tok::pp_error:
@@ -1055,7 +1053,7 @@ void Preprocessor::HandleDirective(Token &Result) {
 
     case tok::pp___private_macro:
       if (getLangOpts().Modules)
-        return HandleMacroPrivateDirective(Result);
+        return HandleMacroPrivateDirective();
       break;
     }
     break;
@@ -1153,7 +1151,7 @@ static bool GetLineValue(Token &DigitTok, unsigned &Val,
 ///   # line digit-sequence
 ///   # line digit-sequence "s-char-sequence"
 /// \endverbatim
-void Preprocessor::HandleLineDirective(Token &Tok) {
+void Preprocessor::HandleLineDirective() {
   // Read the line # and string argument.  Per C99 6.10.4p5, these tokens are
   // expanded.
   Token DigitTok;
@@ -1458,7 +1456,7 @@ void Preprocessor::HandleMacroPublicDirective(Token &Tok) {
 }
 
 /// \brief Handle a #private directive.
-void Preprocessor::HandleMacroPrivateDirective(Token &Tok) {
+void Preprocessor::HandleMacroPrivateDirective() {
   Token MacroNameTok;
   ReadMacroName(MacroNameTok, MU_Undef);
 
@@ -1567,7 +1565,7 @@ bool Preprocessor::ConcatenateIncludeName(SmallString<128> &FilenameBuffer,
       FilenameBuffer.push_back(' ');
 
     // Get the spelling of the token, directly into FilenameBuffer if possible.
-    unsigned PreAppendSize = FilenameBuffer.size();
+    size_t PreAppendSize = FilenameBuffer.size();
     FilenameBuffer.resize(PreAppendSize+CurTok.getLength());
 
     const char *BufPtr = &FilenameBuffer[PreAppendSize];
@@ -1618,7 +1616,7 @@ static void diagnoseAutoModuleImport(
   assert(PP.getLangOpts().ObjC2 && "no import syntax available");
 
   SmallString<128> PathString;
-  for (unsigned I = 0, N = Path.size(); I != N; ++I) {
+  for (size_t I = 0, N = Path.size(); I != N; ++I) {
     if (I)
       PathString += '.';
     PathString += Path[I].first->getName();
@@ -1868,10 +1866,7 @@ void Preprocessor::HandleIncludeDirective(SourceLocation HashLoc,
     // unavailable, diagnose the situation and bail out.
     // FIXME: Remove this; loadModule does the same check (but produces
     // slightly worse diagnostics).
-    if (!SuggestedModule.getModule()->isAvailable() &&
-        !SuggestedModule.getModule()
-             ->getTopLevelModule()
-             ->HasIncompatibleModuleFile) {
+    if (!SuggestedModule.getModule()->isAvailable()) {
       Module::Requirement Requirement;
       Module::UnresolvedHeaderDirective MissingHeader;
       Module *M = SuggestedModule.getModule();
@@ -1920,9 +1915,12 @@ void Preprocessor::HandleIncludeDirective(SourceLocation HashLoc,
     else if (Imported.isMissingExpected()) {
       // We failed to find a submodule that we assumed would exist (because it
       // was in the directory of an umbrella header, for instance), but no
-      // actual module exists for it (because the umbrella header is
+      // actual module containing it exists (because the umbrella header is
       // incomplete).  Treat this as a textual inclusion.
       SuggestedModule = ModuleMap::KnownHeader();
+    } else if (Imported.isConfigMismatch()) {
+      // On a configuration mismatch, enter the header textually. We still know
+      // that it's part of the corresponding module.
     } else {
       // We hit an error processing the import. Bail out.
       if (hadModuleLoaderFatalFailure()) {
@@ -1978,30 +1976,36 @@ void Preprocessor::HandleIncludeDirective(SourceLocation HashLoc,
       SmallString<128> Path;
       Path.reserve(Name.size()+2);
       Path.push_back(isAngled ? '<' : '"');
+      bool isLeadingSeparator = llvm::sys::path::is_absolute(Name);
       for (auto Component : Components) {
-        Path.append(Component);
+        if (isLeadingSeparator)
+          isLeadingSeparator = false;
+        else
+          Path.append(Component);
         // Append the separator the user used, or the close quote
         Path.push_back(
           Path.size() <= Filename.size() ? Filename[Path.size()-1] :
             (isAngled ? '>' : '"'));
       }
-      auto Replacement = Path.str().str();
       // For user files and known standard headers, by default we issue a diagnostic.
       // For other system headers, we don't. They can be controlled separately.
       auto DiagId = (FileCharacter == SrcMgr::C_User || warnByDefaultOnWrongCase(Name)) ?
           diag::pp_nonportable_path : diag::pp_nonportable_system_path;
       SourceRange Range(FilenameTok.getLocation(), CharEnd);
-      Diag(FilenameTok, DiagId) << Replacement <<
-        FixItHint::CreateReplacement(Range, Replacement);
+      Diag(FilenameTok, DiagId) << Path <<
+        FixItHint::CreateReplacement(Range, Path);
     }
   }
 
   // Ask HeaderInfo if we should enter this #include file.  If not, #including
   // this file will have no effect.
+  bool SkipHeader = false;
   if (ShouldEnter &&
       !HeaderInfo.ShouldEnterIncludeFile(*this, File, isImport,
+                                         getLangOpts().Modules,
                                          SuggestedModule.getModule())) {
     ShouldEnter = false;
+    SkipHeader = true;
     if (Callbacks)
       Callbacks->FileSkipped(*File, FilenameTok, FileCharacter);
   }
@@ -2010,6 +2014,14 @@ void Preprocessor::HandleIncludeDirective(SourceLocation HashLoc,
   if (!ShouldEnter) {
     // If this is a module import, make it visible if needed.
     if (auto *M = SuggestedModule.getModule()) {
+      // When building a pch, -fmodule-name tells the compiler to textually
+      // include headers in the specified module. But it is possible that
+      // ShouldEnter is false because we are skipping the header. In that
+      // case, We are not importing the specified module.
+      if (SkipHeader && getLangOpts().CompilingPCH &&
+          M->getTopLevelModuleName() == getLangOpts().CurrentModule)
+        return;
+
       makeModuleVisible(M, HashLoc);
 
       if (IncludeTok.getIdentifierInfo()->getPPKeywordID() !=
@@ -2034,6 +2046,13 @@ void Preprocessor::HandleIncludeDirective(SourceLocation HashLoc,
 
   // Determine if we're switching to building a new submodule, and which one.
   if (auto *M = SuggestedModule.getModule()) {
+    // When building a pch, -fmodule-name tells the compiler to textually
+    // include headers in the specified module. We are not building the
+    // specified module.
+    if (getLangOpts().CompilingPCH &&
+        M->getTopLevelModuleName() == getLangOpts().CurrentModule)
+      return;
+
     assert(!CurSubmodule && "should not have marked this as a module yet");
     CurSubmodule = M;
 
@@ -2060,7 +2079,11 @@ void Preprocessor::HandleIncludeNextDirective(SourceLocation HashLoc,
   // diagnostic.
   const DirectoryLookup *Lookup = CurDirLookup;
   const FileEntry *LookupFromFile = nullptr;
-  if (isInPrimaryFile()) {
+  if (isInPrimaryFile() && LangOpts.IsHeaderFile) {
+    // If the main file is a header, then it's either for PCH/AST generation,
+    // or libclang opened it. Either way, handle it as a normal include below
+    // and do not complain about include_next.
+  } else if (isInPrimaryFile()) {
     Lookup = nullptr;
     Diag(IncludeNextTok, diag::pp_include_next_in_primary);
   } else if (CurSubmodule) {
@@ -2553,7 +2576,7 @@ void Preprocessor::HandleDefineDirective(Token &DefineTok,
 
 /// HandleUndefDirective - Implements \#undef.
 ///
-void Preprocessor::HandleUndefDirective(Token &UndefTok) {
+void Preprocessor::HandleUndefDirective() {
   ++NumUndefined;
 
   Token MacroNameTok;

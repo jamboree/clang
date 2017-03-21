@@ -22,7 +22,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Triple.h"
-#include "llvm/Bitcode/ReaderWriter.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -514,7 +514,10 @@ public:
     // Dump the contents of the temporary file if that was requested.
     if (DumpTemporaryFiles) {
       errs() << ";\n; Object file bundler IR file.\n;\n";
-      AuxModule.get()->dump();
+      AuxModule.get()->print(errs(), nullptr,
+                             /*ShouldPreserveUseListOrder=*/false,
+                             /*IsForDebug=*/true);
+      errs() << '\n';
     }
 
     // Find clang in order to create the bundle binary.

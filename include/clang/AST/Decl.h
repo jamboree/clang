@@ -1610,20 +1610,20 @@ private:
   /// no formals.
   ParmVarDecl **ParamInfo;
 
-  /// DeclsInPrototypeScope - Array of pointers to NamedDecls for
-  /// decls defined in the function prototype that are not parameters. E.g.
-  /// 'enum Y' in 'void f(enum Y {AA} x) {}'.
-  ArrayRef<NamedDecl *> DeclsInPrototypeScope;
-
   LazyDeclStmtPtr Body;
 
   const FunctionProtoType *DesigProto;
 
   // FIXME: This can be packed into the bitfields in DeclContext.
   // NOTE: VC++ packs bitfields poorly if the types differ.
-  unsigned SClass : 2;
+  unsigned SClass : 3;
   unsigned IsInline : 1;
   unsigned IsInlineSpecified : 1;
+protected:
+  // This is shared by CXXConstructorDecl, CXXConversionDecl, and
+  // CXXDeductionGuideDecl.
+  unsigned IsExplicitSpecified : 1;
+private:
   unsigned IsVirtualAsWritten : 1;
   unsigned IsPure : 1;
   unsigned HasInheritedPrototype : 1;
@@ -1642,6 +1642,11 @@ private:
   /// \brief Indicates if the function was a definition but its body was
   /// skipped.
   unsigned HasSkippedBody : 1;
+
+  /// Indicates if the function declaration will have a body, once we're done
+  /// parsing it.  (We don't set it to false when we're done parsing, in the
+  /// hopes this is simpler.)
+  unsigned WillHaveBody : 1;
 
   /// \brief End part of this FunctionDecl's source range.
   ///
@@ -1712,25 +1717,23 @@ private:
 
 protected:
   FunctionDecl(Kind DK, ASTContext &C, DeclContext *DC, SourceLocation StartLoc,
-               const DeclarationNameInfo &NameInfo,
-               QualType T, TypeSourceInfo *TInfo,
-               StorageClass S, bool isInlineSpecified,
+               const DeclarationNameInfo &NameInfo, QualType T,
+               TypeSourceInfo *TInfo, StorageClass S, bool isInlineSpecified,
                bool isConstexprSpecified)
-    : DeclaratorDecl(DK, DC, NameInfo.getLoc(), NameInfo.getName(), T, TInfo,
-                     StartLoc),
-      DeclContext(DK),
-      redeclarable_base(C),
-      ParamInfo(nullptr), Body(), DesigProto(),
-      SClass(S),
-      IsInline(isInlineSpecified), IsInlineSpecified(isInlineSpecified),
-      IsVirtualAsWritten(false), IsPure(false), HasInheritedPrototype(false),
-      HasWrittenPrototype(true), IsDeleted(false), IsTrivial(false),
-      IsDefaulted(false), IsExplicitlyDefaulted(false),
-      HasImplicitReturnZero(false), IsLateTemplateParsed(false),
-      IsConstexpr(isConstexprSpecified), UsesSEHTry(false),
-      HasSkippedBody(false), EndRangeLoc(NameInfo.getEndLoc()),
-      TemplateOrSpecialization(),
-      DNLoc(NameInfo.getInfo()) {}
+      : DeclaratorDecl(DK, DC, NameInfo.getLoc(), NameInfo.getName(), T, TInfo,
+                       StartLoc),
+        DeclContext(DK), redeclarable_base(C),
+        ParamInfo(nullptr), Body(), DesigProto(),
+        SClass(S), IsInline(isInlineSpecified),
+        IsInlineSpecified(isInlineSpecified), IsExplicitSpecified(false),
+        IsVirtualAsWritten(false), IsPure(false),
+        HasInheritedPrototype(false), HasWrittenPrototype(true),
+        IsDeleted(false), IsTrivial(false), IsDefaulted(false),
+        IsExplicitlyDefaulted(false), HasImplicitReturnZero(false),
+        IsLateTemplateParsed(false), IsConstexpr(isConstexprSpecified),
+        UsesSEHTry(false), HasSkippedBody(false), WillHaveBody(false),
+        EndRangeLoc(NameInfo.getEndLoc()), TemplateOrSpecialization(),
+        DNLoc(NameInfo.getInfo()) {}
 
   typedef Redeclarable<FunctionDecl> redeclarable_base;
   FunctionDecl *getNextRedeclarationImpl() override {
@@ -2012,6 +2015,10 @@ public:
   bool hasSkippedBody() const { return HasSkippedBody; }
   void setHasSkippedBody(bool Skipped = true) { HasSkippedBody = Skipped; }
 
+  /// True if this function will eventually have a body, once it's fully parsed.
+  bool willHaveBody() const { return WillHaveBody; }
+  void setWillHaveBody(bool V = true) { WillHaveBody = V; }
+
   void setPreviousDeclaration(FunctionDecl * PrevDecl);
 
   FunctionDecl *getCanonicalDecl() override;
@@ -2056,8 +2063,6 @@ public:
     setParams(getASTContext(), NewParamInfo);
   }
 
-  const FunctionProtoType *getDesigProtoType() const { return DesigProto; }
-
   ArrayRef<NamedDecl *> getDeclsInPrototypeScope() const {
     return DeclsInPrototypeScope;
   }
@@ -2078,6 +2083,10 @@ public:
   /// function return type. This may omit qualifiers and other information with
   /// limited representation in the AST.
   SourceRange getReturnTypeSourceRange() const;
+
+  /// \brief Attempt to compute an informative source range covering the
+  /// function exception specification, if any.
+  SourceRange getExceptionSpecSourceRange() const;
 
   /// \brief Determine the type of an expression that calls this function.
   QualType getCallResultType() const {

@@ -19,12 +19,14 @@
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/SourceManager.h"
+#include "clang/Basic/VirtualFileSystem.h"
 #include "clang/Format/Format.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Rewrite/Core/Rewriter.h"
 #include "clang/Tooling/Refactoring.h"
+#include "clang/Tooling/Refactoring/AtomicChange.h"
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/SmallString.h"
 #include "gtest/gtest.h"
@@ -99,21 +101,71 @@ TEST_F(ReplacementTest, ReturnsInvalidPath) {
   EXPECT_TRUE(Replace2.getFilePath().empty());
 }
 
+// Checks that an llvm::Error instance contains a ReplacementError with expected
+// error code, expected new replacement, and expected existing replacement.
+static bool checkReplacementError(llvm::Error &&Error,
+                                  replacement_error ExpectedErr,
+                                  llvm::Optional<Replacement> ExpectedExisting,
+                                  llvm::Optional<Replacement> ExpectedNew) {
+  if (!Error) {
+    llvm::errs() << "Error is a success.";
+    return false;
+  }
+  std::string ErrorMessage;
+  llvm::raw_string_ostream OS(ErrorMessage);
+  llvm::handleAllErrors(std::move(Error), [&](const ReplacementError &RE) {
+    llvm::errs() << "Handling error...\n";
+    if (ExpectedErr != RE.get())
+      OS << "Unexpected error code: " << int(RE.get()) << "\n";
+    if (ExpectedExisting != RE.getExistingReplacement()) {
+      OS << "Expected Existing != Actual Existing.\n";
+      if (ExpectedExisting.hasValue())
+        OS << "Expected existing replacement: " << ExpectedExisting->toString()
+           << "\n";
+      if (RE.getExistingReplacement().hasValue())
+        OS << "Actual existing replacement: "
+           << RE.getExistingReplacement()->toString() << "\n";
+    }
+    if (ExpectedNew != RE.getNewReplacement()) {
+      OS << "Expected New != Actual New.\n";
+      if (ExpectedNew.hasValue())
+        OS << "Expected new replacement: " << ExpectedNew->toString() << "\n";
+      if (RE.getNewReplacement().hasValue())
+        OS << "Actual new replacement: " << RE.getNewReplacement()->toString()
+           << "\n";
+    }
+  });
+  OS.flush();
+  if (ErrorMessage.empty()) return true;
+  llvm::errs() << ErrorMessage;
+  return false;
+}
+
 TEST_F(ReplacementTest, FailAddReplacements) {
   Replacements Replaces;
   Replacement Deletion("x.cc", 0, 10, "3");
   auto Err = Replaces.add(Deletion);
   EXPECT_TRUE(!Err);
   llvm::consumeError(std::move(Err));
-  Err = Replaces.add(Replacement("x.cc", 0, 2, "a"));
-  EXPECT_TRUE((bool)Err);
-  llvm::consumeError(std::move(Err));
-  Err = Replaces.add(Replacement("x.cc", 2, 2, "a"));
-  EXPECT_TRUE((bool)Err);
-  llvm::consumeError(std::move(Err));
-  Err = Replaces.add(Replacement("y.cc", 20, 2, ""));
-  EXPECT_TRUE((bool)Err);
-  llvm::consumeError(std::move(Err));
+
+  Replacement OverlappingReplacement("x.cc", 0, 2, "a");
+  Err = Replaces.add(OverlappingReplacement);
+  EXPECT_TRUE(checkReplacementError(std::move(Err),
+                                    replacement_error::overlap_conflict,
+                                    Deletion, OverlappingReplacement));
+
+  Replacement ContainedReplacement("x.cc", 2, 2, "a");
+  Err = Replaces.add(Replacement(ContainedReplacement));
+  EXPECT_TRUE(checkReplacementError(std::move(Err),
+                                    replacement_error::overlap_conflict,
+                                    Deletion, ContainedReplacement));
+
+  Replacement WrongPathReplacement("y.cc", 20, 2, "");
+  Err = Replaces.add(WrongPathReplacement);
+  EXPECT_TRUE(checkReplacementError(std::move(Err),
+                                    replacement_error::wrong_file_path,
+                                    Deletion, WrongPathReplacement));
+
   EXPECT_EQ(1u, Replaces.size());
   EXPECT_EQ(Deletion, *Replaces.begin());
 }
@@ -298,9 +350,11 @@ TEST_F(ReplacementTest, FailAddRegression) {
 
   // Make sure we find the overlap with the first entry when inserting a
   // replacement that ends exactly at the seam of the existing replacements.
-  Err = Replaces.add(Replacement("x.cc", 5, 5, "fail"));
-  EXPECT_TRUE((bool)Err);
-  llvm::consumeError(std::move(Err));
+  Replacement OverlappingReplacement("x.cc", 5, 5, "fail");
+  Err = Replaces.add(OverlappingReplacement);
+  EXPECT_TRUE(checkReplacementError(std::move(Err),
+                                    replacement_error::overlap_conflict,
+                                    *Replaces.begin(), OverlappingReplacement));
 
   Err = Replaces.add(Replacement("x.cc", 10, 0, ""));
   EXPECT_TRUE(!Err);
@@ -332,9 +386,11 @@ TEST_F(ReplacementTest, AddInsertAtOtherInsertWhenOderIndependent) {
   auto Err = Replaces.add(Replacement("x.cc", 10, 0, "a"));
   EXPECT_TRUE(!Err);
   llvm::consumeError(std::move(Err));
-  Err = Replaces.add(Replacement("x.cc", 10, 0, "b"));
-  EXPECT_TRUE((bool)Err);
-  llvm::consumeError(std::move(Err));
+  Replacement ConflictInsertion("x.cc", 10, 0, "b");
+  Err = Replaces.add(ConflictInsertion);
+  EXPECT_TRUE(checkReplacementError(std::move(Err),
+                                    replacement_error::insert_conflict,
+                                    *Replaces.begin(), ConflictInsertion));
 
   Replaces.clear();
   Err = Replaces.add(Replacement("x.cc", 10, 0, "a"));
@@ -435,10 +491,12 @@ TEST_F(ReplacementTest, FailOrderDependentReplacements) {
   auto Replaces = toReplacements({Replacement(
       Context.Sources, Context.getLocation(ID, 2, 1), 5, "other")});
 
-  auto Err = Replaces.add(Replacement(
-      Context.Sources, Context.getLocation(ID, 2, 1), 5, "rehto"));
-  EXPECT_TRUE((bool)Err);
-  llvm::consumeError(std::move(Err));
+  Replacement ConflictReplacement(Context.Sources,
+                                  Context.getLocation(ID, 2, 1), 5, "rehto");
+  auto Err = Replaces.add(ConflictReplacement);
+  EXPECT_TRUE(checkReplacementError(std::move(Err),
+                                    replacement_error::overlap_conflict,
+                                    *Replaces.begin(), ConflictReplacement));
 
   EXPECT_TRUE(applyAllReplacements(Replaces, Context.Rewrite));
   EXPECT_EQ("line1\nother\nline3\nline4", Context.getRewrittenText(ID));
@@ -972,40 +1030,264 @@ TEST_F(MergeReplacementsTest, OverlappingRanges) {
       toReplacements({{"", 0, 3, "cc"}, {"", 3, 3, "dd"}}));
 }
 
-TEST(DeduplicateByFileTest, LeaveLeadingDotDot) {
+TEST(DeduplicateByFileTest, PathsWithDots) {
   std::map<std::string, Replacements> FileToReplaces;
+  llvm::IntrusiveRefCntPtr<vfs::InMemoryFileSystem> VFS(
+      new vfs::InMemoryFileSystem());
+  FileManager FileMgr(FileSystemOptions(), VFS);
 #if !defined(LLVM_ON_WIN32)
-  FileToReplaces["../../a/b/.././c.h"] = Replacements();
-  FileToReplaces["../../a/c.h"] = Replacements();
+  StringRef Path1 = "a/b/.././c.h";
+  StringRef Path2 = "a/c.h";
 #else
-  FileToReplaces["..\\..\\a\\b\\..\\.\\c.h"] = Replacements();
-  FileToReplaces["..\\..\\a\\c.h"] = Replacements();
+  StringRef Path1 = "a\\b\\..\\.\\c.h";
+  StringRef Path2 = "a\\c.h";
 #endif
-  FileToReplaces = groupReplacementsByFile(FileToReplaces);
+  EXPECT_TRUE(VFS->addFile(Path1, 0, llvm::MemoryBuffer::getMemBuffer("")));
+  EXPECT_TRUE(VFS->addFile(Path2, 0, llvm::MemoryBuffer::getMemBuffer("")));
+  FileToReplaces[Path1] = Replacements();
+  FileToReplaces[Path2] = Replacements();
+  FileToReplaces = groupReplacementsByFile(FileMgr, FileToReplaces);
   EXPECT_EQ(1u, FileToReplaces.size());
-#if !defined(LLVM_ON_WIN32)
-  EXPECT_EQ("../../a/c.h", FileToReplaces.begin()->first);
-#else
-  EXPECT_EQ("..\\..\\a\\c.h", FileToReplaces.begin()->first);
-#endif
+  EXPECT_EQ(Path1, FileToReplaces.begin()->first);
 }
 
-TEST(DeduplicateByFileTest, RemoveDotSlash) {
+TEST(DeduplicateByFileTest, PathWithDotSlash) {
   std::map<std::string, Replacements> FileToReplaces;
+  llvm::IntrusiveRefCntPtr<vfs::InMemoryFileSystem> VFS(
+      new vfs::InMemoryFileSystem());
+  FileManager FileMgr(FileSystemOptions(), VFS);
 #if !defined(LLVM_ON_WIN32)
-  FileToReplaces["./a/b/.././c.h"] = Replacements();
-  FileToReplaces["a/c.h"] = Replacements();
+  StringRef Path1 = "./a/b/c.h";
+  StringRef Path2 = "a/b/c.h";
 #else
-  FileToReplaces[".\\a\\b\\..\\.\\c.h"] = Replacements();
-  FileToReplaces["a\\c.h"] = Replacements();
+  StringRef Path1 = ".\\a\\b\\c.h";
+  StringRef Path2 = "a\\b\\c.h";
 #endif
-  FileToReplaces = groupReplacementsByFile(FileToReplaces);
+  EXPECT_TRUE(VFS->addFile(Path1, 0, llvm::MemoryBuffer::getMemBuffer("")));
+  EXPECT_TRUE(VFS->addFile(Path2, 0, llvm::MemoryBuffer::getMemBuffer("")));
+  FileToReplaces[Path1] = Replacements();
+  FileToReplaces[Path2] = Replacements();
+  FileToReplaces = groupReplacementsByFile(FileMgr, FileToReplaces);
   EXPECT_EQ(1u, FileToReplaces.size());
+  EXPECT_EQ(Path1, FileToReplaces.begin()->first);
+}
+
+TEST(DeduplicateByFileTest, NonExistingFilePath) {
+  std::map<std::string, Replacements> FileToReplaces;
+  llvm::IntrusiveRefCntPtr<vfs::InMemoryFileSystem> VFS(
+      new vfs::InMemoryFileSystem());
+  FileManager FileMgr(FileSystemOptions(), VFS);
 #if !defined(LLVM_ON_WIN32)
-  EXPECT_EQ("a/c.h", FileToReplaces.begin()->first);
+  StringRef Path1 = "./a/b/c.h";
+  StringRef Path2 = "a/b/c.h";
 #else
-  EXPECT_EQ("a\\c.h", FileToReplaces.begin()->first);
+  StringRef Path1 = ".\\a\\b\\c.h";
+  StringRef Path2 = "a\\b\\c.h";
 #endif
+  FileToReplaces[Path1] = Replacements();
+  FileToReplaces[Path2] = Replacements();
+  FileToReplaces = groupReplacementsByFile(FileMgr, FileToReplaces);
+  EXPECT_TRUE(FileToReplaces.empty());
+}
+
+class AtomicChangeTest : public ::testing::Test {
+  protected:
+    void setUp() {
+      DefaultFileID = Context.createInMemoryFile("input.cpp", DefaultCode);
+      DefaultLoc = Context.Sources.getLocForStartOfFile(DefaultFileID)
+                       .getLocWithOffset(20);
+      assert(DefaultLoc.isValid() && "Default location must be valid.");
+    }
+
+    RewriterTestContext Context;
+    std::string DefaultCode = std::string(100, 'a');
+    unsigned DefaultOffset = 20;
+    SourceLocation DefaultLoc;
+    FileID DefaultFileID;
+};
+
+TEST_F(AtomicChangeTest, AtomicChangeToYAML) {
+  setUp();
+  AtomicChange Change(Context.Sources, DefaultLoc);
+  llvm::Error Err =
+      Change.insert(Context.Sources, DefaultLoc, "aa", /*InsertAfter=*/false);
+  ASSERT_TRUE(!Err);
+  Err = Change.insert(Context.Sources, DefaultLoc.getLocWithOffset(10), "bb",
+                    /*InsertAfter=*/false);
+  ASSERT_TRUE(!Err);
+  Change.addHeader("a.h");
+  Change.removeHeader("b.h");
+  std::string YAMLString = Change.toYAMLString();
+
+  // NOTE: If this test starts to fail for no obvious reason, check whitespace.
+  ASSERT_STREQ("---\n"
+               "Key:             'input.cpp:20'\n"
+               "FilePath:        input.cpp\n"
+               "Error:           ''\n"
+               "InsertedHeaders: [ a.h ]\n"
+               "RemovedHeaders:  [ b.h ]\n"
+               "Replacements:    \n" // Extra whitespace here!
+               "  - FilePath:        input.cpp\n"
+               "    Offset:          20\n"
+               "    Length:          0\n"
+               "    ReplacementText: aa\n"
+               "  - FilePath:        input.cpp\n"
+               "    Offset:          30\n"
+               "    Length:          0\n"
+               "    ReplacementText: bb\n"
+               "...\n",
+               YAMLString.c_str());
+}
+
+TEST_F(AtomicChangeTest, YAMLToAtomicChange) {
+  setUp();
+  std::string YamlContent = "---\n"
+                            "Key:             'input.cpp:20'\n"
+                            "FilePath:        input.cpp\n"
+                            "Error:           'ok'\n"
+                            "InsertedHeaders: [ a.h ]\n"
+                            "RemovedHeaders:  [ b.h ]\n"
+                            "Replacements:    \n" // Extra whitespace here!
+                            "  - FilePath:        input.cpp\n"
+                            "    Offset:          20\n"
+                            "    Length:          0\n"
+                            "    ReplacementText: aa\n"
+                            "  - FilePath:        input.cpp\n"
+                            "    Offset:          30\n"
+                            "    Length:          0\n"
+                            "    ReplacementText: bb\n"
+                            "...\n";
+  AtomicChange ExpectedChange(Context.Sources, DefaultLoc);
+  llvm::Error Err = ExpectedChange.insert(Context.Sources, DefaultLoc, "aa",
+                                        /*InsertAfter=*/false);
+  ASSERT_TRUE(!Err);
+  Err = ExpectedChange.insert(Context.Sources, DefaultLoc.getLocWithOffset(10),
+                            "bb", /*InsertAfter=*/false);
+  ASSERT_TRUE(!Err);
+
+  ExpectedChange.addHeader("a.h");
+  ExpectedChange.removeHeader("b.h");
+  ExpectedChange.setError("ok");
+
+  AtomicChange ActualChange = AtomicChange::convertFromYAML(YamlContent);
+  EXPECT_EQ(ExpectedChange.getKey(), ActualChange.getKey());
+  EXPECT_EQ(ExpectedChange.getFilePath(), ActualChange.getFilePath());
+  EXPECT_EQ(ExpectedChange.getError(), ActualChange.getError());
+  EXPECT_EQ(ExpectedChange.getInsertedHeaders(),
+            ActualChange.getInsertedHeaders());
+  EXPECT_EQ(ExpectedChange.getRemovedHeaders(),
+            ActualChange.getRemovedHeaders());
+  EXPECT_EQ(ExpectedChange.getReplacements().size(),
+            ActualChange.getReplacements().size());
+  EXPECT_EQ(2u, ActualChange.getReplacements().size());
+  EXPECT_EQ(*ExpectedChange.getReplacements().begin(),
+            *ActualChange.getReplacements().begin());
+  EXPECT_EQ(*(++ExpectedChange.getReplacements().begin()),
+            *(++ActualChange.getReplacements().begin()));
+}
+
+TEST_F(AtomicChangeTest, CheckKeyAndKeyFile) {
+  setUp();
+  AtomicChange Change(Context.Sources, DefaultLoc);
+  EXPECT_EQ("input.cpp:20", Change.getKey());
+  EXPECT_EQ("input.cpp", Change.getFilePath());
+}
+
+TEST_F(AtomicChangeTest, Replace) {
+  setUp();
+  AtomicChange Change(Context.Sources, DefaultLoc);
+  llvm::Error Err = Change.replace(Context.Sources, DefaultLoc, 2, "aa");
+  ASSERT_TRUE(!Err);
+  EXPECT_EQ(Change.getReplacements().size(), 1u);
+  EXPECT_EQ(*Change.getReplacements().begin(),
+            Replacement(Context.Sources, DefaultLoc, 2, "aa"));
+
+  // Add a new replacement that conflicts with the existing one.
+  Err = Change.replace(Context.Sources, DefaultLoc, 3, "ab");
+  EXPECT_TRUE((bool)Err);
+  llvm::consumeError(std::move(Err));
+  EXPECT_EQ(Change.getReplacements().size(), 1u);
+}
+
+TEST_F(AtomicChangeTest, InsertBefore) {
+  setUp();
+  AtomicChange Change(Context.Sources, DefaultLoc);
+  llvm::Error Err = Change.insert(Context.Sources, DefaultLoc, "aa");
+  ASSERT_TRUE(!Err);
+  EXPECT_EQ(Change.getReplacements().size(), 1u);
+  EXPECT_EQ(*Change.getReplacements().begin(),
+            Replacement(Context.Sources, DefaultLoc, 0, "aa"));
+  Err = Change.insert(Context.Sources, DefaultLoc, "b", /*InsertAfter=*/false);
+  ASSERT_TRUE(!Err);
+  EXPECT_EQ(Change.getReplacements().size(), 1u);
+  EXPECT_EQ(*Change.getReplacements().begin(),
+            Replacement(Context.Sources, DefaultLoc, 0, "baa"));
+}
+
+TEST_F(AtomicChangeTest, InsertAfter) {
+  setUp();
+  AtomicChange Change(Context.Sources, DefaultLoc);
+  llvm::Error Err = Change.insert(Context.Sources, DefaultLoc, "aa");
+  ASSERT_TRUE(!Err);
+  EXPECT_EQ(Change.getReplacements().size(), 1u);
+  EXPECT_EQ(*Change.getReplacements().begin(),
+            Replacement(Context.Sources, DefaultLoc, 0, "aa"));
+  Err = Change.insert(Context.Sources, DefaultLoc, "b");
+  ASSERT_TRUE(!Err);
+  EXPECT_EQ(Change.getReplacements().size(), 1u);
+  EXPECT_EQ(*Change.getReplacements().begin(),
+            Replacement(Context.Sources, DefaultLoc, 0, "aab"));
+}
+
+TEST_F(AtomicChangeTest, InsertBeforeWithInvalidLocation) {
+  setUp();
+  AtomicChange Change(Context.Sources, DefaultLoc);
+  llvm::Error Err =
+      Change.insert(Context.Sources, DefaultLoc, "a", /*InsertAfter=*/false);
+  ASSERT_TRUE(!Err);
+
+  // Invalid location.
+  Err = Change.insert(Context.Sources, SourceLocation(), "a",
+                    /*InsertAfter=*/false);
+  ASSERT_TRUE((bool)Err);
+  EXPECT_TRUE(checkReplacementError(
+      std::move(Err), replacement_error::wrong_file_path,
+      Replacement(Context.Sources, DefaultLoc, 0, "a"),
+      Replacement(Context.Sources, SourceLocation(), 0, "a")));
+
+}
+
+TEST_F(AtomicChangeTest, InsertBeforeToWrongFile) {
+  setUp();
+  AtomicChange Change(Context.Sources, DefaultLoc);
+  llvm::Error Err =
+      Change.insert(Context.Sources, DefaultLoc, "a", /*InsertAfter=*/false);
+  ASSERT_TRUE(!Err);
+
+  // Inserting at a different file.
+  FileID NewID = Context.createInMemoryFile("extra.cpp", DefaultCode);
+  SourceLocation NewLoc = Context.Sources.getLocForStartOfFile(NewID);
+  Err = Change.insert(Context.Sources, NewLoc, "b", /*InsertAfter=*/false);
+  ASSERT_TRUE((bool)Err);
+  EXPECT_TRUE(
+      checkReplacementError(std::move(Err), replacement_error::wrong_file_path,
+                            Replacement(Context.Sources, DefaultLoc, 0, "a"),
+                            Replacement(Context.Sources, NewLoc, 0, "b")));
+}
+
+TEST_F(AtomicChangeTest, InsertAfterWithInvalidLocation) {
+  setUp();
+  AtomicChange Change(Context.Sources, DefaultLoc);
+  llvm::Error Err = Change.insert(Context.Sources, DefaultLoc, "a");
+  ASSERT_TRUE(!Err);
+
+  // Invalid location.
+  Err = Change.insert(Context.Sources, SourceLocation(), "b");
+  ASSERT_TRUE((bool)Err);
+  EXPECT_TRUE(checkReplacementError(
+      std::move(Err), replacement_error::wrong_file_path,
+      Replacement(Context.Sources, DefaultLoc, 0, "a"),
+      Replacement(Context.Sources, SourceLocation(), 0, "b")));
 }
 
 } // end namespace tooling

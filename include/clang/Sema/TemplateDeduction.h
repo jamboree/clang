@@ -46,6 +46,9 @@ class TemplateDeductionInfo {
   /// \brief Have we suppressed an error during deduction?
   bool HasSFINAEDiagnostic;
 
+  /// \brief The template parameter depth for which we're performing deduction.
+  unsigned DeducedDepth;
+
   /// \brief Warnings (and follow-on notes) that were suppressed due to
   /// SFINAE while performing template argument deduction.
   SmallVector<PartialDiagnosticAt, 4> SuppressedDiagnostics;
@@ -54,14 +57,20 @@ class TemplateDeductionInfo {
   void operator=(const TemplateDeductionInfo &) = delete;
 
 public:
-  TemplateDeductionInfo(SourceLocation Loc)
+  TemplateDeductionInfo(SourceLocation Loc, unsigned DeducedDepth = 0)
     : Deduced(nullptr), Loc(Loc), HasSFINAEDiagnostic(false),
-      Expression(nullptr) {}
+      DeducedDepth(DeducedDepth), CallArgIndex(0) {}
 
   /// \brief Returns the location at which template argument is
   /// occurring.
   SourceLocation getLocation() const {
     return Loc;
+  }
+
+  /// \brief The depth of template parameters for which deduction is being
+  /// performed.
+  unsigned getDeducedDepth() const {
+    return DeducedDepth;
   }
 
   /// \brief Take ownership of the deduced template argument list.
@@ -76,6 +85,11 @@ public:
     assert(HasSFINAEDiagnostic);
     PD.first = SuppressedDiagnostics.front().first;
     PD.second.swap(SuppressedDiagnostics.front().second);
+    clearSFINAEDiagnostic();
+  }
+
+  /// \brief Discard any SFINAE diagnostics.
+  void clearSFINAEDiagnostic() {
     SuppressedDiagnostics.clear();
     HasSFINAEDiagnostic = false;
   }
@@ -232,10 +246,6 @@ struct DeductionFailureInfo {
   /// \brief Return the second template argument this deduction failure
   /// refers to, if any.
   const TemplateArgument *getSecondArg();
-
-  /// \brief Return the expression this deduction failure refers to,
-  /// if any.
-  Expr *getExpr();
 
   /// \brief Return the index of the call argument that this deduction
   /// failure refers to, if any.

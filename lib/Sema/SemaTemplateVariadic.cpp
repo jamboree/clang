@@ -344,6 +344,7 @@ bool Sema::DiagnoseUnexpandedParameterPack(const DeclarationNameInfo &NameInfo,
   case DeclarationName::CXXOperatorName:
   case DeclarationName::CXXLiteralOperatorName:
   case DeclarationName::CXXUsingDirective:
+  case DeclarationName::CXXDeductionGuideName:
     return false;
 
   case DeclarationName::CXXConstructorName:
@@ -440,21 +441,18 @@ void Sema::collectUnexpandedParameterPacks(QualType T,
 void Sema::collectUnexpandedParameterPacks(TypeLoc TL,
                    SmallVectorImpl<UnexpandedParameterPack> &Unexpanded) {
   CollectUnexpandedParameterPacksVisitor(Unexpanded).TraverseTypeLoc(TL);  
-}  
-
-void Sema::collectUnexpandedParameterPacks(CXXScopeSpec &SS,
-                                           SmallVectorImpl<UnexpandedParameterPack> &Unexpanded) {
-  NestedNameSpecifier *Qualifier = SS.getScopeRep();
-  if (!Qualifier)
-    return;
-  
-  NestedNameSpecifierLoc QualifierLoc(Qualifier, SS.location_data());
-  CollectUnexpandedParameterPacksVisitor(Unexpanded)
-    .TraverseNestedNameSpecifierLoc(QualifierLoc);
 }
 
-void Sema::collectUnexpandedParameterPacks(const DeclarationNameInfo &NameInfo,
-                         SmallVectorImpl<UnexpandedParameterPack> &Unexpanded) {
+void Sema::collectUnexpandedParameterPacks(
+    NestedNameSpecifierLoc NNS,
+    SmallVectorImpl<UnexpandedParameterPack> &Unexpanded) {
+  CollectUnexpandedParameterPacksVisitor(Unexpanded)
+      .TraverseNestedNameSpecifierLoc(NNS);
+}
+
+void Sema::collectUnexpandedParameterPacks(
+    const DeclarationNameInfo &NameInfo,
+    SmallVectorImpl<UnexpandedParameterPack> &Unexpanded) {
   CollectUnexpandedParameterPacksVisitor(Unexpanded)
     .TraverseDeclarationNameInfo(NameInfo);
 }
@@ -846,7 +844,7 @@ bool Sema::containsUnexpandedParameterPacks(Declarator &D) {
       }
 
       if (Chunk.Fun.getExceptionSpecType() == EST_Dynamic) {
-        for (unsigned i = 0; i != Chunk.Fun.NumExceptions; ++i) {
+        for (unsigned i = 0; i != Chunk.Fun.getNumExceptions(); ++i) {
           if (Chunk.Fun.Exceptions[i]
                   .Ty.get()
                   ->containsUnexpandedParameterPack())
@@ -1098,6 +1096,11 @@ ExprResult Sema::ActOnCXXFoldExpr(SourceLocation LParenLoc, Expr *LHS,
   CheckFoldOperand(*this, LHS);
   CheckFoldOperand(*this, RHS);
 
+  auto DiscardOperands = [&] {
+    CorrectDelayedTyposInExpr(LHS);
+    CorrectDelayedTyposInExpr(RHS);
+  };
+
   // [expr.prim.fold]p3:
   //   In a binary fold, op1 and op2 shall be the same fold-operator, and
   //   either e1 shall contain an unexpanded parameter pack or e2 shall contain
@@ -1105,6 +1108,7 @@ ExprResult Sema::ActOnCXXFoldExpr(SourceLocation LParenLoc, Expr *LHS,
   if (LHS && RHS &&
       LHS->containsUnexpandedParameterPack() ==
           RHS->containsUnexpandedParameterPack()) {
+    DiscardOperands();
     return Diag(EllipsisLoc,
                 LHS->containsUnexpandedParameterPack()
                     ? diag::err_fold_expression_packs_both_sides
@@ -1118,6 +1122,7 @@ ExprResult Sema::ActOnCXXFoldExpr(SourceLocation LParenLoc, Expr *LHS,
   if (!LHS || !RHS) {
     Expr *Pack = LHS ? LHS : RHS;
     assert(Pack && "fold expression with neither LHS nor RHS");
+    DiscardOperands();
     if (!Pack->containsUnexpandedParameterPack())
       return Diag(EllipsisLoc, diag::err_pack_expansion_without_parameter_packs)
              << Pack->getSourceRange();

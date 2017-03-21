@@ -160,12 +160,23 @@ public:
 
   ~LexingFor_PragmaRAII() {
     if (InMacroArgPreExpansion) {
+      // When committing/backtracking the cached pragma tokens in a macro
+      // argument pre-expansion we want to ensure that either the tokens which
+      // have been committed will be removed from the cache or that the tokens
+      // over which we just backtracked won't remain in the cache after they're
+      // consumed and that the caching will stop after consuming them.
+      // Otherwise the caching will interfere with the way macro expansion
+      // works, because we will continue to cache tokens after consuming the
+      // backtracked tokens, which shouldn't happen when we're dealing with
+      // macro argument pre-expansion.
+      auto CachedTokenRange = PP.LastCachedTokenRange();
       if (Failed) {
         PP.CommitBacktrackedTokens();
       } else {
         PP.Backtrack();
         OutTok = PragmaTok;
       }
+      PP.EraseCachedTokens(CachedTokenRange);
     }
   }
 
@@ -281,7 +292,7 @@ void Preprocessor::Handle_Pragma(Token &Tok) {
 
     // Remove escaped quotes and escapes.
     unsigned ResultPos = 1;
-    for (unsigned i = 1, e = StrVal.size() - 1; i != e; ++i) {
+    for (size_t i = 1, e = StrVal.size() - 1; i != e; ++i) {
       // Skip escapes.  \\ -> '\' and \" -> '"'.
       if (StrVal[i] == '\\' && i + 1 < e &&
           (StrVal[i + 1] == '\\' || StrVal[i + 1] == '"'))
@@ -372,8 +383,10 @@ void Preprocessor::HandleMicrosoft__pragma(Token &Tok) {
 ///
 void Preprocessor::HandlePragmaOnce(Token &OnceTok) {
   // Don't honor the 'once' when handling the primary source file, unless
-  // this is a prefix to a TU, which indicates we're generating a PCH file.
-  if (isInPrimaryFile() && TUKind != TU_Prefix) {
+  // this is a prefix to a TU, which indicates we're generating a PCH file, or
+  // when the main file is a header (e.g. when -xc-header is provided on the
+  // commandline).
+  if (isInPrimaryFile() && TUKind != TU_Prefix && !getLangOpts().IsHeaderFile) {
     Diag(OnceTok, diag::pp_pragma_once_in_main_file);
     return;
   }
@@ -393,7 +406,7 @@ void Preprocessor::HandlePragmaMark() {
 
 /// HandlePragmaPoison - Handle \#pragma GCC poison.  PoisonTok is the 'poison'.
 ///
-void Preprocessor::HandlePragmaPoison(Token &PoisonTok) {
+void Preprocessor::HandlePragmaPoison() {
   Token Tok;
 
   while (true) {
@@ -853,7 +866,7 @@ struct PragmaPoisonHandler : public PragmaHandler {
 
   void HandlePragma(Preprocessor &PP, PragmaIntroducerKind Introducer,
                     Token &PoisonTok) override {
-    PP.HandlePragmaPoison(PoisonTok);
+    PP.HandlePragmaPoison();
   }
 };
 

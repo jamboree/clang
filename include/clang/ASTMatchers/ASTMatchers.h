@@ -75,18 +75,6 @@ public:
     return MyBoundNodes.getNodeAs<T>(ID);
   }
 
-  /// \brief Deprecated. Please use \c getNodeAs instead.
-  /// @{
-  template <typename T>
-  const T *getDeclAs(StringRef ID) const {
-    return getNodeAs<T>(ID);
-  }
-  template <typename T>
-  const T *getStmtAs(StringRef ID) const {
-    return getNodeAs<T>(ID);
-  }
-  /// @}
-
   /// \brief Type of mapping from binding identifiers to bound nodes. This type
   /// is an associative container with a key type of \c std::string and a value
   /// type of \c clang::ast_type_traits::DynTypedNode
@@ -545,7 +533,8 @@ AST_MATCHER(FieldDecl, isBitField) {
   return Node.isBitField();
 }
 
-/// \brief Matches non-static data members that are bit-fields.
+/// \brief Matches non-static data members that are bit-fields of the specified
+/// bit width.
 ///
 /// Given
 /// \code
@@ -555,11 +544,32 @@ AST_MATCHER(FieldDecl, isBitField) {
 ///     int c : 2;
 ///   };
 /// \endcode
-/// fieldDecl(isBitField())
+/// fieldDecl(hasBitWidth(2))
 ///   matches 'int a;' and 'int c;' but not 'int b;'.
 AST_MATCHER_P(FieldDecl, hasBitWidth, unsigned, Width) {
   return Node.isBitField() &&
          Node.getBitWidthValue(Finder->getASTContext()) == Width;
+}
+
+/// \brief Matches non-static data members that have an in-class initializer.
+///
+/// Given
+/// \code
+///   class C {
+///     int a = 2;
+///     int b = 3;
+///     int c;
+///   };
+/// \endcode
+/// fieldDecl(hasInClassInitializer(integerLiteral(equals(2))))
+///   matches 'int a;' but not 'int b;'.
+/// fieldDecl(hasInClassInitializer(anything()))
+///   matches 'int a;' and 'int b;' but not 'int c;'.
+AST_MATCHER_P(FieldDecl, hasInClassInitializer, internal::Matcher<Expr>,
+              InnerMatcher) {
+  const Expr *Initializer = Node.getInClassInitializer();
+  return (Initializer != nullptr &&
+          InnerMatcher.matches(*Initializer, Finder, Builder));
 }
 
 /// \brief Matches a declaration that has been implicitly added
@@ -1107,6 +1117,69 @@ const internal::VariadicDynCastAllOfMatcher<
 const internal::VariadicDynCastAllOfMatcher<
   Decl,
   ObjCInterfaceDecl> objcInterfaceDecl;
+
+/// \brief Matches Objective-C protocol declarations.
+///
+/// Example matches FooDelegate
+/// \code
+///   @protocol FooDelegate
+///   @end
+/// \endcode
+const internal::VariadicDynCastAllOfMatcher<
+  Decl,
+  ObjCProtocolDecl> objcProtocolDecl;
+
+/// \brief Matches Objective-C category declarations.
+///
+/// Example matches Foo (Additions)
+/// \code
+///   @interface Foo (Additions)
+///   @end
+/// \endcode
+const internal::VariadicDynCastAllOfMatcher<
+  Decl,
+  ObjCCategoryDecl> objcCategoryDecl;
+
+/// \brief Matches Objective-C method declarations.
+///
+/// Example matches both declaration and definition of -[Foo method]
+/// \code
+///   @interface Foo
+///   - (void)method;
+///   @end
+///
+///   @implementation Foo
+///   - (void)method {}
+///   @end
+/// \endcode
+const internal::VariadicDynCastAllOfMatcher<
+  Decl,
+  ObjCMethodDecl> objcMethodDecl;
+
+/// \brief Matches Objective-C instance variable declarations.
+///
+/// Example matches _enabled
+/// \code
+///   @implementation Foo {
+///     BOOL _enabled;
+///   }
+///   @end
+/// \endcode
+const internal::VariadicDynCastAllOfMatcher<
+  Decl,
+  ObjCIvarDecl> objcIvarDecl;
+
+/// \brief Matches Objective-C property declarations.
+///
+/// Example matches enabled
+/// \code
+///   @interface Foo
+///   @property BOOL enabled;
+///   @end
+/// \endcode
+const internal::VariadicDynCastAllOfMatcher<
+  Decl,
+  ObjCPropertyDecl> objcPropertyDecl;
 
 /// \brief Matches expressions that introduce cleanups to be run at the end
 /// of the sub-expression's evaluation.
@@ -1909,7 +1982,7 @@ const internal::VariadicDynCastAllOfMatcher<
 
 /// \brief Matches a C-style cast expression.
 ///
-/// Example: Matches (int*) 2.2f in
+/// Example: Matches (int) 2.2f in
 /// \code
 ///   int i = (int) 2.2f;
 /// \endcode
@@ -2450,16 +2523,18 @@ const internal::VariadicOperatorMatcherFunc<1, 1> unless = {
 /// - for CallExpr, the declaration of the callee
 /// - for MemberExpr, the declaration of the referenced member
 /// - for CXXConstructExpr, the declaration of the constructor
+/// - for CXXNewExpr, the declaration of the operator new
 ///
 /// Also usable as Matcher<T> for any T supporting the getDecl() member
 /// function. e.g. various subtypes of clang::Type and various expressions.
 ///
-/// Usable as: Matcher<CallExpr>, Matcher<CXXConstructExpr>,
-///   Matcher<DeclRefExpr>, Matcher<EnumType>, Matcher<InjectedClassNameType>,
-///   Matcher<LabelStmt>, Matcher<AddrLabelExpr>, Matcher<MemberExpr>,
-///   Matcher<QualType>, Matcher<RecordType>, Matcher<TagType>,
-///   Matcher<TemplateSpecializationType>, Matcher<TemplateTypeParmType>,
-///   Matcher<TypedefType>, Matcher<UnresolvedUsingType>
+/// Usable as: Matcher<AddrLabelExpr>, Matcher<CallExpr>,
+///   Matcher<CXXConstructExpr>, Matcher<CXXNewExpr>, Matcher<DeclRefExpr>,
+///   Matcher<EnumType>, Matcher<InjectedClassNameType>, Matcher<LabelStmt>,
+///   Matcher<MemberExpr>, Matcher<QualType>, Matcher<RecordType>,
+///   Matcher<TagType>, Matcher<TemplateSpecializationType>,
+///   Matcher<TemplateTypeParmType>, Matcher<TypedefType>,
+///   Matcher<UnresolvedUsingType>
 inline internal::PolymorphicMatcherWithParam1<
     internal::HasDeclarationMatcher, internal::Matcher<Decl>,
     void(internal::HasDeclarationSupportedTypes)>
@@ -2734,6 +2809,22 @@ AST_MATCHER_P_OVERLOAD(QualType, pointsTo, internal::Matcher<Decl>,
                        InnerMatcher, 1) {
   return pointsTo(qualType(hasDeclaration(InnerMatcher)))
       .matches(Node, Finder, Builder);
+}
+
+/// \brief Matches if the matched type matches the unqualified desugared
+/// type of the matched node.
+///
+/// For example, in:
+/// \code
+///   class A {};
+///   using B = A;
+/// \endcode
+/// The matcher type(hasUniqualifeidDesugaredType(recordType())) matches
+/// both B and A.
+AST_MATCHER_P(Type, hasUnqualifiedDesugaredType, internal::Matcher<Type>,
+              InnerMatcher) {
+  return InnerMatcher.matches(*Node.getUnqualifiedDesugaredType(), Finder,
+                              Builder);
 }
 
 /// \brief Matches if the matched type is a reference type and the referenced
@@ -5001,6 +5092,22 @@ AST_MATCHER_P(ElaboratedType, namesType, internal::Matcher<QualType>,
 /// \c substTemplateTypeParmType() matches the type of 't' but not '1'
 AST_TYPE_MATCHER(SubstTemplateTypeParmType, substTemplateTypeParmType);
 
+/// \brief Matches template type parameter substitutions that have a replacement
+/// type that matches the provided matcher.
+///
+/// Given
+/// \code
+///   template <typename T>
+///   double F(T t);
+///   int i;
+///   double j = F(i);
+/// \endcode
+///
+/// \c substTemplateTypeParmType(hasReplacementType(type())) matches int
+AST_TYPE_TRAVERSE_MATCHER(
+    hasReplacementType, getReplacementType,
+    AST_POLYMORPHIC_SUPPORTED_TYPES(SubstTemplateTypeParmType));
+
 /// \brief Matches template type parameter types.
 ///
 /// Example matches T, but not int.
@@ -5463,7 +5570,7 @@ AST_MATCHER_FUNCTION(internal::Matcher<Expr>, nullPointerConstant) {
       integerLiteral(equals(0), hasParent(expr(hasType(pointerType())))));
 }
 
-/// \brief Matches declaration of the function the statemenet belongs to
+/// \brief Matches declaration of the function the statement belongs to
 ///
 /// Given:
 /// \code

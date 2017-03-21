@@ -17,7 +17,9 @@ Using Clang as a Compiler
    :maxdepth: 1
 
    UsersManual
+   Toolchain
    LanguageExtensions
+   ClangCommandLineReference
    AttributeReference
    DiagnosticsReference
    CrossCompilation

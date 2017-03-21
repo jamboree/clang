@@ -401,6 +401,20 @@ unsigned TargetCodeGenInfo::getOpenCLKernelCallingConv() const {
   return llvm::CallingConv::C;
 }
 
+llvm::Constant *TargetCodeGenInfo::getNullPointer(const CodeGen::CodeGenModule &CGM,
+    llvm::PointerType *T, QualType QT) const {
+  return llvm::ConstantPointerNull::get(T);
+}
+
+llvm::Value *TargetCodeGenInfo::performAddrSpaceCast(
+    CodeGen::CodeGenFunction &CGF, llvm::Value *Src, QualType SrcTy,
+    QualType DestTy) const {
+  // Since target may map different address spaces in AST to the same address
+  // space, an address space conversion may end up as a bitcast.
+  return CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(Src,
+             CGF.ConvertType(DestTy));
+}
+
 static bool isEmptyRecord(ASTContext &Context, QualType T, bool AllowArrays);
 
 /// isEmptyField - Return true iff a the field is "empty", that is it
@@ -857,6 +871,14 @@ static bool isX86VectorCallAggregateSmallEnough(uint64_t NumMembers) {
   return NumMembers <= 4;
 }
 
+/// Returns a Homogeneous Vector Aggregate ABIArgInfo, used in X86.
+static ABIArgInfo getDirectX86Hva(llvm::Type* T = nullptr) {
+  auto AI = ABIArgInfo::getDirect(T);
+  AI.setInReg(true);
+  AI.setCanBeFlattened(false);
+  return AI;
+}
+
 //===----------------------------------------------------------------------===//
 // X86-32 ABI Implementation
 //===----------------------------------------------------------------------===//
@@ -868,6 +890,11 @@ struct CCState {
   unsigned CC;
   unsigned FreeRegs;
   unsigned FreeSSERegs;
+};
+
+enum {
+  // Vectorcall only allows the first 6 parameters to be passed in registers.
+  VectorcallMaxParamNumAsReg = 6
 };
 
 /// X86_32ABIInfo - The X86-32 ABI information.
@@ -915,6 +942,8 @@ class X86_32ABIInfo : public SwiftABIInfo {
   Class classify(QualType Ty) const;
   ABIArgInfo classifyReturnType(QualType RetTy, CCState &State) const;
   ABIArgInfo classifyArgumentType(QualType RetTy, CCState &State) const;
+  ABIArgInfo reclassifyHvaArgType(QualType RetTy, CCState &State, 
+                                  const ABIArgInfo& current) const;
   /// \brief Updates the number of available free registers, returns 
   /// true if any registers were allocated.
   bool updateFreeRegs(QualType Ty, CCState &State) const;
@@ -932,6 +961,8 @@ class X86_32ABIInfo : public SwiftABIInfo {
   void addFieldToArgStruct(SmallVector<llvm::Type *, 6> &FrameFields,
                            CharUnits &StackOffset, ABIArgInfo &Info,
                            QualType Type) const;
+  void computeVectorCallArgs(CGFunctionInfo &FI, CCState &State,
+                             bool &UsedInAlloca) const;
 
 public:
 
@@ -958,6 +989,11 @@ public:
     // scalar registers.
     return occupiesMoreThan(CGT, scalars, /*total*/ 3);
   }  
+
+  bool isSwiftErrorInRegister() const override {
+    // x86-32 lowering does not support passing swifterror in a register.
+    return false;
+  }
 };
 
 class X86_32TargetCodeGenInfo : public TargetCodeGenInfo {
@@ -1161,6 +1197,39 @@ static bool is32Or64BitBasicType(QualType Ty, ASTContext &Context) {
   return Size == 32 || Size == 64;
 }
 
+static bool addFieldSizes(ASTContext &Context, const RecordDecl *RD,
+                          uint64_t &Size) {
+  for (const auto *FD : RD->fields()) {
+    // Scalar arguments on the stack get 4 byte alignment on x86. If the
+    // argument is smaller than 32-bits, expanding the struct will create
+    // alignment padding.
+    if (!is32Or64BitBasicType(FD->getType(), Context))
+      return false;
+
+    // FIXME: Reject bit-fields wholesale; there are two problems, we don't know
+    // how to expand them yet, and the predicate for telling if a bitfield still
+    // counts as "basic" is more complicated than what we were doing previously.
+    if (FD->isBitField())
+      return false;
+
+    Size += Context.getTypeSize(FD->getType());
+  }
+  return true;
+}
+
+static bool addBaseAndFieldSizes(ASTContext &Context, const CXXRecordDecl *RD,
+                                 uint64_t &Size) {
+  // Don't do this if there are any non-empty bases.
+  for (const CXXBaseSpecifier &Base : RD->bases()) {
+    if (!addBaseAndFieldSizes(Context, Base.getType()->getAsCXXRecordDecl(),
+                              Size))
+      return false;
+  }
+  if (!addFieldSizes(Context, RD, Size))
+    return false;
+  return true;
+}
+
 /// Test whether an argument type which is to be passed indirectly (on the
 /// stack) would have the equivalent layout if it was expanded into separate
 /// arguments. If so, we prefer to do the latter to avoid inhibiting
@@ -1171,8 +1240,9 @@ bool X86_32ABIInfo::canExpandIndirectArgument(QualType Ty) const {
   if (!RT)
     return false;
   const RecordDecl *RD = RT->getDecl();
+  uint64_t Size = 0;
   if (const CXXRecordDecl *CXXRD = dyn_cast<CXXRecordDecl>(RD)) {
-    if (!IsWin32StructABI ) {
+    if (!IsWin32StructABI) {
       // On non-Windows, we have to conservatively match our old bitcode
       // prototypes in order to be ABI-compatible at the bitcode level.
       if (!CXXRD->isCLike())
@@ -1181,30 +1251,12 @@ bool X86_32ABIInfo::canExpandIndirectArgument(QualType Ty) const {
       // Don't do this for dynamic classes.
       if (CXXRD->isDynamicClass())
         return false;
-      // Don't do this if there are any non-empty bases.
-      for (const CXXBaseSpecifier &Base : CXXRD->bases()) {
-        if (!isEmptyRecord(getContext(), Base.getType(), /*AllowArrays=*/true))
-          return false;
-      }
     }
-  }
-
-  uint64_t Size = 0;
-
-  for (const auto *FD : RD->fields()) {
-    // Scalar arguments on the stack get 4 byte alignment on x86. If the
-    // argument is smaller than 32-bits, expanding the struct will create
-    // alignment padding.
-    if (!is32Or64BitBasicType(FD->getType(), getContext()))
+    if (!addBaseAndFieldSizes(getContext(), CXXRD, Size))
       return false;
-
-    // FIXME: Reject bit-fields wholesale; there are two problems, we don't know
-    // how to expand them yet, and the predicate for telling if a bitfield still
-    // counts as "basic" is more complicated than what we were doing previously.
-    if (FD->isBitField())
+  } else {
+    if (!addFieldSizes(getContext(), RD, Size))
       return false;
-
-    Size += getContext().getTypeSize(FD->getType());
   }
 
   // We can do this if there was no alignment padding.
@@ -1229,7 +1281,8 @@ ABIArgInfo X86_32ABIInfo::classifyReturnType(QualType RetTy,
 
   const Type *Base = nullptr;
   uint64_t NumElts = 0;
-  if (State.CC == llvm::CallingConv::X86_VectorCall &&
+  if ((State.CC == llvm::CallingConv::X86_VectorCall ||
+       State.CC == llvm::CallingConv::X86_RegCall) &&
       isHomogeneousAggregate(RetTy, Base, NumElts)) {
     // The LLVM struct type for such an aggregate should lower properly.
     return ABIArgInfo::getDirect();
@@ -1443,7 +1496,8 @@ bool X86_32ABIInfo::shouldAggregateUseDirect(QualType Ty, CCState &State,
     return true;
 
   if (State.CC == llvm::CallingConv::X86_FastCall ||
-      State.CC == llvm::CallingConv::X86_VectorCall) {
+      State.CC == llvm::CallingConv::X86_VectorCall ||
+      State.CC == llvm::CallingConv::X86_RegCall) {
     if (getContext().getTypeSize(Ty) <= 32 && State.FreeRegs)
       NeedsPadding = true;
 
@@ -1461,7 +1515,8 @@ bool X86_32ABIInfo::shouldPrimitiveUseInReg(QualType Ty, CCState &State) const {
     return false;
 
   if (State.CC == llvm::CallingConv::X86_FastCall ||
-      State.CC == llvm::CallingConv::X86_VectorCall) {
+      State.CC == llvm::CallingConv::X86_VectorCall ||
+      State.CC == llvm::CallingConv::X86_RegCall) {
     if (getContext().getTypeSize(Ty) > 32)
       return false;
 
@@ -1470,6 +1525,27 @@ bool X86_32ABIInfo::shouldPrimitiveUseInReg(QualType Ty, CCState &State) const {
   }
 
   return true;
+}
+
+ABIArgInfo
+X86_32ABIInfo::reclassifyHvaArgType(QualType Ty, CCState &State,
+                                    const ABIArgInfo &current) const {
+  // Assumes vectorCall calling convention.
+  const Type *Base = nullptr;
+  uint64_t NumElts = 0;
+
+  if (!Ty->isBuiltinType() && !Ty->isVectorType() &&
+      isHomogeneousAggregate(Ty, Base, NumElts)) {
+    if (State.FreeSSERegs >= NumElts) {
+      // HVA types get passed directly in registers if there is room.
+      State.FreeSSERegs -= NumElts;
+      return getDirectX86Hva();
+    }
+    // If there's no room, the HVA gets passed as normal indirect
+    // structure.
+    return getIndirectResult(Ty, /*ByVal=*/false, State);
+  } 
+  return current;
 }
 
 ABIArgInfo X86_32ABIInfo::classifyArgumentType(QualType Ty,
@@ -1491,18 +1567,34 @@ ABIArgInfo X86_32ABIInfo::classifyArgumentType(QualType Ty,
   }
 
   // vectorcall adds the concept of a homogenous vector aggregate, similar
-  // to other targets.
+  // to other targets, regcall uses some of the HVA rules.
   const Type *Base = nullptr;
   uint64_t NumElts = 0;
-  if (State.CC == llvm::CallingConv::X86_VectorCall &&
+  if ((State.CC == llvm::CallingConv::X86_VectorCall ||
+       State.CC == llvm::CallingConv::X86_RegCall) &&
       isHomogeneousAggregate(Ty, Base, NumElts)) {
-    if (State.FreeSSERegs >= NumElts) {
-      State.FreeSSERegs -= NumElts;
-      if (Ty->isBuiltinType() || Ty->isVectorType())
+
+    if (State.CC == llvm::CallingConv::X86_RegCall) {
+      if (State.FreeSSERegs >= NumElts) {
+        State.FreeSSERegs -= NumElts;
+        if (Ty->isBuiltinType() || Ty->isVectorType())
+          return ABIArgInfo::getDirect();
+        return ABIArgInfo::getExpand();
+
+      }
+      return getIndirectResult(Ty, /*ByVal=*/false, State);
+    } else if (State.CC == llvm::CallingConv::X86_VectorCall) {
+      if (State.FreeSSERegs >= NumElts && (Ty->isBuiltinType() || Ty->isVectorType())) {
+        // Actual floating-point types get registers first time through if
+        // there is registers available
+        State.FreeSSERegs -= NumElts;
         return ABIArgInfo::getDirect();
-      return ABIArgInfo::getExpand();
+      }  else if (!Ty->isBuiltinType() && !Ty->isVectorType()) {
+        // HVA Types only get registers after everything else has been
+        // set, so it gets set as indirect for now.
+        return ABIArgInfo::getIndirect(getContext().getTypeAlignInChars(Ty));
+      }
     }
-    return getIndirectResult(Ty, /*ByVal=*/false, State);
   }
 
   if (isAggregateTypeForABI(Ty)) {
@@ -1540,7 +1632,8 @@ ABIArgInfo X86_32ABIInfo::classifyArgumentType(QualType Ty,
         (!IsMCUABI || State.FreeRegs == 0) && canExpandIndirectArgument(Ty))
       return ABIArgInfo::getExpandWithPadding(
           State.CC == llvm::CallingConv::X86_FastCall ||
-              State.CC == llvm::CallingConv::X86_VectorCall,
+              State.CC == llvm::CallingConv::X86_VectorCall ||
+              State.CC == llvm::CallingConv::X86_RegCall,
           PaddingType);
 
     return getIndirectResult(Ty, true, State);
@@ -1580,6 +1673,36 @@ ABIArgInfo X86_32ABIInfo::classifyArgumentType(QualType Ty,
   return ABIArgInfo::getDirect();
 }
 
+void X86_32ABIInfo::computeVectorCallArgs(CGFunctionInfo &FI, CCState &State,
+                                          bool &UsedInAlloca) const {
+  // Vectorcall only allows the first 6 parameters to be passed in registers,
+  // and homogeneous vector aggregates are only put into registers as a second
+  // priority.
+  unsigned Count = 0;
+  CCState ZeroState = State;
+  ZeroState.FreeRegs = ZeroState.FreeSSERegs = 0;
+  // HVAs must be done as a second priority for registers, so the deferred
+  // items are dealt with by going through the pattern a second time.
+  for (auto &I : FI.arguments()) {
+    if (Count < VectorcallMaxParamNumAsReg)
+      I.info = classifyArgumentType(I.type, State);
+    else
+      // Parameters after the 6th cannot be passed in registers,
+      // so pretend there are no registers left for them.
+      I.info = classifyArgumentType(I.type, ZeroState);
+    UsedInAlloca |= (I.info.getKind() == ABIArgInfo::InAlloca);
+    ++Count;
+  }
+  Count = 0;
+  // Go through the arguments a second time to get HVAs registers if there
+  // are still some available.
+  for (auto &I : FI.arguments()) {
+    if (Count < VectorcallMaxParamNumAsReg)
+      I.info = reclassifyHvaArgType(I.type, State, I.info);
+    ++Count;
+  }
+}
+
 void X86_32ABIInfo::computeInfo(CGFunctionInfo &FI) const {
   CCState State(FI.getCallingConvention());
   if (IsMCUABI)
@@ -1591,7 +1714,10 @@ void X86_32ABIInfo::computeInfo(CGFunctionInfo &FI) const {
     State.FreeSSERegs = 6;
   } else if (FI.getHasRegParm())
     State.FreeRegs = FI.getRegParm();
-  else
+  else if (State.CC == llvm::CallingConv::X86_RegCall) {
+    State.FreeRegs = 5;
+    State.FreeSSERegs = 8;
+  } else
     State.FreeRegs = DefaultNumRegisterParameters;
 
   if (!getCXXABI().classifyReturnType(FI)) {
@@ -1611,9 +1737,14 @@ void X86_32ABIInfo::computeInfo(CGFunctionInfo &FI) const {
     ++State.FreeRegs;
 
   bool UsedInAlloca = false;
-  for (auto &I : FI.arguments()) {
-    I.info = classifyArgumentType(I.type, State);
-    UsedInAlloca |= (I.info.getKind() == ABIArgInfo::InAlloca);
+  if (State.CC == llvm::CallingConv::X86_VectorCall) {
+    computeVectorCallArgs(FI, State, UsedInAlloca);
+  } else {
+    // If not vectorcall, revert to normal behavior.
+    for (auto &I : FI.arguments()) {
+      I.info = classifyArgumentType(I.type, State);
+      UsedInAlloca |= (I.info.getKind() == ABIArgInfo::InAlloca);
+    }
   }
 
   // If we needed to use inalloca for any argument, do a second pass and rewrite
@@ -1932,11 +2063,15 @@ class X86_64ABIInfo : public SwiftABIInfo {
 
   ABIArgInfo classifyReturnType(QualType RetTy) const;
 
-  ABIArgInfo classifyArgumentType(QualType Ty,
-                                  unsigned freeIntRegs,
-                                  unsigned &neededInt,
-                                  unsigned &neededSSE,
+  ABIArgInfo classifyArgumentType(QualType Ty, unsigned freeIntRegs,
+                                  unsigned &neededInt, unsigned &neededSSE,
                                   bool isNamedArg) const;
+
+  ABIArgInfo classifyRegCallStructType(QualType Ty, unsigned &NeededInt,
+                                       unsigned &NeededSSE) const;
+
+  ABIArgInfo classifyRegCallStructTypeImpl(QualType Ty, unsigned &NeededInt,
+                                           unsigned &NeededSSE) const;
 
   bool IsIllegalVectorType(QualType Ty) const;
 
@@ -2000,6 +2135,9 @@ public:
                                     bool asReturnValue) const override {
     return occupiesMoreThan(CGT, scalars, /*total*/ 4);
   }  
+  bool isSwiftErrorInRegister() const override {
+    return true;
+  }
 };
 
 /// WinX86_64ABIInfo - The Windows X86_64 ABI information.
@@ -2031,11 +2169,19 @@ public:
     return occupiesMoreThan(CGT, scalars, /*total*/ 4);
   }
 
-private:
-  ABIArgInfo classify(QualType Ty, unsigned &FreeSSERegs,
-                      bool IsReturnType) const;
+  bool isSwiftErrorInRegister() const override {
+    return true;
+  }
 
-  bool IsMingw64;
+private:
+  ABIArgInfo classify(QualType Ty, unsigned &FreeSSERegs, bool IsReturnType,
+                      bool IsVectorCall, bool IsRegCall) const;
+  ABIArgInfo reclassifyHvaArgType(QualType Ty, unsigned &FreeSSERegs,
+                                      const ABIArgInfo &current) const;
+  void computeVectorCallArgs(CGFunctionInfo &FI, unsigned FreeSSERegs,
+                             bool IsVectorCall, bool IsRegCall) const;
+
+    bool IsMingw64;
 };
 
 class X86_64TargetCodeGenInfo : public TargetCodeGenInfo {
@@ -2347,13 +2493,13 @@ void X86_64ABIInfo::classify(QualType Ty, uint64_t OffsetBase,
       Current = SSE;
     } else if (k == BuiltinType::LongDouble) {
       const llvm::fltSemantics *LDF = &getTarget().getLongDoubleFormat();
-      if (LDF == &llvm::APFloat::IEEEquad) {
+      if (LDF == &llvm::APFloat::IEEEquad()) {
         Lo = SSE;
         Hi = SSEUp;
-      } else if (LDF == &llvm::APFloat::x87DoubleExtended) {
+      } else if (LDF == &llvm::APFloat::x87DoubleExtended()) {
         Lo = X87;
         Hi = X87Up;
-      } else if (LDF == &llvm::APFloat::IEEEdouble) {
+      } else if (LDF == &llvm::APFloat::IEEEdouble()) {
         Current = SSE;
       } else
         llvm_unreachable("unexpected long double representation!");
@@ -2472,11 +2618,11 @@ void X86_64ABIInfo::classify(QualType Ty, uint64_t OffsetBase,
       Lo = Hi = SSE;
     } else if (ET == getContext().LongDoubleTy) {
       const llvm::fltSemantics *LDF = &getTarget().getLongDoubleFormat();
-      if (LDF == &llvm::APFloat::IEEEquad)
+      if (LDF == &llvm::APFloat::IEEEquad())
         Current = Memory;
-      else if (LDF == &llvm::APFloat::x87DoubleExtended)
+      else if (LDF == &llvm::APFloat::x87DoubleExtended())
         Current = ComplexX87;
-      else if (LDF == &llvm::APFloat::IEEEdouble)
+      else if (LDF == &llvm::APFloat::IEEEdouble())
         Lo = Hi = SSE;
       else
         llvm_unreachable("unexpected long double representation!");
@@ -3283,22 +3429,94 @@ ABIArgInfo X86_64ABIInfo::classifyArgumentType(
   return ABIArgInfo::getDirect(ResType);
 }
 
+ABIArgInfo
+X86_64ABIInfo::classifyRegCallStructTypeImpl(QualType Ty, unsigned &NeededInt,
+                                             unsigned &NeededSSE) const {
+  auto RT = Ty->getAs<RecordType>();
+  assert(RT && "classifyRegCallStructType only valid with struct types");
+
+  if (RT->getDecl()->hasFlexibleArrayMember())
+    return getIndirectReturnResult(Ty);
+
+  // Sum up bases
+  if (auto CXXRD = dyn_cast<CXXRecordDecl>(RT->getDecl())) {
+    if (CXXRD->isDynamicClass()) {
+      NeededInt = NeededSSE = 0;
+      return getIndirectReturnResult(Ty);
+    }
+
+    for (const auto &I : CXXRD->bases())
+      if (classifyRegCallStructTypeImpl(I.getType(), NeededInt, NeededSSE)
+              .isIndirect()) {
+        NeededInt = NeededSSE = 0;
+        return getIndirectReturnResult(Ty);
+      }
+  }
+
+  // Sum up members
+  for (const auto *FD : RT->getDecl()->fields()) {
+    if (FD->getType()->isRecordType() && !FD->getType()->isUnionType()) {
+      if (classifyRegCallStructTypeImpl(FD->getType(), NeededInt, NeededSSE)
+              .isIndirect()) {
+        NeededInt = NeededSSE = 0;
+        return getIndirectReturnResult(Ty);
+      }
+    } else {
+      unsigned LocalNeededInt, LocalNeededSSE;
+      if (classifyArgumentType(FD->getType(), UINT_MAX, LocalNeededInt,
+                               LocalNeededSSE, true)
+              .isIndirect()) {
+        NeededInt = NeededSSE = 0;
+        return getIndirectReturnResult(Ty);
+      }
+      NeededInt += LocalNeededInt;
+      NeededSSE += LocalNeededSSE;
+    }
+  }
+
+  return ABIArgInfo::getDirect();
+}
+
+ABIArgInfo X86_64ABIInfo::classifyRegCallStructType(QualType Ty,
+                                                    unsigned &NeededInt,
+                                                    unsigned &NeededSSE) const {
+
+  NeededInt = 0;
+  NeededSSE = 0;
+
+  return classifyRegCallStructTypeImpl(Ty, NeededInt, NeededSSE);
+}
+
 void X86_64ABIInfo::computeInfo(CGFunctionInfo &FI) const {
 
-  if (!getCXXABI().classifyReturnType(FI))
-    FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
+  bool IsRegCall = FI.getCallingConvention() == llvm::CallingConv::X86_RegCall;
 
   // Keep track of the number of assigned registers.
-  unsigned freeIntRegs = 6, freeSSERegs = 8;
+  unsigned FreeIntRegs = IsRegCall ? 11 : 6;
+  unsigned FreeSSERegs = IsRegCall ? 16 : 8;
+  unsigned NeededInt, NeededSSE;
+
+  if (IsRegCall && FI.getReturnType()->getTypePtr()->isRecordType() &&
+      !FI.getReturnType()->getTypePtr()->isUnionType()) {
+    FI.getReturnInfo() =
+        classifyRegCallStructType(FI.getReturnType(), NeededInt, NeededSSE);
+    if (FreeIntRegs >= NeededInt && FreeSSERegs >= NeededSSE) {
+      FreeIntRegs -= NeededInt;
+      FreeSSERegs -= NeededSSE;
+    } else {
+      FI.getReturnInfo() = getIndirectReturnResult(FI.getReturnType());
+    }
+  } else if (!getCXXABI().classifyReturnType(FI))
+    FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
 
   // If the return value is indirect, then the hidden argument is consuming one
   // integer register.
   if (FI.getReturnInfo().isIndirect())
-    --freeIntRegs;
+    --FreeIntRegs;
 
   // The chain argument effectively gives us another free register.
   if (FI.isChainCall())
-    ++freeIntRegs;
+    ++FreeIntRegs;
 
   unsigned NumRequiredArgs = FI.getNumRequiredArgs();
   // AMD64-ABI 3.2.3p3: Once arguments are classified, the registers
@@ -3308,19 +3526,21 @@ void X86_64ABIInfo::computeInfo(CGFunctionInfo &FI) const {
        it != ie; ++it, ++ArgNo) {
     bool IsNamedArg = ArgNo < NumRequiredArgs;
 
-    unsigned neededInt, neededSSE;
-    it->info = classifyArgumentType(it->type, freeIntRegs, neededInt,
-                                    neededSSE, IsNamedArg);
+    if (IsRegCall && it->type->isStructureOrClassType())
+      it->info = classifyRegCallStructType(it->type, NeededInt, NeededSSE);
+    else
+      it->info = classifyArgumentType(it->type, FreeIntRegs, NeededInt,
+                                      NeededSSE, IsNamedArg);
 
     // AMD64-ABI 3.2.3p3: If there are no registers available for any
     // eightbyte of an argument, the whole argument is passed on the
     // stack. If registers have already been assigned for some
     // eightbytes of such an argument, the assignments get reverted.
-    if (freeIntRegs >= neededInt && freeSSERegs >= neededSSE) {
-      freeIntRegs -= neededInt;
-      freeSSERegs -= neededSSE;
+    if (FreeIntRegs >= NeededInt && FreeSSERegs >= NeededSSE) {
+      FreeIntRegs -= NeededInt;
+      FreeSSERegs -= NeededSSE;
     } else {
-      it->info = getIndirectResult(it->type, freeIntRegs);
+      it->info = getIndirectResult(it->type, FreeIntRegs);
     }
   }
 }
@@ -3462,15 +3682,17 @@ Address X86_64ABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
     llvm::Value *RegHiAddr = TyLo->isFPOrFPVectorTy() ? GPAddr : FPAddr;
 
     // Copy the first element.
-    llvm::Value *V =
-      CGF.Builder.CreateDefaultAlignedLoad(
-                               CGF.Builder.CreateBitCast(RegLoAddr, PTyLo));
+    // FIXME: Our choice of alignment here and below is probably pessimistic.
+    llvm::Value *V = CGF.Builder.CreateAlignedLoad(
+        TyLo, CGF.Builder.CreateBitCast(RegLoAddr, PTyLo),
+        CharUnits::fromQuantity(getDataLayout().getABITypeAlignment(TyLo)));
     CGF.Builder.CreateStore(V,
                     CGF.Builder.CreateStructGEP(Tmp, 0, CharUnits::Zero()));
 
     // Copy the second element.
-    V = CGF.Builder.CreateDefaultAlignedLoad(
-                               CGF.Builder.CreateBitCast(RegHiAddr, PTyHi));
+    V = CGF.Builder.CreateAlignedLoad(
+        TyHi, CGF.Builder.CreateBitCast(RegHiAddr, PTyHi),
+        CharUnits::fromQuantity(getDataLayout().getABITypeAlignment(TyHi)));
     CharUnits Offset = CharUnits::fromQuantity(
                    getDataLayout().getStructLayout(ST)->getElementOffset(1));
     CGF.Builder.CreateStore(V, CGF.Builder.CreateStructGEP(Tmp, 1, Offset));
@@ -3565,8 +3787,24 @@ Address X86_64ABIInfo::EmitMSVAArg(CodeGenFunction &CGF, Address VAListAddr,
                           /*allowHigherAlign*/ false);
 }
 
+ABIArgInfo
+WinX86_64ABIInfo::reclassifyHvaArgType(QualType Ty, unsigned &FreeSSERegs,
+                                    const ABIArgInfo &current) const {
+  // Assumes vectorCall calling convention.
+  const Type *Base = nullptr;
+  uint64_t NumElts = 0;
+
+  if (!Ty->isBuiltinType() && !Ty->isVectorType() &&
+      isHomogeneousAggregate(Ty, Base, NumElts) && FreeSSERegs >= NumElts) {
+    FreeSSERegs -= NumElts;
+    return getDirectX86Hva();
+  }
+  return current;
+}
+
 ABIArgInfo WinX86_64ABIInfo::classify(QualType Ty, unsigned &FreeSSERegs,
-                                      bool IsReturnType) const {
+                                      bool IsReturnType, bool IsVectorCall,
+                                      bool IsRegCall) const {
 
   if (Ty->isVoidType())
     return ABIArgInfo::getIgnore();
@@ -3590,20 +3828,33 @@ ABIArgInfo WinX86_64ABIInfo::classify(QualType Ty, unsigned &FreeSSERegs,
 
   }
 
-  // vectorcall adds the concept of a homogenous vector aggregate, similar to
-  // other targets.
   const Type *Base = nullptr;
   uint64_t NumElts = 0;
-  if (FreeSSERegs && isHomogeneousAggregate(Ty, Base, NumElts)) {
-    if (FreeSSERegs >= NumElts) {
-      FreeSSERegs -= NumElts;
-      if (IsReturnType || Ty->isBuiltinType() || Ty->isVectorType())
+  // vectorcall adds the concept of a homogenous vector aggregate, similar to
+  // other targets.
+  if ((IsVectorCall || IsRegCall) &&
+      isHomogeneousAggregate(Ty, Base, NumElts)) {
+    if (IsRegCall) {
+      if (FreeSSERegs >= NumElts) {
+        FreeSSERegs -= NumElts;
+        if (IsReturnType || Ty->isBuiltinType() || Ty->isVectorType())
+          return ABIArgInfo::getDirect();
+        return ABIArgInfo::getExpand();
+      }
+      return ABIArgInfo::getIndirect(Align, /*ByVal=*/false);
+    } else if (IsVectorCall) {
+      if (FreeSSERegs >= NumElts &&
+          (IsReturnType || Ty->isBuiltinType() || Ty->isVectorType())) {
+        FreeSSERegs -= NumElts;
         return ABIArgInfo::getDirect();
-      return ABIArgInfo::getExpand();
+      } else if (IsReturnType) {
+        return ABIArgInfo::getExpand();
+      } else if (!Ty->isBuiltinType() && !Ty->isVectorType()) {
+        // HVAs are delayed and reclassified in the 2nd step.
+        return ABIArgInfo::getIndirect(Align, /*ByVal=*/false);
+      }
     }
-    return ABIArgInfo::getIndirect(Align, /*ByVal=*/false);
   }
-
 
   if (Ty->isMemberPointerType()) {
     // If the member pointer is represented by an LLVM int or ptr, pass it
@@ -3633,26 +3884,72 @@ ABIArgInfo WinX86_64ABIInfo::classify(QualType Ty, unsigned &FreeSSERegs,
   // passes them indirectly through memory.
   if (IsMingw64 && BT && BT->getKind() == BuiltinType::LongDouble) {
     const llvm::fltSemantics *LDF = &getTarget().getLongDoubleFormat();
-    if (LDF == &llvm::APFloat::x87DoubleExtended)
+    if (LDF == &llvm::APFloat::x87DoubleExtended())
       return ABIArgInfo::getIndirect(Align, /*ByVal=*/false);
   }
 
   return ABIArgInfo::getDirect();
 }
 
+void WinX86_64ABIInfo::computeVectorCallArgs(CGFunctionInfo &FI,
+                                             unsigned FreeSSERegs,
+                                             bool IsVectorCall,
+                                             bool IsRegCall) const {
+  unsigned Count = 0;
+  for (auto &I : FI.arguments()) {
+    if (Count < VectorcallMaxParamNumAsReg)
+      I.info = classify(I.type, FreeSSERegs, false, IsVectorCall, IsRegCall);
+    else {
+      // Since these cannot be passed in registers, pretend no registers
+      // are left.
+      unsigned ZeroSSERegsAvail = 0;
+      I.info = classify(I.type, /*FreeSSERegs=*/ZeroSSERegsAvail, false,
+                        IsVectorCall, IsRegCall);
+    }
+    ++Count;
+  }
+
+  Count = 0;
+  for (auto &I : FI.arguments()) {
+    if (Count < VectorcallMaxParamNumAsReg)
+      I.info = reclassifyHvaArgType(I.type, FreeSSERegs, I.info);
+    ++Count;
+  }
+}
+
 void WinX86_64ABIInfo::computeInfo(CGFunctionInfo &FI) const {
   bool IsVectorCall =
       FI.getCallingConvention() == llvm::CallingConv::X86_VectorCall;
+  bool IsRegCall = FI.getCallingConvention() == llvm::CallingConv::X86_RegCall;
 
-  // We can use up to 4 SSE return registers with vectorcall.
-  unsigned FreeSSERegs = IsVectorCall ? 4 : 0;
+  unsigned FreeSSERegs = 0;
+  if (IsVectorCall) {
+    // We can use up to 4 SSE return registers with vectorcall.
+    FreeSSERegs = 4;
+  } else if (IsRegCall) {
+    // RegCall gives us 16 SSE registers.
+    FreeSSERegs = 16;
+  }
+
   if (!getCXXABI().classifyReturnType(FI))
-    FI.getReturnInfo() = classify(FI.getReturnType(), FreeSSERegs, true);
+    FI.getReturnInfo() = classify(FI.getReturnType(), FreeSSERegs, true,
+                                  IsVectorCall, IsRegCall);
 
-  // We can use up to 6 SSE register parameters with vectorcall.
-  FreeSSERegs = IsVectorCall ? 6 : 0;
-  for (auto &I : FI.arguments())
-    I.info = classify(I.type, FreeSSERegs, false);
+  if (IsVectorCall) {
+    // We can use up to 6 SSE register parameters with vectorcall.
+    FreeSSERegs = 6;
+  } else if (IsRegCall) {
+    // RegCall gives us 16 SSE registers, we can reuse the return registers.
+    FreeSSERegs = 16;
+  }
+
+  if (IsVectorCall) {
+    computeVectorCallArgs(FI, FreeSSERegs, IsVectorCall, IsRegCall);
+  } else {
+    for (auto &I : FI.arguments())
+      I.info = classify(I.type, FreeSSERegs, false, IsVectorCall, IsRegCall);
+  }
+
 }
 
 Address WinX86_64ABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
@@ -4527,6 +4824,9 @@ private:
                                     bool asReturnValue) const override {
     return occupiesMoreThan(CGT, scalars, /*total*/ 4);
   }
+  bool isSwiftErrorInRegister() const override {
+    return true;
+  }
 };
 
 class AArch64TargetCodeGenInfo : public TargetCodeGenInfo {
@@ -4535,7 +4835,7 @@ public:
       : TargetCodeGenInfo(new AArch64ABIInfo(CGT, Kind)) {}
 
   StringRef getARCRetainAutoreleasedReturnValueMarker() const override {
-    return "mov\tfp, fp\t\t; marker for objc_retainAutoreleaseReturnValue";
+    return "mov\tfp, fp\t\t# marker for objc_retainAutoreleaseReturnValue";
   }
 
   int getDwarfEHStackPointer(CodeGen::CodeGenModule &M) const override {
@@ -5079,6 +5379,9 @@ private:
                                     ArrayRef<llvm::Type*> scalars,
                                     bool asReturnValue) const override {
     return occupiesMoreThan(CGT, scalars, /*total*/ 4);
+  }
+  bool isSwiftErrorInRegister() const override {
+    return true;
   }
 };
 
@@ -5848,6 +6151,9 @@ public:
                                     bool asReturnValue) const override {
     return occupiesMoreThan(CGT, scalars, /*total*/ 4);
   }
+  bool isSwiftErrorInRegister() const override {
+    return true;
+  }
 };
 
 class SystemZTargetCodeGenInfo : public TargetCodeGenInfo {
@@ -6594,6 +6900,31 @@ MIPSTargetCodeGenInfo::initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
 }
 
 //===----------------------------------------------------------------------===//
+// AVR ABI Implementation.
+//===----------------------------------------------------------------------===//
+
+namespace {
+class AVRTargetCodeGenInfo : public TargetCodeGenInfo {
+public:
+  AVRTargetCodeGenInfo(CodeGenTypes &CGT)
+    : TargetCodeGenInfo(new DefaultABIInfo(CGT)) { }
+
+  void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
+                           CodeGen::CodeGenModule &CGM) const override {
+    const auto *FD = dyn_cast_or_null<FunctionDecl>(D);
+    if (!FD) return;
+    auto *Fn = cast<llvm::Function>(GV);
+
+    if (FD->getAttr<AVRInterruptAttr>())
+      Fn->addFnAttr("interrupt");
+
+    if (FD->getAttr<AVRSignalAttr>())
+      Fn->addFnAttr("signal");
+  }
+};
+}
+
+//===----------------------------------------------------------------------===//
 // TCE ABI Implementation (see http://tce.cs.tut.fi). Uses mostly the defaults.
 // Currently subclassed only to implement custom OpenCL C function attribute
 // handling.
@@ -6953,8 +7284,10 @@ public:
   void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
                            CodeGen::CodeGenModule &M) const override;
   unsigned getOpenCLKernelCallingConv() const override;
-};
 
+  llvm::Constant *getNullPointer(const CodeGen::CodeGenModule &CGM,
+      llvm::PointerType *T, QualType QT) const override;
+};
 }
 
 static void appendOpenCLVersionMD (CodeGen::CodeGenModule &CGM);
@@ -7016,6 +7349,24 @@ void AMDGPUTargetCodeGenInfo::setTargetAttributes(
 
 unsigned AMDGPUTargetCodeGenInfo::getOpenCLKernelCallingConv() const {
   return llvm::CallingConv::AMDGPU_KERNEL;
+}
+
+// Currently LLVM assumes null pointers always have value 0,
+// which results in incorrectly transformed IR. Therefore, instead of
+// emitting null pointers in private and local address spaces, a null
+// pointer in generic address space is emitted which is casted to a
+// pointer in local or private address space.
+llvm::Constant *AMDGPUTargetCodeGenInfo::getNullPointer(
+    const CodeGen::CodeGenModule &CGM, llvm::PointerType *PT,
+    QualType QT) const {
+  if (CGM.getContext().getTargetNullPointerValue(QT) == 0)
+    return llvm::ConstantPointerNull::get(PT);
+
+  auto &Ctx = CGM.getContext();
+  auto NPT = llvm::PointerType::get(PT->getElementType(),
+      Ctx.getTargetAddressSpace(LangAS::opencl_generic));
+  return llvm::ConstantExpr::getAddrSpaceCast(
+      llvm::ConstantPointerNull::get(NPT), PT);
 }
 
 //===----------------------------------------------------------------------===//
@@ -7457,7 +7808,7 @@ class FieldEncoding {
   std::string Enc;
 public:
   FieldEncoding(bool b, SmallStringEnc &e) : HasName(b), Enc(e.c_str()) {}
-  StringRef str() {return Enc.c_str();}
+  StringRef str() { return Enc; }
   bool operator<(const FieldEncoding &rhs) const {
     if (HasName != rhs.HasName) return HasName;
     return Enc < rhs.Enc;
@@ -7623,7 +7974,7 @@ StringRef TypeStringCache::lookupStr(const IdentifierInfo *ID) {
     E.State = IncompleteUsed;
     ++IncompleteUsedCount;
   }
-  return E.Str.c_str();
+  return E.Str;
 }
 
 /// The XCore ABI includes a type information section that communicates symbol
@@ -7679,8 +8030,10 @@ void SPIRTargetCodeGenInfo::emitTargetMD(const Decl *D, llvm::GlobalValue *GV,
   // SPIR v2.0 s2.12 - The SPIR version used by the module is stored in the
   // opencl.spir.version named metadata.
   llvm::Metadata *SPIRVerElts[] = {
-      llvm::ConstantAsMetadata::get(llvm::ConstantInt::get(Int32Ty, 2)),
-      llvm::ConstantAsMetadata::get(llvm::ConstantInt::get(Int32Ty, 0))};
+      llvm::ConstantAsMetadata::get(
+          llvm::ConstantInt::get(Int32Ty, CGM.getLangOpts().OpenCLVersion / 100)),
+      llvm::ConstantAsMetadata::get(llvm::ConstantInt::get(
+          Int32Ty, (CGM.getLangOpts().OpenCLVersion / 100 > 1) ? 0 : 2))};
   llvm::NamedMDNode *SPIRVerMD =
       M.getOrInsertNamedMetadata("opencl.spir.version");
   SPIRVerMD->addOperand(llvm::MDNode::get(Ctx, SPIRVerElts));
@@ -8074,6 +8427,9 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
   case llvm::Triple::mips64el:
     return SetCGInfo(new MIPSTargetCodeGenInfo(Types, false));
 
+  case llvm::Triple::avr:
+    return SetCGInfo(new AVRTargetCodeGenInfo(Types));
+
   case llvm::Triple::aarch64:
   case llvm::Triple::aarch64_be: {
     AArch64ABIInfo::ABIKind Kind = AArch64ABIInfo::AAPCS;
@@ -8152,6 +8508,7 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
   }
 
   case llvm::Triple::tce:
+  case llvm::Triple::tcele:
     return SetCGInfo(new TCETargetCodeGenInfo(Types));
 
   case llvm::Triple::x86: {

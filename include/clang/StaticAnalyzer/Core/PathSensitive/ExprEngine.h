@@ -286,10 +286,6 @@ public:
   ProgramStateRef processAssume(ProgramStateRef state, SVal cond,
                                 bool assumption) override;
 
-  /// wantsRegionChangeUpdate - Called by ProgramStateManager to determine if a
-  ///  region change should trigger a processRegionChanges update.
-  bool wantsRegionChangeUpdate(ProgramStateRef state) override;
-
   /// processRegionChanges - Called by ProgramStateManager whenever a change is made
   ///  to the store. Used to update checkers that track region values.
   ProgramStateRef 
@@ -297,6 +293,7 @@ public:
                        const InvalidatedSymbols *invalidated,
                        ArrayRef<const MemRegion *> ExplicitRegions,
                        ArrayRef<const MemRegion *> Regions,
+                       const LocationContext *LCtx,
                        const CallEvent *Call) override;
 
   /// printState - Called by ProgramStateManager to print checker-specific data.
@@ -483,6 +480,22 @@ public:
     return X.isValid() ? svalBuilder.evalComplement(X.castAs<NonLoc>()) : X;
   }
 
+  ProgramStateRef handleLValueBitCast(ProgramStateRef state, const Expr *Ex,
+                                      const LocationContext *LCtx, QualType T,
+                                      QualType ExTy, const CastExpr *CastE,
+                                      StmtNodeBuilder &Bldr,
+                                      ExplodedNode *Pred);
+
+  ProgramStateRef handleLVectorSplat(ProgramStateRef state,
+                                     const LocationContext *LCtx,
+                                     const CastExpr *CastE,
+                                     StmtNodeBuilder &Bldr,
+                                     ExplodedNode *Pred);
+
+  void handleUOExtension(ExplodedNodeSet::iterator I,
+                         const UnaryOperator* U,
+                         StmtNodeBuilder &Bldr);
+
 public:
 
   SVal evalBinOp(ProgramStateRef state, BinaryOperator::Opcode op,
@@ -510,7 +523,9 @@ protected:
 
   /// Call PointerEscape callback when a value escapes as a result of bind.
   ProgramStateRef processPointerEscapedOnBind(ProgramStateRef State,
-                                              SVal Loc, SVal Val) override;
+                                              SVal Loc,
+                                              SVal Val,
+                                              const LocationContext *LCtx) override;
   /// Call PointerEscape callback when a value escapes as a result of
   /// region invalidation.
   /// \param[in] ITraits Specifies invalidation traits for regions/symbols.

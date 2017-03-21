@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -analyze -analyzer-checker=debug.DumpCFG -triple x86_64-apple-darwin12 -analyzer-config cfg-temporary-dtors=true -std=c++11 %s > %t 2>&1
+// RUN: %clang_analyze_cc1 -analyzer-checker=debug.DumpCFG -triple x86_64-apple-darwin12 -analyzer-config cfg-temporary-dtors=true -std=c++11 %s > %t 2>&1
 // RUN: FileCheck --input-file=%t %s
 
 // CHECK-LABEL: void checkWrap(int i)
@@ -432,7 +432,7 @@ void test_lifetime_extended_temporaries() {
 }
 
 
-// CHECK-LABEL: int *PR18472()
+// CHECK-LABEL: template<> int *PR18472<int>()
 // CHECK: [B2 (ENTRY)]
 // CHECK-NEXT:   Succs (1): B1
 // CHECK: [B1]

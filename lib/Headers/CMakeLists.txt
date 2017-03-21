@@ -28,6 +28,7 @@ set(files
   __clang_cuda_intrinsics.h
   __clang_cuda_math_forward_declares.h
   __clang_cuda_runtime_wrapper.h
+  clzerointrin.h
   cpuid.h
   clflushoptintrin.h
   emmintrin.h
@@ -93,6 +94,7 @@ set(files
 set(cuda_wrapper_files
   cuda_wrappers/algorithm
   cuda_wrappers/complex
+  cuda_wrappers/new
 )
 
 set(output_dir ${LLVM_LIBRARY_OUTPUT_INTDIR}/clang/${CLANG_VERSION}/include)

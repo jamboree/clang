@@ -157,7 +157,9 @@ bool FormatTokenLexer::canPrecedeRegexLiteral(FormatToken *Prev) {
   // postfix unary operators. If the '++' is followed by a non-operand
   // introducing token, the slash here is the operand and not the start of a
   // regex.
-  if (Prev->isOneOf(tok::plusplus, tok::minusminus))
+  // `!` is an unary prefix operator, but also a post-fix operator that casts
+  // away nullability, so the same check applies.
+  if (Prev->isOneOf(tok::plusplus, tok::minusminus, tok::exclaim))
     return (Tokens.size() < 3 || precedesOperand(Tokens[Tokens.size() - 3]));
 
   // The previous token must introduce an operand location where regex
@@ -525,10 +527,12 @@ FormatToken *FormatTokenLexer::getNextToken() {
   } else if (FormatTok->Tok.is(tok::greatergreater)) {
     FormatTok->Tok.setKind(tok::greater);
     FormatTok->TokenText = FormatTok->TokenText.substr(0, 1);
+    ++Column;
     StateStack.push(LexerState::TOKEN_STASHED);
   } else if (FormatTok->Tok.is(tok::lessless)) {
     FormatTok->Tok.setKind(tok::less);
     FormatTok->TokenText = FormatTok->TokenText.substr(0, 1);
+    ++Column;
     StateStack.push(LexerState::TOKEN_STASHED);
   }
 
@@ -556,7 +560,7 @@ FormatToken *FormatTokenLexer::getNextToken() {
     Column = FormatTok->LastLineColumnWidth;
   }
 
-  if (Style.Language == FormatStyle::LK_Cpp) {
+  if (Style.IsCpp()) {
     if (!(Tokens.size() > 0 && Tokens.back()->Tok.getIdentifierInfo() &&
           Tokens.back()->Tok.getIdentifierInfo()->getPPKeywordID() ==
               tok::pp_define) &&

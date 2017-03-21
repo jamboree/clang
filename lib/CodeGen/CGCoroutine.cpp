@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "CodeGenFunction.h"
+#include "clang/AST/StmtCXX.h"
 
 using namespace clang;
 using namespace CodeGen;
@@ -20,6 +21,13 @@ namespace clang {
 namespace CodeGen {
 
 struct CGCoroData {
+
+  // Stores the jump destination just before the final suspend. Coreturn
+  // statements jumps to this point after calling return_xxx promise member.
+  CodeGenFunction::JumpDest FinalJD;
+
+  unsigned CoreturnCount = 0;
+
   // Stores the llvm.coro.id emitted in the function so that we can supply it
   // as the first argument to coro.begin, coro.alloc and coro.free intrinsics.
   // Note: llvm.coro.id returns a token that cannot be directly expressed in a
@@ -36,9 +44,10 @@ struct CGCoroData {
 clang::CodeGen::CodeGenFunction::CGCoroInfo::CGCoroInfo() {}
 CodeGenFunction::CGCoroInfo::~CGCoroInfo() {}
 
-static bool createCoroData(CodeGenFunction &CGF,
+static void createCoroData(CodeGenFunction &CGF,
                            CodeGenFunction::CGCoroInfo &CurCoro,
-                           llvm::CallInst *CoroId, CallExpr const *CoroIdExpr) {
+                           llvm::CallInst *CoroId,
+                           CallExpr const *CoroIdExpr = nullptr) {
   if (CurCoro.Data) {
     if (CurCoro.Data->CoroIdExpr)
       CGF.CGM.Error(CoroIdExpr->getLocStart(),
@@ -49,13 +58,54 @@ static bool createCoroData(CodeGenFunction &CGF,
     else
       llvm_unreachable("EmitCoroutineBodyStatement called twice?");
 
-    return false;
+    return;
   }
 
   CurCoro.Data = std::unique_ptr<CGCoroData>(new CGCoroData);
   CurCoro.Data->CoroId = CoroId;
   CurCoro.Data->CoroIdExpr = CoroIdExpr;
-  return true;
+}
+
+void CodeGenFunction::EmitCoreturnStmt(CoreturnStmt const &S) {
+  ++CurCoro.Data->CoreturnCount;
+  EmitStmt(S.getPromiseCall());
+  EmitBranchThroughCleanup(CurCoro.Data->FinalJD);
+}
+
+void CodeGenFunction::EmitCoroutineBody(const CoroutineBodyStmt &S) {
+  auto *NullPtr = llvm::ConstantPointerNull::get(Builder.getInt8PtrTy());
+  auto &TI = CGM.getContext().getTargetInfo();
+  unsigned NewAlign = TI.getNewAlign() / TI.getCharWidth();
+
+  auto *FinalBB = createBasicBlock("coro.final");
+
+  auto *CoroId = Builder.CreateCall(
+      CGM.getIntrinsic(llvm::Intrinsic::coro_id),
+      {Builder.getInt32(NewAlign), NullPtr, NullPtr, NullPtr});
+  createCoroData(*this, CurCoro, CoroId);
+
+  EmitScalarExpr(S.getAllocate());
+
+  // FIXME: Setup cleanup scopes.
+
+  EmitStmt(S.getPromiseDeclStmt());
+
+  CurCoro.Data->FinalJD = getJumpDestInCurrentScope(FinalBB);
+
+  // FIXME: Emit initial suspend and more before the body.
+
+  EmitStmt(S.getBody());
+
+  // See if we need to generate final suspend.
+  const bool CanFallthrough = Builder.GetInsertBlock();
+  const bool HasCoreturns = CurCoro.Data->CoreturnCount > 0;
+  if (CanFallthrough || HasCoreturns) {
+    EmitBlock(FinalBB);
+    // FIXME: Emit final suspend.
+  }
+  EmitStmt(S.getDeallocate());
+
+  // FIXME: Emit return for the coroutine return object.
 }
 
 // Emit coroutine intrinsic and patch up arguments of the token type.

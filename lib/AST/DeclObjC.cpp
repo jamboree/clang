@@ -162,10 +162,10 @@ ObjCPropertyDecl::findPropertyDecl(const DeclContext *DC,
         return nullptr;
   }
 
-  // If context is class, then lookup property in its extensions.
+  // If context is class, then lookup property in its visible extensions.
   // This comes before property is looked up in primary class.
   if (auto *IDecl = dyn_cast<ObjCInterfaceDecl>(DC)) {
-    for (const auto *Ext : IDecl->known_extensions())
+    for (const auto *Ext : IDecl->visible_extensions())
       if (ObjCPropertyDecl *PD = ObjCPropertyDecl::findPropertyDecl(Ext,
                                                        propertyID,
                                                        queryKind))
@@ -870,6 +870,12 @@ ObjCMethodDecl *ObjCMethodDecl::getNextRedeclarationImpl() {
     }
   }
 
+  // Ensure that the discovered method redeclaration has a valid declaration
+  // context. Used to prevent infinite loops when iterating redeclarations in
+  // a partially invalid AST.
+  if (Redecl && cast<Decl>(Redecl->getDeclContext())->isInvalidDecl())
+    Redecl = nullptr;
+
   if (!Redecl && isRedeclaration()) {
     // This is the last redeclaration, go back to the first method.
     return cast<ObjCContainerDecl>(CtxD)->getMethod(getSelector(),
@@ -973,11 +979,12 @@ ObjCMethodFamily ObjCMethodDecl::getMethodFamily() const {
     break;
       
   case OMF_performSelector:
-    if (!isInstanceMethod() || !getReturnType()->isObjCIdType())
+    if (!isInstanceMethod() ||
+        !(getReturnType()->isObjCIdType() || getReturnType()->isVoidType()))
       family = OMF_None;
     else {
       unsigned noParams = param_size();
-      if (noParams < 1 || noParams > 3)
+      if (noParams < 1 || noParams > 5)
         family = OMF_None;
       else {
         ObjCMethodDecl::param_type_iterator it = param_type_begin();
@@ -986,10 +993,11 @@ ObjCMethodFamily ObjCMethodDecl::getMethodFamily() const {
           family = OMF_None;
           break;
         }
-        while (--noParams) {
-          it++;
-          ArgT = (*it);
-          if (!ArgT->isObjCIdType()) {
+        // The first type should generally always be 'id' or 'Thread *', the
+        // other types can vary.
+        if (noParams > 1) {
+          ArgT = *(it + 1);
+          if (!ArgT->isObjCObjectPointerType()) {
             family = OMF_None;
             break;
           }

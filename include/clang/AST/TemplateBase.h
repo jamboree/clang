@@ -125,10 +125,7 @@ private:
   
 public:
   /// \brief Construct an empty, invalid template argument.
-  TemplateArgument() {
-    TypeOrValue.Kind = Null;
-    TypeOrValue.V = 0;
-  }
+  constexpr TemplateArgument() : TypeOrValue({Null, 0}) {}
 
   /// \brief Construct a template type argument.
   TemplateArgument(QualType T, bool isNullPtr = false) {
@@ -317,6 +314,10 @@ public:
     Integer.Type = T.getAsOpaquePtr();
   }
 
+  /// \brief If this is a non-type template argument, get its type. Otherwise,
+  /// returns a null QualType.
+  QualType getNonTypeTemplateArgumentType() const;
+
   /// \brief Retrieve the template argument as an expression.
   Expr *getAsExpr() const {
     assert(getKind() == Expression && "Unexpected kind");
@@ -357,8 +358,8 @@ public:
 
   /// \brief Iterator range referencing all of the elements of a template
   /// argument pack.
-  llvm::iterator_range<pack_iterator> pack_elements() const {
-    return llvm::make_range(pack_begin(), pack_end());
+  ArrayRef<TemplateArgument> pack_elements() const {
+    return llvm::makeArrayRef(pack_begin(), pack_end());
   }
 
   /// \brief The number of template arguments in the given template argument
@@ -423,8 +424,8 @@ private:
   };
 
 public:
-  TemplateArgumentLocInfo();
-  
+  constexpr TemplateArgumentLocInfo() : Template({nullptr, nullptr, 0, 0}) {}
+
   TemplateArgumentLocInfo(TypeSourceInfo *TInfo) : Declarator(TInfo) {}
   
   TemplateArgumentLocInfo(Expr *E) : Expression(E) {}
@@ -483,7 +484,7 @@ class TemplateArgumentLoc {
   TemplateArgumentLocInfo LocInfo;
 
 public:
-  TemplateArgumentLoc() {}
+  constexpr TemplateArgumentLoc() {}
 
   TemplateArgumentLoc(const TemplateArgument &Argument,
                       TemplateArgumentLocInfo Opaque)
@@ -648,6 +649,7 @@ struct ASTTemplateArgumentListInfo final
                                     TemplateArgumentLoc> {
 private:
   friend TrailingObjects;
+  friend class ASTNodeImporter;
 
   ASTTemplateArgumentListInfo(const TemplateArgumentListInfo &List);
 
@@ -664,6 +666,10 @@ public:
   /// \brief Retrieve the template arguments
   const TemplateArgumentLoc *getTemplateArgs() const {
     return getTrailingObjects<TemplateArgumentLoc>();
+  }
+
+  llvm::ArrayRef<TemplateArgumentLoc> arguments() const {
+    return llvm::makeArrayRef(getTemplateArgs(), NumTemplateArgs);
   }
 
   const TemplateArgumentLoc &operator[](unsigned I) const {

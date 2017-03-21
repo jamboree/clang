@@ -369,7 +369,8 @@ Decl *Parser::ParseObjCAtInterfaceDeclaration(SourceLocation AtLoc,
   }
 
   if (Tok.isNot(tok::less))
-    Actions.ActOnTypedefedProtocols(protocols, superClassId, superClassLoc);
+    Actions.ActOnTypedefedProtocols(protocols, protocolLocs,
+                                    superClassId, superClassLoc);
   
   Decl *ClsType =
     Actions.ActOnStartClassInterface(getCurScope(), AtLoc, nameId, nameLoc, 
@@ -928,7 +929,7 @@ void Parser::ParseObjCPropertyAttribute(ObjCDeclSpec &DS) {
 
       if (IsSetter) {
         DS.setPropertyAttributes(ObjCDeclSpec::DQ_PR_setter);
-        DS.setSetterName(SelIdent);
+        DS.setSetterName(SelIdent, SelLoc);
 
         if (ExpectAndConsume(tok::colon,
                              diag::err_expected_colon_after_setter_name)) {
@@ -937,7 +938,7 @@ void Parser::ParseObjCPropertyAttribute(ObjCDeclSpec &DS) {
         }
       } else {
         DS.setPropertyAttributes(ObjCDeclSpec::DQ_PR_getter);
-        DS.setGetterName(SelIdent);
+        DS.setGetterName(SelIdent, SelLoc);
       }
     } else if (II->isStr("nonnull")) {
       if (DS.getPropertyAttributes() & ObjCDeclSpec::DQ_PR_nullability)
@@ -1036,7 +1037,7 @@ IdentifierInfo *Parser::ParseObjCSelectorPiece(SourceLocation &SelectorLoc) {
   case tok::caretequal: {
     std::string ThisTok(PP.getSpelling(Tok));
     if (isLetter(ThisTok[0])) {
-      IdentifierInfo *II = &PP.getIdentifierTable().get(ThisTok.data());
+      IdentifierInfo *II = &PP.getIdentifierTable().get(ThisTok);
       Tok.setKind(tok::identifier);
       SelectorLoc = ConsumeToken();
       return II;
@@ -2772,6 +2773,7 @@ StmtResult Parser::ParseObjCAtStatement(SourceLocation AtLoc) {
     return Actions.ActOnNullStmt(Tok.getLocation());
   }
 
+  ExprStatementTokLoc = AtLoc;
   ExprResult Res(ParseExpressionWithLeadingAt(AtLoc));
   if (Res.isInvalid()) {
     // If the expression is invalid, skip ahead to the next semicolon. Not
@@ -2868,7 +2870,11 @@ ExprResult Parser::ParseObjCAtExpression(SourceLocation AtLoc) {
       return ParseAvailabilityCheckExpr(AtLoc);
       default: {
         const char *str = nullptr;
-        if (GetLookAheadToken(1).is(tok::l_brace)) {
+        // Only provide the @try/@finally/@autoreleasepool fixit when we're sure
+        // that this is a proper statement where such directives could actually
+        // occur.
+        if (GetLookAheadToken(1).is(tok::l_brace) &&
+            ExprStatementTokLoc == AtLoc) {
           char ch = Tok.getIdentifierInfo()->getNameStart()[0];
           str =  
             ch == 't' ? "try" 

@@ -261,6 +261,31 @@ ExpansionInfo TemplateArgument::getDeclNameExpansionInfo() const {
   return ExpansionInfo::getFromEncodedValue(TemplateArg.ExpansionInfo);
 }
 
+QualType TemplateArgument::getNonTypeTemplateArgumentType() const {
+  switch (getKind()) {
+  case TemplateArgument::Null:
+  case TemplateArgument::Type:
+  case TemplateArgument::Template:
+  case TemplateArgument::TemplateExpansion:
+  case TemplateArgument::Pack:
+    return QualType();
+
+  case TemplateArgument::Integral:
+    return getIntegralType();
+
+  case TemplateArgument::Expression:
+    return getAsExpr()->getType();
+
+  case TemplateArgument::Declaration:
+    return getParamTypeForDecl();
+
+  case TemplateArgument::NullPtr:
+    return getNullPtrType();
+  }
+
+  llvm_unreachable("Invalid TemplateArgument Kind!");
+}
+
 void TemplateArgument::Profile(llvm::FoldingSetNodeID &ID,
                                const ASTContext &Context) const {
   ID.AddInteger(getKind());
@@ -510,10 +535,6 @@ LLVM_DUMP_METHOD void TemplateArgument::dump() const { dump(llvm::errs()); }
 //===----------------------------------------------------------------------===//
 // TemplateArgumentLoc Implementation
 //===----------------------------------------------------------------------===//
-
-TemplateArgumentLocInfo::TemplateArgumentLocInfo() {
-  memset((void*)this, 0, sizeof(TemplateArgumentLocInfo));
-}
 
 SourceRange TemplateArgumentLoc::getSourceRange() const {
   switch (Argument.getKind()) {

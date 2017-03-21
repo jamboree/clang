@@ -24,6 +24,7 @@ namespace llvm {
 
 namespace clang {
   class ASTContext;
+  class CXXDeductionGuideNameExtra;
   class CXXLiteralOperatorIdName;
   class CXXOperatorIdName;
   class CXXSpecialName;
@@ -34,6 +35,7 @@ namespace clang {
   enum OverloadedOperatorKind : int;
   struct PrintingPolicy;
   class QualType;
+  class TemplateDecl;
   class Type;
   class TypeSourceInfo;
   class UsingDirectiveDecl;
@@ -62,6 +64,7 @@ public:
     CXXConstructorName,
     CXXDestructorName,
     CXXConversionFunctionName,
+    CXXDeductionGuideName,
     CXXOperatorName,
     CXXLiteralOperatorName,
     CXXUsingDirective,
@@ -127,20 +130,28 @@ private:
   CXXSpecialName *getAsCXXSpecialName() const {
     NameKind Kind = getNameKind();
     if (Kind >= CXXConstructorName && Kind <= CXXConversionFunctionName)
-      return reinterpret_cast<CXXSpecialName *>(Ptr & ~PtrMask);
+      return reinterpret_cast<CXXSpecialName *>(getExtra());
+    return nullptr;
+  }
+
+  /// If the stored pointer is actually a CXXDeductionGuideNameExtra, returns a
+  /// pointer to it. Otherwise, returns a NULL pointer.
+  CXXDeductionGuideNameExtra *getAsCXXDeductionGuideNameExtra() const {
+    if (getNameKind() == CXXDeductionGuideName)
+      return reinterpret_cast<CXXDeductionGuideNameExtra *>(getExtra());
     return nullptr;
   }
 
   /// getAsCXXOperatorIdName
   CXXOperatorIdName *getAsCXXOperatorIdName() const {
     if (getNameKind() == CXXOperatorName)
-      return reinterpret_cast<CXXOperatorIdName *>(Ptr & ~PtrMask);
+      return reinterpret_cast<CXXOperatorIdName *>(getExtra());
     return nullptr;
   }
 
   CXXLiteralOperatorIdName *getAsCXXLiteralOperatorIdName() const {
     if (getNameKind() == CXXLiteralOperatorName)
-      return reinterpret_cast<CXXLiteralOperatorIdName *>(Ptr & ~PtrMask);
+      return reinterpret_cast<CXXLiteralOperatorIdName *>(getExtra());
     return nullptr;
   }
 
@@ -167,9 +178,11 @@ public:
   // Construct a declaration name from an Objective-C selector.
   DeclarationName(Selector Sel) : Ptr(Sel.InfoPtr) { }
 
+  // Construct a declaration name from the name of a C++ constructor,
+  // destructor, or conversion function.
   DeclarationName(DeclarationNameExtra *Name)
-      : Ptr(reinterpret_cast<uintptr_t>(Name)) {
-    assert((Ptr & PtrMask) == 0 && "Improperly aligned DeclarationName");
+    : Ptr(reinterpret_cast<uintptr_t>(Name)) {
+    assert((Ptr & PtrMask) == 0 && "Improperly aligned DeclarationNameExtra");
     Ptr |= StoredDeclarationNameExtra;
   }
 
@@ -279,6 +292,10 @@ public:
   /// constructor, destructor, or conversion function), return the
   /// type associated with that name.
   QualType getCXXNameType() const;
+
+  /// If this name is the name of a C++ deduction guide, return the
+  /// template associated with that name.
+  TemplateDecl *getCXXDeductionGuideTemplate() const;
 
   /// getCXXOverloadedOperator - If this name is the name of an
   /// overloadable operator in C++ (e.g., @c operator+), retrieve the
@@ -530,6 +547,7 @@ class DeclarationNameTable {
   void *CXXSpecialNamesImpl; // Actually a FoldingSet<CXXSpecialName> *
   CXXOperatorIdName *CXXOperatorNames; // Operator names
   void *CXXLiteralOperatorNames; // Actually a CXXOperatorIdName*
+  void *CXXDeductionGuideNames; // FoldingSet<CXXDeductionGuideNameExtra> *
   void *CXXTemplatedNames;
   void *SubstTemplatedNames;
   void *SubstTemplatedPackNames;
@@ -554,6 +572,9 @@ public:
   /// getCXXDestructorName - Returns the name of a C++ destructor
   /// for the given Type.
   DeclarationName getCXXDestructorName(CanQualType Ty);
+
+  /// Returns the name of a C++ deduction guide for the given template.
+  DeclarationName getCXXDeductionGuideName(TemplateDecl *TD);
 
   /// getCXXConversionFunctionName - Returns the name of a C++
   /// conversion function for the given Type.

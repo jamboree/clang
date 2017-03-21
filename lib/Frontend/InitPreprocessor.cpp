@@ -112,15 +112,15 @@ template <typename T>
 static T PickFP(const llvm::fltSemantics *Sem, T IEEESingleVal,
                 T IEEEDoubleVal, T X87DoubleExtendedVal, T PPCDoubleDoubleVal,
                 T IEEEQuadVal) {
-  if (Sem == (const llvm::fltSemantics*)&llvm::APFloat::IEEEsingle)
+  if (Sem == (const llvm::fltSemantics*)&llvm::APFloat::IEEEsingle())
     return IEEESingleVal;
-  if (Sem == (const llvm::fltSemantics*)&llvm::APFloat::IEEEdouble)
+  if (Sem == (const llvm::fltSemantics*)&llvm::APFloat::IEEEdouble())
     return IEEEDoubleVal;
-  if (Sem == (const llvm::fltSemantics*)&llvm::APFloat::x87DoubleExtended)
+  if (Sem == (const llvm::fltSemantics*)&llvm::APFloat::x87DoubleExtended())
     return X87DoubleExtendedVal;
-  if (Sem == (const llvm::fltSemantics*)&llvm::APFloat::PPCDoubleDouble)
+  if (Sem == (const llvm::fltSemantics*)&llvm::APFloat::PPCDoubleDouble())
     return PPCDoubleDoubleVal;
-  assert(Sem == (const llvm::fltSemantics*)&llvm::APFloat::IEEEquad);
+  assert(Sem == (const llvm::fltSemantics*)&llvm::APFloat::IEEEquad());
   return IEEEQuadVal;
 }
 
@@ -475,6 +475,7 @@ static void InitializeCPlusPlusFeatureTestMacros(const LangOptions &LangOpts,
     Builder.defineMacro("__cpp_user_defined_literals", "200809");
     Builder.defineMacro("__cpp_lambdas", "200907");
     Builder.defineMacro("__cpp_constexpr",
+                        LangOpts.CPlusPlus1z ? "201603" : 
                         LangOpts.CPlusPlus14 ? "201304" : "200704");
     Builder.defineMacro("__cpp_range_based_for",
                         LangOpts.CPlusPlus1z ? "201603" : "200907");
@@ -510,16 +511,20 @@ static void InitializeCPlusPlusFeatureTestMacros(const LangOptions &LangOpts,
   if (LangOpts.CPlusPlus1z) {
     Builder.defineMacro("__cpp_hex_float", "201603");
     Builder.defineMacro("__cpp_inline_variables", "201606");
-    //Builder.defineMacro("__cpp_noexcept_function_type", "201510");
+    Builder.defineMacro("__cpp_noexcept_function_type", "201510");
     Builder.defineMacro("__cpp_capture_star_this", "201603");
     Builder.defineMacro("__cpp_if_constexpr", "201606");
     Builder.defineMacro("__cpp_template_auto", "201606");
     Builder.defineMacro("__cpp_namespace_attributes", "201411");
     Builder.defineMacro("__cpp_enumerator_attributes", "201411");
     Builder.defineMacro("__cpp_nested_namespace_definitions", "201411");
+    Builder.defineMacro("__cpp_variadic_using", "201611");
     Builder.defineMacro("__cpp_aggregate_bases", "201603");
+    Builder.defineMacro("__cpp_structured_bindings", "201606");
     Builder.defineMacro("__cpp_nontype_template_args", "201411");
     Builder.defineMacro("__cpp_fold_expressions", "201603");
+    // FIXME: This is not yet listed in SD-6.
+    Builder.defineMacro("__cpp_deduction_guides", "201611");
   }
   if (LangOpts.AlignedAllocation)
     Builder.defineMacro("__cpp_aligned_new", "201606");
@@ -620,6 +625,11 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
     Builder.defineMacro("IBInspectable", "");
     Builder.defineMacro("IB_DESIGNABLE", "");
   }
+
+  // Define a macro that describes the Objective-C boolean type even for C
+  // and C++ since BOOL can be used from non Objective-C code.
+  Builder.defineMacro("__OBJC_BOOL_IS_BOOL",
+                      Twine(TI.useSignedCharForObjCBool() ? "0" : "1"));
 
   if (LangOpts.CPlusPlus)
     InitializeCPlusPlusFeatureTestMacros(LangOpts, Builder);
@@ -985,13 +995,16 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   // OpenCL definitions.
   if (LangOpts.OpenCL) {
 #define OPENCLEXT(Ext) \
-    if (TI.getSupportedOpenCLOpts().is_##Ext##_supported( \
+    if (TI.getSupportedOpenCLOpts().isSupported(#Ext, \
         LangOpts.OpenCLVersion)) \
       Builder.defineMacro(#Ext);
 #include "clang/Basic/OpenCLExtensions.def"
   }
 
   if (TI.hasInt128Type() && LangOpts.CPlusPlus && LangOpts.GNUMode) {
+    // For each extended integer type, g++ defines a macro mapping the
+    // index of the type (0 in this case) in some list of extended types
+    // to the type.
     Builder.defineMacro("__GLIBCXX_TYPE_INT_N_0", "__int128");
     Builder.defineMacro("__GLIBCXX_BITSIZE_INT_N_0", "128");
   }

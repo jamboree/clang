@@ -12,7 +12,9 @@
 
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/LLVM.h"
+#include "clang/Driver/Action.h"
 #include "clang/Driver/Phases.h"
+#include "clang/Driver/ToolChain.h"
 #include "clang/Driver/Types.h"
 #include "clang/Driver/Util.h"
 #include "llvm/ADT/StringMap.h"
@@ -42,7 +44,6 @@ class FileSystem;
 
 namespace driver {
 
-  class Action;
   class Command;
   class Compilation;
   class InputInfo;
@@ -62,7 +63,7 @@ enum LTOKind {
 /// Driver - Encapsulate logic for constructing compilation processes
 /// from a set of gcc-driver-like command line arguments.
 class Driver {
-  llvm::opt::OptTable *Opts;
+  std::unique_ptr<llvm::opt::OptTable> Opts;
 
   DiagnosticsEngine &Diags;
 
@@ -91,6 +92,26 @@ class Driver {
   LTOKind LTOMode;
 
 public:
+  enum OpenMPRuntimeKind {
+    /// An unknown OpenMP runtime. We can't generate effective OpenMP code
+    /// without knowing what runtime to target.
+    OMPRT_Unknown,
+
+    /// The LLVM OpenMP runtime. When completed and integrated, this will become
+    /// the default for Clang.
+    OMPRT_OMP,
+
+    /// The GNU OpenMP runtime. Clang doesn't support generating OpenMP code for
+    /// this runtime but can swallow the pragmas, and find and link against the
+    /// runtime library itself.
+    OMPRT_GOMP,
+
+    /// The legacy name for the LLVM OpenMP runtime from when it was the Intel
+    /// OpenMP runtime. We support this mode for users with existing
+    /// dependencies on this runtime library name.
+    OMPRT_IOMP5
+  };
+
   // Diag - Forwarding function for diagnostics.
   DiagnosticBuilder Diag(unsigned DiagID) const {
     return Diags.Report(DiagID);
@@ -207,7 +228,7 @@ private:
   /// This maps from the string representation of a triple to a ToolChain
   /// created targeting that triple. The driver owns all the ToolChain objects
   /// stored in it, and will clean them up when torn down.
-  mutable llvm::StringMap<ToolChain *> ToolChains;
+  mutable llvm::StringMap<std::unique_ptr<ToolChain>> ToolChains;
 
 private:
   /// TranslateInputArgs - Create a new derived argument list from the input
@@ -226,11 +247,24 @@ private:
   void generatePrefixedToolNames(StringRef Tool, const ToolChain &TC,
                                  SmallVectorImpl<std::string> &Names) const;
 
+  /// \brief Find the appropriate .crash diagonostic file for the child crash
+  /// under this driver and copy it out to a temporary destination with the
+  /// other reproducer related files (.sh, .cache, etc). If not found, suggest a
+  /// directory for the user to look at.
+  ///
+  /// \param ReproCrashFilename The file path to copy the .crash to.
+  /// \param CrashDiagDir       The suggested directory for the user to look at
+  ///                           in case the search or copy fails.
+  ///
+  /// \returns If the .crash is found and successfully copied return true,
+  /// otherwise false and return the suggested directory in \p CrashDiagDir.
+  bool getCrashDiagnosticFile(StringRef ReproCrashFilename,
+                              SmallString<128> &CrashDiagDir);
+
 public:
   Driver(StringRef ClangExecutable, StringRef DefaultTargetTriple,
          DiagnosticsEngine &Diags,
          IntrusiveRefCntPtr<vfs::FileSystem> VFS = nullptr);
-  ~Driver();
 
   /// @name Accessors
   /// @{
@@ -269,8 +303,12 @@ public:
   bool isSaveTempsEnabled() const { return SaveTemps != SaveTempsNone; }
   bool isSaveTempsObj() const { return SaveTemps == SaveTempsObj; }
 
-  bool embedBitcodeEnabled() const { return BitcodeEmbed == EmbedBitcode; }
-  bool embedBitcodeMarkerOnly() const { return BitcodeEmbed == EmbedMarker; }
+  bool embedBitcodeEnabled() const { return BitcodeEmbed != EmbedNone; }
+  bool embedBitcodeInObject() const { return (BitcodeEmbed == EmbedBitcode); }
+  bool embedBitcodeMarkerOnly() const { return (BitcodeEmbed == EmbedMarker); }
+
+  /// Compute the desired OpenMP runtime from the flags provided.
+  OpenMPRuntimeKind getOpenMPRuntime(const llvm::opt::ArgList &Args) const;
 
   /// @}
   /// @name Primary Functionality
@@ -394,14 +432,14 @@ public:
 
   /// BuildJobsForAction - Construct the jobs to perform for the action \p A and
   /// return an InputInfo for the result of running \p A.  Will only construct
-  /// jobs for a given (Action, ToolChain, BoundArch) tuple once.
+  /// jobs for a given (Action, ToolChain, BoundArch, DeviceKind) tuple once.
   InputInfo
   BuildJobsForAction(Compilation &C, const Action *A, const ToolChain *TC,
                      StringRef BoundArch, bool AtTopLevel, bool MultipleArchs,
                      const char *LinkingOutput,
                      std::map<std::pair<const Action *, std::string>, InputInfo>
                          &CachedResults,
-                     bool BuildForOffloadDevice) const;
+                     Action::OffloadKind TargetDeviceOffloadKind) const;
 
   /// Returns the default name for linked images (e.g., "a.out").
   const char *getDefaultImageName() const;
@@ -472,7 +510,7 @@ private:
       bool AtTopLevel, bool MultipleArchs, const char *LinkingOutput,
       std::map<std::pair<const Action *, std::string>, InputInfo>
           &CachedResults,
-      bool BuildForOffloadDevice) const;
+      Action::OffloadKind TargetDeviceOffloadKind) const;
 
 public:
   /// GetReleaseVersion - Parse (([0-9]+)(.([0-9]+)(.([0-9]+)?))?)? and

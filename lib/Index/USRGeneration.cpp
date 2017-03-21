@@ -173,8 +173,11 @@ bool USRGenerator::ShouldGenerateLocation(const NamedDecl *D) {
     return false;
   if (D->getParentFunctionOrMethod())
     return true;
+  SourceLocation Loc = D->getLocation();
+  if (Loc.isInvalid())
+    return false;
   const SourceManager &SM = Context->getSourceManager();
-  return !SM.isInSystemHeader(D->getLocation());
+  return !SM.isInSystemHeader(Loc);
 }
 
 void USRGenerator::VisitDeclContext(const DeclContext *DC) {
@@ -283,6 +286,15 @@ void USRGenerator::VisitVarDecl(const VarDecl *D) {
 
   VisitDeclContext(D->getDeclContext());
 
+  if (VarTemplateDecl *VarTmpl = D->getDescribedVarTemplate()) {
+    Out << "@VT";
+    VisitTemplateParameterList(VarTmpl->getTemplateParameters());
+  } else if (const VarTemplatePartialSpecializationDecl *PartialSpec
+             = dyn_cast<VarTemplatePartialSpecializationDecl>(D)) {
+    Out << "@VP";
+    VisitTemplateParameterList(PartialSpec->getTemplateParameters());
+  }
+
   // Variables always have simple names.
   StringRef s = D->getName();
 
@@ -294,6 +306,17 @@ void USRGenerator::VisitVarDecl(const VarDecl *D) {
     IgnoreResults = true;
   else
     Out << '@' << s;
+
+  // For a template specialization, mangle the template arguments.
+  if (const VarTemplateSpecializationDecl *Spec
+                              = dyn_cast<VarTemplateSpecializationDecl>(D)) {
+    const TemplateArgumentList &Args = Spec->getTemplateArgs();
+    Out << '>';
+    for (unsigned I = 0, N = Args.size(); I != N; ++I) {
+      Out << '#';
+      VisitTemplateArgument(Args.get(I));
+    }
+  }
 }
 
 void USRGenerator::VisitNonTypeTemplateParmDecl(
@@ -498,7 +521,7 @@ void USRGenerator::VisitTagDecl(const TagDecl *D) {
   // For a class template specialization, mangle the template arguments.
   if (const ClassTemplateSpecializationDecl *Spec
                               = dyn_cast<ClassTemplateSpecializationDecl>(D)) {
-    const TemplateArgumentList &Args = Spec->getTemplateInstantiationArgs();
+    const TemplateArgumentList &Args = Spec->getTemplateArgs();
     Out << '>';
     for (unsigned I = 0, N = Args.size(); I != N; ++I) {
       Out << '#';
@@ -631,7 +654,6 @@ void USRGenerator::VisitType(QualType T) {
         case BuiltinType::OCLEvent:
         case BuiltinType::OCLClkEvent:
         case BuiltinType::OCLQueue:
-        case BuiltinType::OCLNDRange:
         case BuiltinType::OCLReserveID:
         case BuiltinType::OCLSampler:
           IgnoreResults = true;
@@ -874,9 +896,11 @@ void clang::index::generateUSRForObjCProtocol(StringRef Prot, raw_ostream &OS) {
 
 bool clang::index::generateUSRForDecl(const Decl *D,
                                       SmallVectorImpl<char> &Buf) {
-  // Don't generate USRs for things with invalid locations.
-  if (!D || D->getLocStart().isInvalid())
+  if (!D)
     return true;
+  // We don't ignore decls with invalid source locations. Implicit decls, like
+  // C++'s operator new function, can have invalid locations but it is fine to
+  // create USRs that can identify them.
 
   USRGenerator UG(&D->getASTContext(), Buf);
   UG.Visit(D);
@@ -886,21 +910,30 @@ bool clang::index::generateUSRForDecl(const Decl *D,
 bool clang::index::generateUSRForMacro(const MacroDefinitionRecord *MD,
                                        const SourceManager &SM,
                                        SmallVectorImpl<char> &Buf) {
+  if (!MD)
+    return true;
+  return generateUSRForMacro(MD->getName()->getName(), MD->getLocation(),
+                             SM, Buf);
+
+}
+
+bool clang::index::generateUSRForMacro(StringRef MacroName, SourceLocation Loc,
+                                       const SourceManager &SM,
+                                       SmallVectorImpl<char> &Buf) {
   // Don't generate USRs for things with invalid locations.
-  if (!MD || MD->getLocation().isInvalid())
+  if (MacroName.empty() || Loc.isInvalid())
     return true;
 
   llvm::raw_svector_ostream Out(Buf);
 
   // Assume that system headers are sane.  Don't put source location
   // information into the USR if the macro comes from a system header.
-  SourceLocation Loc = MD->getLocation();
   bool ShouldGenerateLocation = !SM.isInSystemHeader(Loc);
 
   Out << getUSRSpacePrefix();
   if (ShouldGenerateLocation)
     printLoc(Out, Loc, SM, /*IncludeOffset=*/true);
   Out << "@macro@";
-  Out << MD->getName()->getName();
+  Out << MacroName;
   return false;
 }

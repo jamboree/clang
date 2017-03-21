@@ -92,6 +92,10 @@ namespace {
       return M.get();
     }
 
+    CGDebugInfo *getCGDebugInfo() {
+      return Builder->getModuleDebugInfo();
+    }
+
     llvm::Module *ReleaseModule() {
       return M.release();
     }
@@ -112,7 +116,7 @@ namespace {
     }
 
     llvm::Constant *GetAddrOfGlobal(GlobalDecl global, bool isForDefinition) {
-      return Builder->GetAddrOfGlobal(global, isForDefinition);
+      return Builder->GetAddrOfGlobal(global, ForDefinition_t(isForDefinition));
     }
 
     void Initialize(ASTContext &Context) override {
@@ -297,6 +301,10 @@ llvm::Module *CodeGenerator::GetModule() {
 
 llvm::Module *CodeGenerator::ReleaseModule() {
   return static_cast<CodeGeneratorImpl*>(this)->ReleaseModule();
+}
+
+CGDebugInfo *CodeGenerator::getCGDebugInfo() {
+  return static_cast<CodeGeneratorImpl*>(this)->getCGDebugInfo();
 }
 
 const Decl *CodeGenerator::GetDeclForMangledName(llvm::StringRef name) {
