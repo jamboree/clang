@@ -2395,7 +2395,7 @@ QualType Sema::BuildFunctionType(QualType T,
     QualType ParamType = Context.getAdjustedParameterType(ParamTypes[Idx]);
     QualType NonDesigType = ParamType;
     if (const DesignatingType *Desig = ParamType->getAs<DesignatingType>()) {
-      NonDesigType = Desig->getMasterType();
+      NonDesigType = Desig->getInnerType();
       if (const IdentifierInfo *Id =
               Desig->getDesigName().getAsIdentifierInfo()) {
         unsigned &PrevIdx = Desigs[Id];
@@ -4269,7 +4269,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
 
       if (T->isDesignatingType()) {
         S.Diag(DeclType.Loc, diag::err_var_or_ret_designating_type) << 1 << T;
-        T = T->getAs<DesignatingType>()->getMasterType();
+        T = T->getAs<DesignatingType>()->getInnerType();
         D.setInvalidType(true);
       }
 
@@ -4483,9 +4483,10 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
           QualType ParamTy = Param->getType();
           assert(!ParamTy.isNull() && "Couldn't parse type?");
 
+          // Temporarily unwrap a DesignatingType to its underlying type.
           const DesignatingType *Desig = ParamTy->getAs<DesignatingType>();
           if (Desig) {
-            ParamTy = Desig->getMasterType();
+            ParamTy = Desig->getInnerType();
             if (const IdentifierInfo *Id =
                     Desig->getDesigName().getAsIdentifierInfo()) {
               unsigned &PrevIdx = Desigs[Id];
@@ -4569,9 +4570,11 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
             HasAnyInterestingExtParameterInfos = true;
           }
 
-          if (Desig && OriginTy != ParamTy) {
-            ParamTy =
-                Context.getDesignatingType(ParamTy, Desig->getDesigName());
+          // Re-wrap the DesignatingType.
+          if (Desig) {
+            ParamTy = OriginTy == ParamTy ? QualType(Desig, 0)
+                                          : Context.getDesignatingType(
+                                                ParamTy, Desig->getDesigName());
             Param->setType(ParamTy);
           }
 

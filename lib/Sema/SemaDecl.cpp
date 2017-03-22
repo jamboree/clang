@@ -11466,7 +11466,7 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
         << 0 << parmDeclType;
 
     // Recover by using the non-designating type
-    parmDeclType = parmDeclType->getAs<DesignatingType>()->getMasterType();
+    parmDeclType = parmDeclType->getAs<DesignatingType>()->getInnerType();
     TInfo = Context.getTrivialTypeSourceInfo(parmDeclType);
     D.setInvalidType(true);
   }

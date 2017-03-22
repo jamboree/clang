@@ -1650,10 +1650,11 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
     FromType = Fn->getType();
     SCS.setFromType(FromType);
   } else {
-    Expr *E = From->IgnoreParenCasts();
+    // A FunctionDecl can be dual-typed, extract it from the expression.
+    Expr *E = From->IgnoreParenImpCasts();
     if (UnaryOperator *UnOp = dyn_cast<UnaryOperator>(E))
       if (UnOp->getOpcode() == UO_AddrOf)
-        E = UnOp->getSubExpr()->IgnoreParenCasts();
+        E = UnOp->getSubExpr()->IgnoreParenImpCasts();
     if (auto *DRE = dyn_cast<DeclRefExpr>(E))
       Fn = dyn_cast<FunctionDecl>(DRE->getDecl());
   }
@@ -7162,7 +7163,7 @@ void Sema::AddSurrogateCandidate(
         // parameter of F.
         QualType ParamType = Proto->getParamType(ArgIdx);
         if (const DesignatingType *Desig = ParamType->getAs<DesignatingType>())
-          ParamType = Desig->getMasterType();
+          ParamType = Desig->getInnerType();
         Candidate.Conversions[ArgIdx + 1] =
             TryCopyInitialization(*this, Args[ArgIdx], ParamType,
                                   /*SuppressUserConversions=*/false,

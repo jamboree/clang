@@ -71,6 +71,9 @@ void ODRHash::AddDeclarationName(DeclarationName Name) {
     break;
   case DeclarationName::CXXUsingDirective:
     break;
+  case DeclarationName::CXXTemplatedName:
+    AddDecl(Name.getCanonicalName().getCXXTemplatedNameParmDecl());
+    break;
   case DeclarationName::CXXDeductionGuideName: {
     auto *Template = Name.getCXXDeductionGuideTemplate();
     AddBoolean(Template);

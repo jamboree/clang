@@ -1052,10 +1052,19 @@ Optional<unsigned> Sema::getFullyPackExpandedSize(TemplateArgument Arg) {
     else
       return None;
     break;
+    
+  case TemplateArgument::DeclName:
+    if (SubstTemplateDeclNameParmPackName *Subst =
+            Arg.getAsDeclName().getAsSubstTemplateDeclNameParmPackName())
+      Pack = Subst->getArgumentPack();
+    else
+      return None;
+    break;
 
   case TemplateArgument::Declaration:
   case TemplateArgument::NullPtr:
   case TemplateArgument::TemplateExpansion:
+  case TemplateArgument::DeclNameExpansion:
   case TemplateArgument::Integral:
   case TemplateArgument::Pack:
   case TemplateArgument::Null:

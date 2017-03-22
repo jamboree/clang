@@ -1086,7 +1086,7 @@ DEF_TRAVERSE_TYPE(PackExpansionType, { TRY_TO(TraverseType(T->getPattern())); })
 DEF_TRAVERSE_TYPE(ObjCTypeParamType, {})
 
 DEF_TRAVERSE_TYPE(DesignatingType, {
-  TRY_TO(TraverseType(T->getMasterType()));
+  TRY_TO(TraverseType(T->getInnerType()));
   TRY_TO(TraverseDeclarationName(T->getDesigName()));
 })
 
@@ -1329,7 +1329,7 @@ DEF_TRAVERSE_TYPELOC(PackExpansionType,
 DEF_TRAVERSE_TYPELOC(ObjCTypeParamType, {})
 
 DEF_TRAVERSE_TYPELOC(DesignatingType, {
-  TRY_TO(TraverseTypeLoc(TL.getMasterLoc()));
+  TRY_TO(TraverseTypeLoc(TL.getInnerLoc()));
   TRY_TO(TraverseDeclarationNameInfo(TL.getNameInfo()));
 })
 

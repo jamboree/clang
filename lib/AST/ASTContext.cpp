@@ -2848,7 +2848,7 @@ QualType ASTContext::getVariableArrayDecayedType(QualType type) const {
   case Type::Designating: {
     const DesignatingType *des = cast<DesignatingType>(ty);
     result = getDesignatingType(
-        getVariableArrayDecayedType(des->getMasterType()), des->getDesigName());
+        getVariableArrayDecayedType(des->getInnerType()), des->getDesigName());
     break;
   }
   }
@@ -3251,7 +3251,7 @@ QualType ASTContext::getFunctionTypeInternal(
       do {
         QualType Parm = ArgArray[i];
         if (const DesignatingType *Desig = Parm->getAs<DesignatingType>())
-          Parm = Desig->getMasterType();
+          Parm = Desig->getInnerType();
         NonDesigArgs.push_back(Parm);
       } while (++i != NumArgs);
       NonDesig = getFunctionTypeInternal(ResultTy, NonDesigArgs, EPI, true);
@@ -4644,7 +4644,7 @@ CanQualType ASTContext::getCanonicalParamType(QualType T) const {
     Ty = Expansion->getPattern().getTypePtr();
   const DesignatingType *Desig = Ty->getAs<DesignatingType>();
   if (Desig)
-    Ty = Desig->getMasterType().getTypePtr();
+    Ty = Desig->getInnerType().getTypePtr();
 
   QualType Result;
   if (isa<ArrayType>(Ty)) {
@@ -5083,7 +5083,7 @@ QualType ASTContext::getAdjustedParameterType(QualType T) const {
   QualType SubT = Expansion ? Expansion->getPattern() : T;
   const DesignatingType *Desig = SubT->getAs<DesignatingType>();
   if (Desig)
-    SubT = Desig->getMasterType();
+    SubT = Desig->getInnerType();
   if (SubT->isArrayType() || SubT->isFunctionType()) {
     T = getDecayedType(SubT);
     if (Desig)

@@ -282,6 +282,7 @@ bool serialization::isRedeclarableDeclKind(unsigned Kind) {
   case Decl::ObjCAtDefsField:
   case Decl::NonTypeTemplateParm:
   case Decl::TemplateTemplateParm:
+  case Decl::TemplateDeclNameParm:
   case Decl::Using:
   case Decl::UsingPack:
   case Decl::ObjCMethod:

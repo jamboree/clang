@@ -267,6 +267,8 @@ QualType TemplateArgument::getNonTypeTemplateArgumentType() const {
   case TemplateArgument::Type:
   case TemplateArgument::Template:
   case TemplateArgument::TemplateExpansion:
+  case TemplateArgument::DeclName:
+  case TemplateArgument::DeclNameExpansion:
   case TemplateArgument::Pack:
     return QualType();
 

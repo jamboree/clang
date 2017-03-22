@@ -2746,7 +2746,7 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result, QualType Ty) {
       continue;
 
     case Type::Designating:
-      T = cast<DesignatingType>(T)->getMasterType().getTypePtr();
+      T = cast<DesignatingType>(T)->getInnerType().getTypePtr();
       continue;
     }
 

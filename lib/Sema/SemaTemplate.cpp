@@ -1658,10 +1658,14 @@ private:
 
     if (auto *TTP = dyn_cast<TemplateTemplateParmDecl>(TemplateParam))
       return transformTemplateParameterImpl(TTP, Args);
+    
+    if (auto *NTP = dyn_cast<NonTypeTemplateParmDecl>(TemplateParam))
+      return transformTemplateParameterImpl(NTP, Args);
 
     return transformTemplateParameterImpl(
-        cast<NonTypeTemplateParmDecl>(TemplateParam), Args);
+        cast<TemplateDeclNameParmDecl>(TemplateParam), Args);
   }
+
   template<typename TemplateParmDecl>
   TemplateParmDecl *
   transformTemplateParameterImpl(TemplateParmDecl *OldParam,
@@ -5209,7 +5213,7 @@ bool UnnamedLocalNoLinkageFinder::VisitPackExpansionType(
 
 bool UnnamedLocalNoLinkageFinder::VisitDesignatingType(
     const DesignatingType *T) {
-  return Visit(T->getMasterType());
+  return Visit(T->getInnerType());
 }
 
 bool UnnamedLocalNoLinkageFinder::VisitObjCObjectType(const ObjCObjectType *) {

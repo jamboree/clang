@@ -2631,6 +2631,9 @@ static void AddTypedNameChunk(ASTContext &Context, const PrintingPolicy &Policy,
       
   case DeclarationName::CXXDeductionGuideName:
   case DeclarationName::CXXUsingDirective:
+  case DeclarationName::CXXTemplatedName:
+  case DeclarationName::SubstTemplatedName:
+  case DeclarationName::SubstTemplatedPackName:
   case DeclarationName::ObjCZeroArgSelector:
   case DeclarationName::ObjCOneArgSelector:
   case DeclarationName::ObjCMultiArgSelector:

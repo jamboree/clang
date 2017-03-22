@@ -230,6 +230,7 @@ bool TypePrinter::canPrefixQualifiers(const Type *T,
     case Type::Attributed:
     case Type::PackExpansion:
     case Type::SubstTemplateTypeParm:
+    case Type::Designating:
       CanPrefixQualifiers = false;
       break;
   }
@@ -1200,13 +1201,13 @@ void TypePrinter::printPackExpansionAfter(const PackExpansionType *T,
 
 void TypePrinter::printDesignatingBefore(const DesignatingType *T,
                                          raw_ostream &OS) {
-  printBefore(T->getMasterType(), OS);
+  printBefore(T->getInnerType(), OS);
   OS << "." << T->getDesigName();
 }
 
 void TypePrinter::printDesignatingAfter(const DesignatingType *T,
                                         raw_ostream &OS) {
-  printAfter(T->getMasterType(), OS);
+  printAfter(T->getInnerType(), OS);
 }
 
 void TypePrinter::printAttributedBefore(const AttributedType *T,

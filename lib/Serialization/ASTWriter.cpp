@@ -468,7 +468,7 @@ void ASTTypeWriter::VisitPackExpansionType(const PackExpansionType *T) {
 }
 
 void ASTTypeWriter::VisitDesignatingType(const DesignatingType *T) {
-  Record.AddTypeRef(T->getMasterType());
+  Record.AddTypeRef(T->getInnerType());
   Record.AddDeclarationName(T->getDesigName());
   Code = TYPE_DESIGNATING;
 }

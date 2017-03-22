@@ -6076,6 +6076,18 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
     return Context.getPipeType(ElementType, ReadOnly);
   }
 
+  case TYPE_DESIGNATING: {
+    if (Record.size() != 2) {
+      Error("Incorrect encoding of designating type");
+      return QualType();
+    }
+
+    // Reading the pipe element type.
+    QualType ElementType = readType(*Loc.F, Record, Idx);
+    DeclarationName DesigName = ReadDeclarationName(*Loc.F, Record, Idx);
+    return Context.getDesignatingType(ElementType, DesigName);
+  }
+
   }
   llvm_unreachable("Invalid TypeCode!");
 }

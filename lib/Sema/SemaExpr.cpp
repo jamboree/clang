@@ -5364,6 +5364,21 @@ ExprResult Sema::ActOnCallExpr(Scope *Scope, Expr *Fn, SourceLocation LParenLoc,
     }
 
     checkDirectCallValidity(*this, Fn, FD, ArgExprs);
+  } else {
+    // Handle opaque indirect calls.
+    QualType FT = Fn->getType().IgnoreParens();
+    if (const ReferenceType *Indirect = FT->getAs<ReferenceType>())
+      FT = Indirect->getPointeeType();
+    if (const PointerType *Indirect = FT->getAs<PointerType>())
+      FT = Indirect->getPointeeType();
+    if (const FunctionProtoType *Proto = FT->getAs<FunctionProtoType>()) {
+      if (DesignateArgumentsForCall(Proto, Fn, ArgExprs, MappedArgs))
+        return ExprError();
+      if (!MappedArgs.empty()) {
+        SyntacticArgs = ArgExprs;
+        ArgExprs = MappedArgs;
+      }
+    }
   }
 
   return BuildResolvedCallExpr(Fn, NDecl, LParenLoc, ArgExprs, SyntacticArgs,

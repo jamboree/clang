@@ -1129,8 +1129,8 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
   case Type::Designating: {
     const DesignatingType *Ptr1 = cast<DesignatingType>(T1);
     const DesignatingType *Ptr2 = cast<DesignatingType>(T2);
-    if (!IsStructurallyEquivalent(Context, Ptr1->getMasterType(),
-                                  Ptr2->getMasterType()))
+    if (!IsStructurallyEquivalent(Context, Ptr1->getInnerType(),
+                                  Ptr2->getInnerType()))
       return false;
     if (!IsStructurallyEquivalent(Context, Ptr1->getDesigName(),
                                   Ptr2->getDesigName()))
@@ -2296,6 +2296,7 @@ ASTNodeImporter::ImportDeclarationNameLoc(const DeclarationNameInfo &From,
   case DeclarationName::CXXDeductionGuideName:
   case DeclarationName::CXXTemplatedName:
   case DeclarationName::SubstTemplatedName:
+  case DeclarationName::SubstTemplatedPackName:
     return;
 
   case DeclarationName::CXXOperatorName: {

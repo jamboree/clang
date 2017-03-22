@@ -2144,13 +2144,13 @@ public:
     setNameLoc(Loc);
   }
 
-  TypeLoc getMasterLoc() const { return getInnerTypeLoc(); }
-
   DeclarationNameInfo getNameInfo() const {
     return DeclarationNameInfo(getTypePtr()->getDesigName(), getNameLoc());
   }
 
-  QualType getInnerType() const { return this->getTypePtr()->getMasterType(); }
+  TypeLoc getInnerLoc() const { return getInnerTypeLoc(); }
+
+  QualType getInnerType() const { return this->getTypePtr()->getInnerType(); }
 };
 
 struct AtomicTypeLocInfo {

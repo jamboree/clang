@@ -3260,16 +3260,16 @@ TemplateSpecializationType::Profile(llvm::FoldingSetNodeID &ID,
     Arg.Profile(ID, Context);
 }
 
-DesignatingType::DesignatingType(QualType Master, DeclarationName DesigName,
+DesignatingType::DesignatingType(QualType Inner, DeclarationName DesigName,
                                  QualType Canon)
     : Type(Designating, Canon, /*Dependent=*/false,
-           /*InstantiationDependent=*/false, Master->isVariablyModifiedType(),
-           Master->containsUnexpandedParameterPack()),
-      MasterType(Master), DesigName(DesigName) {
+           /*InstantiationDependent=*/false, Inner->isVariablyModifiedType(),
+           Inner->containsUnexpandedParameterPack()),
+      InnerType(Inner), DesigName(DesigName) {
   bool hasDependentDesig = DesigName.isDependentName();
-  setDependent(hasDependentDesig || Master->isDependentType());
+  setDependent(hasDependentDesig || Inner->isDependentType());
   setInstantiationDependent(hasDependentDesig ||
-                            Master->isInstantiationDependentType());
+                            Inner->isInstantiationDependentType());
 }
 
 QualType
@@ -3568,7 +3568,7 @@ static LinkageInfo computeLinkageInfo(const Type *T) {
   case Type::Pipe:
     return computeLinkageInfo(cast<PipeType>(T)->getElementType());
   case Type::Designating:
-    return computeLinkageInfo(cast<DesignatingType>(T)->getMasterType());
+    return computeLinkageInfo(cast<DesignatingType>(T)->getInnerType());
   }
 
   llvm_unreachable("unhandled type class");

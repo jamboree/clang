@@ -2112,6 +2112,7 @@ public:
     case AliasDeclContext:
     case AliasTemplateContext:
     case TemplateTypeArgContext:
+    case FunctionalCastContext:
       return true;
     }
     llvm_unreachable("unknown context kind!");

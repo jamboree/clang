@@ -6199,22 +6199,22 @@ template <typename Derived>
 QualType
 TreeTransform<Derived>::TransformDesignatingType(TypeLocBuilder &TLB,
                                                  DesignatingTypeLoc TL) {
-  QualType MasterType = getDerived().TransformType(TLB, TL.getMasterLoc());
-  if (MasterType.isNull())
+  QualType InnerType = getDerived().TransformType(TLB, TL.getInnerLoc());
+  if (InnerType.isNull())
     return QualType();
 
   DeclarationName Name =
       getDerived().TransformDeclarationNameInfo(TL.getNameInfo()).getName();
   Name = Name.getCanonicalName();
   if (!Name)
-    return MasterType;
+    return InnerType;
 
   QualType Result = TL.getType();
   if (getDerived().AlwaysRebuild() ||
-      MasterType != TL.getMasterLoc().getType() ||
+      InnerType != TL.getInnerLoc().getType() ||
       Name != TL.getTypePtr()->getDesigName()) {
     Result =
-        getDerived().RebuildDesignatingType(MasterType, Name, TL.getDotLoc());
+        getDerived().RebuildDesignatingType(InnerType, Name, TL.getDotLoc());
     if (Result.isNull())
       return QualType();
   }

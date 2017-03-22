@@ -2767,6 +2767,7 @@ Parser::DiagnoseMissingSemiAfterTagDefinition(DeclSpec &DS, AccessSpecifier AS,
 
       case Sema::NC_Keyword:
       case Sema::NC_NestedNameSpecifier:
+      case Sema::NC_DeclName:
         llvm_unreachable("typo correction and nested name specifiers not "
                          "possible here");
 

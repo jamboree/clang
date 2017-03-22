@@ -638,6 +638,8 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
     ResultType = CGM.getOpenCLRuntime().getPipeType();
     break;
   }
+  case Type::Designating:
+    llvm_unreachable("Unexpected designating type!");
   }
   
   assert(ResultType && "Didn't convert a type?");

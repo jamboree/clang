@@ -1306,7 +1306,9 @@ public:
                                                      unsigned NumExpandedTypes);
     
   using TemplateParmPosition::getDepth;
+  using TemplateParmPosition::setDepth;
   using TemplateParmPosition::getPosition;
+  using TemplateParmPosition::setPosition;
   using TemplateParmPosition::getIndex;
 
   SourceRange getSourceRange() const override LLVM_READONLY;
@@ -1621,7 +1623,9 @@ public:
                                           IdentifierInfo *Id);
 
   using TemplateParmPosition::getDepth;
+  using TemplateParmPosition::setDepth;
   using TemplateParmPosition::getPosition;
+  using TemplateParmPosition::setPosition;
   using TemplateParmPosition::getIndex;
 
   SourceLocation getLocStart() const LLVM_READONLY { return LocStart; }

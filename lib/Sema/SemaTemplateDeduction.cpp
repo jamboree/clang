@@ -1863,7 +1863,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
       DeclarationName DesigName;
       if (const DesignatingType *DesigArg = Arg->getAs<DesignatingType>()) {
         DesigName = DesigArg->getDesigName();
-        Arg = DesigArg->getMasterType();
+        Arg = DesigArg->getInnerType();
       }
 
       if (Sema::TemplateDeductionResult Result = DeduceTemplateArguments(
@@ -1872,7 +1872,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
         return Result;
 
       return DeduceTemplateArgumentsByTypeMatch(S, TemplateParams,
-                                                DesigParam->getMasterType(),
+                                                DesigParam->getInnerType(),
                                                 Arg, Info, Deduced, TDF);
     }
 
@@ -5493,7 +5493,7 @@ MarkUsedTemplateParameters(ASTContext &Ctx, QualType T,
 
   case Type::Designating: {
     const DesignatingType *Desig = cast<DesignatingType>(T);
-    MarkUsedTemplateParameters(Ctx, Desig->getMasterType(), OnlyDeduced, Depth,
+    MarkUsedTemplateParameters(Ctx, Desig->getInnerType(), OnlyDeduced, Depth,
                                Used);
     MarkUsedTemplateParameters(Ctx, Desig->getDesigName(), OnlyDeduced, Depth,
                                Used);

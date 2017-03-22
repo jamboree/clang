@@ -1232,6 +1232,8 @@ void CXXNameMangler::mangleUnresolvedName(
                            ->getReplacementName()
                            .getAsIdentifierInfo());
       break;
+    case DeclarationName::SubstTemplatedPackName:
+      llvm_unreachable("Can't mangle a pack name!");
     case DeclarationName::CXXConstructorName:
       llvm_unreachable("Can't mangle a constructor name!");
     case DeclarationName::CXXUsingDirective:
@@ -1482,6 +1484,9 @@ void CXXNameMangler::mangleUnqualifiedName(const NamedDecl *ND,
     mangleSubstTemplatedName(ND, Name.getAsSubstTemplateDeclNameParmName());
     writeAbiTags(ND, AdditionalAbiTags);
     break;
+
+  case DeclarationName::SubstTemplatedPackName:
+    llvm_unreachable("Can't mangle a pack name!");
   }
 }
 
@@ -3039,7 +3044,7 @@ void CXXNameMangler::mangleType(const DesignatingType *T) {
   // <type>  ::= Q <designator name> <type>
   Out << "Q";
   mangleDeclName(T->getDesigName());
-  mangleType(T->getMasterType());
+  mangleType(T->getInnerType());
 }
 
 void CXXNameMangler::mangleType(const ObjCInterfaceType *T) {

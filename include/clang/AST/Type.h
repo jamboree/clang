@@ -4954,15 +4954,15 @@ public:
 /// \brief Represents a type with a designator.
 ///
 class DesignatingType : public Type, public llvm::FoldingSetNode {
-  QualType MasterType;
+  QualType InnerType;
   DeclarationName DesigName;
 
-  DesignatingType(QualType Master, DeclarationName DesigName, QualType Canon);
+  DesignatingType(QualType Inner, DeclarationName DesigName, QualType Canon);
 
   friend class ASTContext; // ASTContext creates these.
 
 public:
-  QualType getMasterType() const { return MasterType; }
+  QualType getInnerType() const { return InnerType; }
 
   DeclarationName getDesigName() const { return DesigName; }
 
@@ -4970,11 +4970,11 @@ public:
   QualType desugar() const { return QualType(this, 0); }
 
   void Profile(llvm::FoldingSetNodeID &ID) {
-    Profile(ID, getMasterType(), getDesigName());
+    Profile(ID, getInnerType(), getDesigName());
   }
-  static void Profile(llvm::FoldingSetNodeID &ID, QualType Master,
+  static void Profile(llvm::FoldingSetNodeID &ID, QualType Inner,
                       DeclarationName DesigName) {
-    ID.AddPointer(Master.getAsOpaquePtr());
+    ID.AddPointer(Inner.getAsOpaquePtr());
     ID.AddPointer(DesigName.getAsOpaquePtr());
   }
 
@@ -5583,7 +5583,7 @@ inline bool QualType::isCanonicalAsParam() const {
 
   const Type *T = getTypePtr();
   if (const DesignatingType *Desig = T->getAs<DesignatingType>()) {
-    QualType Param = Desig->getMasterType();
+    QualType Param = Desig->getInnerType();
     if (!Param.isCanonical() || Param.hasLocalQualifiers())
       return false;
     T = Param.getTypePtr();

@@ -1750,9 +1750,9 @@ bool Sema::areCompatibleFunctionProtoTypes(QualType TypeL, QualType TypeR) {
     QualType ParmR = R->getParamType(I);
 
     if (const DesignatingType *Desig = ParmL->getAs<DesignatingType>())
-      ParmL = Desig->getMasterType();
+      ParmL = Desig->getInnerType();
     if (const DesignatingType *Desig = ParmR->getAs<DesignatingType>())
-      ParmR = Desig->getMasterType();
+      ParmR = Desig->getInnerType();
 
     // Self.Context.typesAreCompatible()
     if (ParmL != ParmR)
