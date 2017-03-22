@@ -4679,7 +4679,7 @@ Sema::GetNameFromUnqualifiedId(const UnqualifiedId &Name) {
 
   case UnqualifiedId::IK_ImplicitSelfParam:
   case UnqualifiedId::IK_Identifier:
-    NameInfo.setName(Name.Identifier);
+    NameInfo.setName(getPossiblyTemplatedName(Name.Identifier));
     NameInfo.setLoc(Name.StartLocation);
     return NameInfo;
 
@@ -5055,8 +5055,6 @@ NamedDecl *Sema::HandleDeclarator(Scope *S, Declarator &D,
                                   MultiTemplateParamsArg TemplateParamLists) {
   // TODO: consider using NameInfo for diagnostic.
   DeclarationNameInfo NameInfo = GetNameForDeclarator(D);
-  if (IdentifierInfo *II = NameInfo.getName().getAsIdentifierInfo())
-    NameInfo.setName(getPossiblyTemplatedName(II));
   DeclarationName Name = NameInfo.getName();
 
   // All of these full declarators require an identifier.  If it doesn't have
@@ -6004,18 +6002,15 @@ NamedDecl *Sema::ActOnVariableDeclarator(
   QualType R = TInfo->getType();
   DeclarationName Name = GetNameForDeclarator(D).getName();
 
-  IdentifierInfo *II = Name.getAsIdentifierInfo();
-
   if (D.isDecompositionDeclarator()) {
     AddToScope = false;
     // Take the name of the first declarator as our name for diagnostic
     // purposes.
     auto &Decomp = D.getDecompositionDeclarator();
     if (!Decomp.bindings().empty()) {
-      II = Decomp.bindings()[0].Name;
-      Name = II;
+      Name = Decomp.bindings()[0].Name;
     }
-  } else if (!II) {
+  } else if (!Name) {
     Diag(D.getIdentifierLoc(), diag::err_bad_variable_name) << Name;
     return nullptr;
   }
@@ -6116,13 +6111,6 @@ NamedDecl *Sema::ActOnVariableDeclarator(
          getLangOpts().CPlusPlus1z ? diag::ext_register_storage_class
                                    : diag::warn_deprecated_register)
       << FixItHint::CreateRemoval(D.getDeclSpec().getStorageClassSpecLoc());
-  }
-
-  if (IdentifierInfo *II = Name.getAsIdentifierInfo())
-    Name = getPossiblyTemplatedName(II);
-  else {
-    Diag(D.getIdentifierLoc(), diag::err_bad_variable_name) << Name;
-    return nullptr;
   }
 
   DiagnoseFunctionSpecifiers(D.getDeclSpec());
@@ -7584,8 +7572,6 @@ static FunctionDecl* CreateNewFunctionDecl(Sema &SemaRef, Declarator &D,
                                            StorageClass SC,
                                            bool &IsVirtualOkay) {
   DeclarationNameInfo NameInfo = SemaRef.GetNameForDeclarator(D);
-  if (IdentifierInfo *II = NameInfo.getName().getAsIdentifierInfo())
-    NameInfo.setName(SemaRef.getPossiblyTemplatedName(II));
   DeclarationName Name = NameInfo.getName();
 
   FunctionDecl *NewFD = nullptr;
@@ -7951,8 +7937,6 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
 
   // TODO: consider using NameInfo for diagnostic.
   DeclarationNameInfo NameInfo = GetNameForDeclarator(D);
-  if (IdentifierInfo *II = NameInfo.getName().getAsIdentifierInfo())
-    NameInfo.setName(getPossiblyTemplatedName(II));
   DeclarationName Name = NameInfo.getName();
   StorageClass SC = getFunctionStorageClass(*this, D);
 

@@ -2124,11 +2124,9 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
   const TemplateArgumentListInfo *TemplateArgs;
   DecomposeUnqualifiedId(Id, TemplateArgsBuffer, NameInfo, TemplateArgs);
 
-  IdentifierInfo *II = NameInfo.getName().getAsIdentifierInfo();
-  NameInfo.setName(getPossiblyTemplatedName(II));
-
   DeclarationName Name = NameInfo.getName();
   SourceLocation NameLoc = NameInfo.getLoc();
+  IdentifierInfo *II = Name.getAsIdentifierInfo();
 
   // C++ [temp.dep.expr]p3:
   //   An id-expression is type-dependent if it contains:

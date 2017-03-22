@@ -2996,8 +2996,6 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
       return nullptr;
     }
 
-    IdentifierInfo *II = Name.getAsIdentifierInfo();
-
     // Member field could not be with "template" keyword.
     // So TemplateParameterLists should be empty in this case.
     if (TemplateParameterLists.size()) {
@@ -3005,14 +3003,14 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
       if (TemplateParams->size()) {
         // There is no such thing as a member field template.
         Diag(D.getIdentifierLoc(), diag::err_template_member)
-            << II
+            << Name
             << SourceRange(TemplateParams->getTemplateLoc(),
                 TemplateParams->getRAngleLoc());
       } else {
         // There is an extraneous 'template<>' for this member.
         Diag(TemplateParams->getTemplateLoc(),
             diag::err_template_member_noparams)
-            << II
+            << Name
             << SourceRange(TemplateParams->getTemplateLoc(),
                 TemplateParams->getRAngleLoc());
       }
@@ -8938,8 +8936,6 @@ Decl *Sema::ActOnUsingDeclaration(Scope *S,
   }
 
   DeclarationNameInfo TargetNameInfo = GetNameFromUnqualifiedId(Name);
-  if (Name.Identifier)
-    TargetNameInfo.setName(getPossiblyTemplatedName(Name.Identifier));
   DeclarationName TargetName = TargetNameInfo.getName();
   if (!TargetName)
     return nullptr;

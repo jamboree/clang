@@ -1763,11 +1763,6 @@ ExprResult Sema::ActOnMemberAccessExpr(Scope *S, Expr *Base,
   DecomposeUnqualifiedId(Id, TemplateArgsBuffer,
                          NameInfo, TemplateArgs);
 
-  if (TemplateDeclNameParmDecl *TDP =
-          LookupTemplateDeclNameParm(NameInfo.getName().getAsIdentifierInfo()))
-    NameInfo.setName(Context.DeclarationNames.getCXXTemplatedName(
-        TDP->getDepth(), TDP->getIndex(), TDP->isParameterPack(), TDP));
-
   DeclarationName Name = NameInfo.getName();
   bool IsArrow = (OpKind == tok::arrow);
 
