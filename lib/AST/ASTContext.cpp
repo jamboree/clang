@@ -3918,12 +3918,19 @@ TemplateArgument ASTContext::getInjectedTemplateArg(NamedDecl *Param) {
       E = new (*this) PackExpansionExpr(DependentTy, E, NTTP->getLocation(),
                                         ExpansionInfo());
     Arg = TemplateArgument(E);
-  } else {
-    auto *TTP = cast<TemplateTemplateParmDecl>(Param);
+  } else if(auto *TTP = dyn_cast<TemplateTemplateParmDecl>(Param)){
     if (TTP->isParameterPack())
       Arg = TemplateArgument(TemplateName(TTP), ExpansionInfo());
     else
       Arg = TemplateArgument(TemplateName(TTP));
+  } else {
+    auto *TDP = cast<TemplateDeclNameParmDecl>(Param);
+    DeclarationName Name = DeclarationNames.getCXXTemplatedName(
+        TDP->getDepth(), TDP->getIndex(), TDP->isParameterPack(), TDP);
+    if (TDP->isParameterPack())
+      Arg = TemplateArgument(Name, ExpansionInfo());
+    else
+      Arg = TemplateArgument(Name);
   }
 
   if (Param->isTemplateParameterPack())

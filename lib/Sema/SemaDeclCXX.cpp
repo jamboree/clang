@@ -2989,8 +2989,8 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
   if (isInstField) {
     CXXScopeSpec &SS = D.getCXXScopeSpec();
 
-    // Data members must have identifiers for names.
-    if (!Name.isIdentifier()) {
+    // Data members must have (possibly templated) identifiers for names.
+    if (!Name.isIdentifier() && !Name.isTemplatedName()) {
       Diag(Loc, diag::err_bad_variable_name)
         << Name;
       return nullptr;

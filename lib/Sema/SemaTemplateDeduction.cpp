@@ -490,7 +490,7 @@ DeduceTemplateArguments(Sema &S,
 static Sema::TemplateDeductionResult DeduceTemplateArguments(
     Sema &S, TemplateParameterList *TemplateParams, DeclarationName Param,
     DeclarationName Arg, TemplateDeductionInfo &Info,
-    SmallVectorImpl<DeducedTemplateArgument> &Deduced, bool SkipNonDependent) {
+    SmallVectorImpl<DeducedTemplateArgument> &Deduced) {
   if (TemplateDeclNameParmDecl *TDP = Param.getCXXTemplatedNameParmDecl()) {
     DeducedTemplateArgument NewDeduced(Arg);
     DeducedTemplateArgument Result = checkDeducedTemplateArguments(
@@ -506,9 +506,6 @@ static Sema::TemplateDeductionResult DeduceTemplateArguments(
     Deduced[TDP->getIndex()] = Result;
     return Sema::TDK_Success;
   }
-
-  if (SkipNonDependent)
-    return Sema::TDK_Success;
 
   // Verify that the two declnames are equivalent.
   if (Param == Arg)
@@ -1864,11 +1861,15 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
       if (const DesignatingType *DesigArg = Arg->getAs<DesignatingType>()) {
         DesigName = DesigArg->getDesigName();
         Arg = DesigArg->getInnerType();
+      } else if (Arg->isDependentType()) {
+        // For PartialOrdering, it's required that the arg type must be a
+        // DesignatingType, so that T.D is more specialized than T.
+        return Sema::TemplateDeductionResult::TDK_NonDeducedMismatch;
       }
 
       if (Sema::TemplateDeductionResult Result = DeduceTemplateArguments(
               S, TemplateParams, DesigParam->getDesigName(), DesigName, Info,
-              Deduced, false))
+              Deduced))
         return Result;
 
       return DeduceTemplateArgumentsByTypeMatch(S, TemplateParams,
@@ -1929,7 +1930,7 @@ DeduceTemplateArguments(Sema &S,
   case TemplateArgument::DeclName:
     if (Arg.getKind() == TemplateArgument::DeclName)
       return DeduceTemplateArguments(S, TemplateParams, Param.getAsDeclName(),
-                                     Arg.getAsDeclName(), Info, Deduced, false);
+                                     Arg.getAsDeclName(), Info, Deduced);
     break;
 
   case TemplateArgument::TemplateExpansion:
