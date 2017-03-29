@@ -3616,7 +3616,8 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
   unsigned MinRequiredArgs = Function->getMinRequiredArguments();
   if (Args.size() < MinRequiredArgs && !PartialOverloading)
     return TDK_TooFewArguments;
-  else if (TooManyArguments(NumParams, Args.size(), PartialOverloading)) {
+  else if (TooManyArguments(std::max(NumParams, MinRequiredArgs), Args.size(),
+                            PartialOverloading)) {
     if (!Proto->isTemplateVariadic() && !Proto->isVariadic())
       return TDK_TooManyArguments;
   }

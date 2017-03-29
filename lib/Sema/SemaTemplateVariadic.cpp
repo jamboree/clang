@@ -742,7 +742,7 @@ Optional<unsigned> Sema::getNumArgumentsInExpansion(const ParmVarDecl *Parm,
         if (Instantiation->is<Decl*>())
           // The pattern refers to an unexpanded pack. We're not ready to expand
           // this pack yet.
-          continue;
+          return None;
 
         unsigned Size = Instantiation->get<DeclArgumentPack *>()->size();
         assert((!Result || *Result == Size) && "inconsistent pack sizes");
@@ -756,7 +756,7 @@ Optional<unsigned> Sema::getNumArgumentsInExpansion(const ParmVarDecl *Parm,
         !TemplateArgs.hasTemplateArgument(Depth, Index)) {
       // The pattern refers to an unknown template argument. We're not ready to
       // expand this pack yet.
-      continue;
+      return None;
     }
 
     // Determine the size of the argument pack.

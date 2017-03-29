@@ -1922,8 +1922,7 @@ ParmVarDecl *Sema::SubstParmVarDecl(ParmVarDecl *OldParm,
   NewParm->setDesignatable(OldParm->isDesignatable() &&
                            NameInfo.getName().getCanonicalName());
 
-  if (OldParm->isParameterPack() && !Info &&
-      !NewParm->isParameterPack()) {
+  if (OldParm->isParameterPack() && !NewParm->isParameterPack()) {
     // Add the new parameter to the instantiated parameter pack.
     CurrentInstantiationScope->InstantiatedLocalPackArg(OldParm, NewParm);
   } else {

@@ -4951,8 +4951,7 @@ bool TreeTransform<Derived>::TransformFunctionTypeParams(
         if (ShouldExpand) {
           // Expand the function parameter pack into multiple, separate
           // parameters.
-          if (!OrigInfo)
-            getDerived().ExpandingFunctionParameterPack(OldParm);
+          getDerived().ExpandingFunctionParameterPack(OldParm);
 
           for (unsigned I = 0, E = Info.getNumExpansions(); I != E; ++I) {
             Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(getSema(), I);
