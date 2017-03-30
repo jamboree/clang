@@ -11402,13 +11402,13 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   if (D.hasName()) {
     if (IdentifierInfo *II = D.getIdentifier()) {
       Name = getPossiblyTemplatedName(II);
-      //if (!D.isEllipsisPostfix() &&
-      //    DiagnoseUnexpandedParameterPack(
-      //        DeclarationNameInfo(Name, D.getIdentifierLoc()),
-      //        UPPC_DeclarationName)) {
-      //  Name = {};
-      //  D.setInvalidType(true);
-      //}
+      if (!D.isEllipsisPostfix() &&
+          DiagnoseUnexpandedParameterPack(
+              DeclarationNameInfo(Name, D.getIdentifierLoc()),
+              UPPC_DeclarationName)) {
+        Name = {};
+        D.setInvalidType(true);
+      }
     } else {
       Diag(D.getIdentifierLoc(), diag::err_bad_parameter_name)
           << GetNameForDeclarator(D).getName();
@@ -11474,7 +11474,7 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
                     S->getNextFunctionPrototypeIndex());
 
   if (D.hasDot()) {
-    if (New->isParameterPack()/* && !D.isEllipsisPostfix()*/)
+    if (New->isParameterPack() && !D.isEllipsisPostfix())
       Diag(D.getDotLoc(), diag::err_param_designator_on_parameter_pack);
     else
       New->setDesignatable(true);

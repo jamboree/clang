@@ -3264,7 +3264,8 @@ DesignatingType::DesignatingType(QualType Inner, DeclarationName DesigName,
                                  QualType Canon)
     : Type(Designating, Canon, /*Dependent=*/false,
            /*InstantiationDependent=*/false, Inner->isVariablyModifiedType(),
-           Inner->containsUnexpandedParameterPack()),
+           Inner->containsUnexpandedParameterPack() ||
+               DesigName.containsUnexpandedParameterPack()),
       InnerType(Inner), DesigName(DesigName) {
   bool hasDependentDesig = DesigName.isDependentName();
   setDependent(hasDependentDesig || Inner->isDependentType());

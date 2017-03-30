@@ -4824,19 +4824,19 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
       //
       // We represent function parameter packs as function parameters whose
       // type is a pack expansion.
-      if (!T->containsUnexpandedParameterPack()/* && !D.isEllipsisPostfix()*/) {
+      if (!T->containsUnexpandedParameterPack() &&
+          !Name.containsUnexpandedParameterPack()) {
         S.Diag(D.getEllipsisLoc(),
              diag::err_function_parameter_pack_without_parameter_packs)
           << T <<  D.getSourceRange();
         D.setEllipsisLoc(SourceLocation());
       } else {
-        TemplateDeclNameParmDecl *TDP = Name.getCXXTemplatedNameParmDecl();
-        if (TDP && TDP->isParameterPack())
+        if (T->containsUnexpandedParameterPack())
+          T = Context.getPackExpansionType(T, ExpansionInfo());
+        if (Name.containsUnexpandedParameterPack() && !D.isEllipsisPostfix())
           S.Diag(D.getEllipsisLoc(),
                  diag::err_pack_expansion_before_declarator_pack)
               << D.getSourceRange();
-        else
-          T = Context.getPackExpansionType(T, ExpansionInfo());
       }
       break;
     case Declarator::TemplateParamContext:
