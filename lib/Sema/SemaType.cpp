@@ -3667,7 +3667,7 @@ static bool hasOuterPointerLikeChunk(const Declarator &D, unsigned endIndex) {
 static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
                                                 QualType declSpecType,
                                                 TypeSourceInfo *TInfo,
-                                                bool AllowDesignator) {
+                                                bool HandleDesignator) {
   // The TypeSourceInfo that this function returns will not be a null type.
   // If there is an error, this function will fill in a dummy type as fallback.
   QualType T = declSpecType;
@@ -4802,8 +4802,14 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
     T.addConst();
   }
 
-  if (AllowDesignator && D.hasDot())
-    T = S.BuildDesignatingType(T, Name, D.getIdentifierLoc());
+  if (HandleDesignator) {
+    if (D.hasDot())
+      T = S.BuildDesignatingType(T, Name, D.getIdentifierLoc());
+    else if (Name.isTemplatedName())
+      S.Diag(D.getIdentifierLoc(),
+             diag::err_templated_param_name_in_function_type)
+          << D.getSourceRange();
+  }
 
   // If there was an ellipsis in the declarator, the declaration declares a
   // parameter pack whose type may be a pack expansion type.
@@ -4831,8 +4837,9 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
           << T <<  D.getSourceRange();
         D.setEllipsisLoc(SourceLocation());
       } else {
-        if (T->containsUnexpandedParameterPack())
-          T = Context.getPackExpansionType(T, ExpansionInfo());
+        // Make the type a PackExpansion anyway (even in case it doesn't have
+        // unexpanded parameter packs).
+        T = Context.getPackExpansionType(T, ExpansionInfo());
         if (Name.containsUnexpandedParameterPack() && !D.isEllipsisPostfix())
           S.Diag(D.getEllipsisLoc(),
                  diag::err_pack_expansion_before_declarator_pack)
@@ -4911,13 +4918,13 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S) {
   if (D.isPrototypeContext() && getLangOpts().ObjCAutoRefCount)
     inferARCWriteback(state, T);
 
-  bool AllowDesignator =
+  bool HandleDesignator =
       S &&
       !(S->isFunctionDeclarationScope() &&
         (D.getContext() == Declarator::PrototypeContext ||
          D.getContext() == Declarator::LambdaExprParameterContext));
 
-  return GetFullTypeForDeclarator(state, T, ReturnTypeInfo, AllowDesignator);
+  return GetFullTypeForDeclarator(state, T, ReturnTypeInfo, HandleDesignator);
 }
 
 static void transferARCOwnershipToDeclSpec(Sema &S,
@@ -5034,7 +5041,8 @@ TypeSourceInfo *Sema::GetTypeForDeclaratorCast(Declarator &D, QualType FromTy) {
       transferARCOwnership(state, declSpecTy, ownership);
   }
 
-  return GetFullTypeForDeclarator(state, declSpecTy, ReturnTypeInfo, false);
+  return GetFullTypeForDeclarator(state, declSpecTy, ReturnTypeInfo,
+                                  /*HandleDesignator*/false);
 }
 
 /// Map an AttributedType::Kind to an AttributeList::Kind.
