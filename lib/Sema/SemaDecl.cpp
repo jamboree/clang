@@ -340,6 +340,9 @@ ParsedType Sema::getTypeName(const IdentifierInfo &II, SourceLocation NameLoc,
   switch (Result.getResultKind()) {
   case LookupResult::NotFound:
   case LookupResult::NotFoundInCurrentInstantiation:
+    if (LookupCtx && Name.isTemplatedName() &&
+        SS->getScopeRep()->isValidTemplatedNamePrefix())
+      return ActOnTypenameType(S, SourceLocation(), *SS, II, NameLoc).get();
     if (CorrectedII) {
       TypoCorrection Correction =
           CorrectTypo(Result.getLookupNameInfo(), Kind, S, SS,

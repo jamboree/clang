@@ -9475,6 +9475,10 @@ NamedDecl *Sema::BuildUsingDeclaration(Scope *S, AccessSpecifier AS,
   // invalid).
   if (R.empty() &&
       NameInfo.getName().getNameKind() != DeclarationName::CXXConstructorName) {
+    // If it's unnamed, just build a UsingDecl without UsingShadowDecls.
+    if (NameInfo.getName().isUnnamed())
+      return BuildValid();
+
     // HACK: Work around a bug in libstdc++'s detection of ::gets. Sometimes
     // it will believe that glibc provides a ::gets in cases where it does not,
     // and will try to pull it into namespace std with a using-declaration.

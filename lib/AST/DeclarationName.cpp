@@ -365,6 +365,14 @@ bool DeclarationName::isTemplatedName() const {
              DeclarationNameExtra::CXXTemplatedName;
 }
 
+bool DeclarationName::isUnnamed() const {
+  if (isEmpty())
+    return true;
+  if (auto *Subst = getAsSubstTemplateDeclNameParmName())
+    return Subst->getReplacementName().isEmpty();
+  return false;
+}
+
 bool DeclarationName::containsUnexpandedParameterPack() const {
   if (TemplateDeclNameParmDecl *TDP = getCXXTemplatedNameParmDecl()) {
     return TDP->isParameterPack();

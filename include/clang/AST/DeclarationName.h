@@ -225,6 +225,10 @@ public:
   /// isDependentName() == true).
   bool isTemplatedName() const;
 
+  /// \brief Evaluates true when this declaration is unnamed. The difference
+  /// from isEmpty() is that it also takes substituted name into account.
+  bool isUnnamed() const;
+
   /// \brief Determines whether this declaration name contains an
   /// unexpanded parameter pack when it refers to a template declname parameter.
   bool containsUnexpandedParameterPack() const;
