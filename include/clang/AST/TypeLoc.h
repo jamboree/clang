@@ -1950,6 +1950,10 @@ public:
     this->getLocalData()->NameLoc = Loc;
   }
 
+  DeclarationNameInfo getNameInfo() const {
+    return DeclarationNameInfo(getTypePtr()->getDeclName(), getNameLoc());
+  }
+
   SourceRange getLocalSourceRange() const {
     if (getElaboratedKeywordLoc().isValid())
       return SourceRange(getElaboratedKeywordLoc(), getNameLoc());

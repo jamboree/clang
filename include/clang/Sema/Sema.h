@@ -5147,6 +5147,8 @@ public:
   DeclContext *computeDeclContext(const CXXScopeSpec &SS,
                                   bool EnteringContext = false);
   bool isDependentScopeSpecifier(const CXXScopeSpec &SS);
+  static bool canFormDependantName(const CXXScopeSpec &SS,
+                                   DeclarationName Name);
   CXXRecordDecl *getCurrentInstantiationOf(NestedNameSpecifier *NNS);
 
   /// \brief The parser has parsed a global nested-name-specifier '::'.

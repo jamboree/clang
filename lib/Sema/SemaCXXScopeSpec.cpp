@@ -172,6 +172,15 @@ bool Sema::isDependentScopeSpecifier(const CXXScopeSpec &SS) {
   return SS.getScopeRep()->isDependent();
 }
 
+bool Sema::canFormDependantName(const CXXScopeSpec &SS, DeclarationName Name) {
+  if (!SS.isSet() || SS.isInvalid())
+    return false;
+
+  auto *NNS = SS.getScopeRep();
+  return NNS->isDependent() ||
+         (Name.isTemplatedName() && NNS->isValidTemplatedNamePrefix());
+}
+
 /// \brief If the given nested name specifier refers to the current
 /// instantiation, return the declaration that corresponds to that
 /// current instantiation (C++0x [temp.dep.type]p1).
@@ -571,8 +580,7 @@ bool Sema::BuildCXXNestedNameSpecifier(Scope *S, NestedNameSpecInfo &IdInfo,
             !(LookupCtx && LookupCtx->isRecord() &&
               (!cast<CXXRecordDecl>(LookupCtx)->hasDefinition() ||
                !cast<CXXRecordDecl>(LookupCtx)->hasAnyDependentBases())) ||
-        (Name.isTemplatedName() && SS.getScopeRep() &&
-         SS.getScopeRep()->isValidTemplatedNamePrefix())) {
+        canFormDependantName(SS, Name)) {
       // Don't speculate if we're just trying to improve error recovery.
       if (ErrorRecoveryLookup)
         return true;

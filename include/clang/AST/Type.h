@@ -4667,11 +4667,12 @@ class DependentNameType : public TypeWithKeyword, public llvm::FoldingSetNode {
 
   DependentNameType(ElaboratedTypeKeyword Keyword, NestedNameSpecifier *NNS,
                     DeclarationName Name, QualType CanonType)
-    : TypeWithKeyword(Keyword, DependentName, CanonType, /*Dependent=*/true,
-                      /*InstantiationDependent=*/true,
-                      /*VariablyModified=*/false,
-                      NNS->containsUnexpandedParameterPack()),
-      NNS(NNS), Name(Name) {}
+      : TypeWithKeyword(Keyword, DependentName, CanonType, /*Dependent=*/true,
+                        /*InstantiationDependent=*/true,
+                        /*VariablyModified=*/false,
+                        NNS->containsUnexpandedParameterPack() ||
+                            Name.containsUnexpandedParameterPack()),
+        NNS(NNS), Name(Name) {}
 
   friend class ASTContext;  // ASTContext creates these
 

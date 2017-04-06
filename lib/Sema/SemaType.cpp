@@ -4919,10 +4919,10 @@ TypeSourceInfo *Sema::GetTypeForDeclarator(Declarator &D, Scope *S) {
     inferARCWriteback(state, T);
 
   bool HandleDesignator =
-      S &&
-      !(S->isFunctionDeclarationScope() &&
-        (D.getContext() == Declarator::PrototypeContext ||
-         D.getContext() == Declarator::LambdaExprParameterContext));
+      D.mayHaveDesignatorInType() ||
+      (S && !S->isFunctionDeclarationScope() &&
+       (D.getContext() == Declarator::PrototypeContext ||
+        D.getContext() == Declarator::LambdaExprParameterContext));
 
   return GetFullTypeForDeclarator(state, T, ReturnTypeInfo, HandleDesignator);
 }

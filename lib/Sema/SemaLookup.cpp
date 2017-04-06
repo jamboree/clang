@@ -1727,7 +1727,7 @@ NamedDecl *LookupResult::getAcceptableDeclSlow(NamedDecl *D) const {
 /// @returns \c true if lookup succeeded and false otherwise.
 bool Sema::LookupName(LookupResult &R, Scope *S, bool AllowBuiltinCreation) {
   DeclarationName Name = R.getLookupName();
-  if (!Name) return false;
+  if (Name.isUnnamed()) return false;
 
   LookupNameKind NameKind = R.getLookupKind();
 
@@ -2011,7 +2011,7 @@ bool Sema::LookupQualifiedName(LookupResult &R, DeclContext *LookupCtx,
                                bool InUnqualifiedLookup) {
   assert(LookupCtx && "Sema::LookupQualifiedName requires a lookup context");
 
-  if (!R.getLookupName())
+  if (R.getLookupName().isUnnamed())
     return false;
 
   // Make sure that the declaration context is complete.

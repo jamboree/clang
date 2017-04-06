@@ -262,6 +262,29 @@ ParsedType Sema::getTypeName(const IdentifierInfo &II, SourceLocation NameLoc,
   // Determine where we will perform name lookup.
   DeclContext *LookupCtx = nullptr;
   DeclarationName Name = getPossiblyTemplatedName(&II);
+  auto HandleDependentName = [&]() -> ParsedType {
+    // C++ [temp.res]p3:
+    //   A qualified-id that refers to a type and in which the
+    //   nested-name-specifier depends on a template-parameter (14.6.2)
+    //   shall be prefixed by the keyword typename to indicate that the
+    //   qualified-id denotes a type, forming an
+    //   elaborated-type-specifier (7.1.5.3).
+    //
+    // We therefore do not perform any name lookup if the result would
+    // refer to a member of an unknown specialization.
+    if (!isClassName && !IsCtorOrDtorName)
+      return nullptr;
+
+    // We know from the grammar that this name refers to a type,
+    // so build a dependent node to describe the type.
+    if (WantNontrivialTypeSourceInfo)
+      return ActOnTypenameType(S, SourceLocation(), *SS, II, NameLoc).get();
+
+    NestedNameSpecifierLoc QualifierLoc = SS->getWithLocInContext(Context);
+    QualType T = CheckTypenameType(ETK_None, SourceLocation(), QualifierLoc,
+                                   Name, NameLoc);
+    return ParsedType::make(T);
+  };
   if (ObjectTypePtr) {
     QualType ObjectType = ObjectTypePtr.get();
     if (ObjectType->isRecordType())
@@ -270,29 +293,8 @@ ParsedType Sema::getTypeName(const IdentifierInfo &II, SourceLocation NameLoc,
     LookupCtx = computeDeclContext(*SS, false);
 
     if (!LookupCtx) {
-      if (isDependentScopeSpecifier(*SS)) {
-        // C++ [temp.res]p3:
-        //   A qualified-id that refers to a type and in which the
-        //   nested-name-specifier depends on a template-parameter (14.6.2)
-        //   shall be prefixed by the keyword typename to indicate that the
-        //   qualified-id denotes a type, forming an
-        //   elaborated-type-specifier (7.1.5.3).
-        //
-        // We therefore do not perform any name lookup if the result would
-        // refer to a member of an unknown specialization.
-        if (!isClassName && !IsCtorOrDtorName)
-          return nullptr;
-
-        // We know from the grammar that this name refers to a type,
-        // so build a dependent node to describe the type.
-        if (WantNontrivialTypeSourceInfo)
-          return ActOnTypenameType(S, SourceLocation(), *SS, II, NameLoc).get();
-
-        NestedNameSpecifierLoc QualifierLoc = SS->getWithLocInContext(Context);
-        QualType T = CheckTypenameType(ETK_None, SourceLocation(), QualifierLoc,
-                                       Name, NameLoc);
-        return ParsedType::make(T);
-      }
+      if (isDependentScopeSpecifier(*SS))
+        return HandleDependentName();
 
       return nullptr;
     }
@@ -340,9 +342,8 @@ ParsedType Sema::getTypeName(const IdentifierInfo &II, SourceLocation NameLoc,
   switch (Result.getResultKind()) {
   case LookupResult::NotFound:
   case LookupResult::NotFoundInCurrentInstantiation:
-    if (LookupCtx && Name.isTemplatedName() &&
-        SS->getScopeRep()->isValidTemplatedNamePrefix())
-      return ActOnTypenameType(S, SourceLocation(), *SS, II, NameLoc).get();
+    if (LookupCtx && canFormDependantName(*SS, Name))
+      return HandleDependentName();
     if (CorrectedII) {
       TypoCorrection Correction =
           CorrectTypo(Result.getLookupNameInfo(), Kind, S, SS,
@@ -13046,8 +13047,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
       // this as a dependent elaborated-type-specifier.
       // But this only makes any sense for reference-like lookups.
       if ((Previous.wasNotFoundInCurrentInstantiation() ||
-           (Name.isTemplatedName() &&
-            SS.getScopeRep()->isValidTemplatedNamePrefix())) &&
+           canFormDependantName(SS, Name)) &&
           (TUK == TUK_Reference || TUK == TUK_Friend)) {
         IsDependent = true;
         return nullptr;

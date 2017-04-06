@@ -1073,8 +1073,10 @@ DEF_TRAVERSE_TYPE(ElaboratedType, {
   TRY_TO(TraverseType(T->getNamedType()));
 })
 
-DEF_TRAVERSE_TYPE(DependentNameType,
-                  { TRY_TO(TraverseNestedNameSpecifier(T->getQualifier())); })
+DEF_TRAVERSE_TYPE(DependentNameType, {
+  TRY_TO(TraverseNestedNameSpecifier(T->getQualifier()));
+  TRY_TO(TraverseDeclarationName(T->getDeclName()));
+})
 
 DEF_TRAVERSE_TYPE(DependentTemplateSpecializationType, {
   TRY_TO(TraverseNestedNameSpecifier(T->getQualifier()));
@@ -1311,6 +1313,7 @@ DEF_TRAVERSE_TYPELOC(ElaboratedType, {
 
 DEF_TRAVERSE_TYPELOC(DependentNameType, {
   TRY_TO(TraverseNestedNameSpecifierLoc(TL.getQualifierLoc()));
+  TRY_TO(TraverseDeclarationNameInfo(TL.getNameInfo()));
 })
 
 DEF_TRAVERSE_TYPELOC(DependentTemplateSpecializationType, {
@@ -2498,6 +2501,7 @@ DEF_TRAVERSE_STMT(ConvertVectorExpr, {})
 DEF_TRAVERSE_STMT(StmtExpr, {})
 DEF_TRAVERSE_STMT(UnresolvedLookupExpr, {
   TRY_TO(TraverseNestedNameSpecifierLoc(S->getQualifierLoc()));
+  TRY_TO(TraverseDeclarationNameInfo(S->getNameInfo()));
   if (S->hasExplicitTemplateArgs()) {
     TRY_TO(TraverseTemplateArgumentLocsHelper(S->getTemplateArgs(),
                                               S->getNumTemplateArgs()));
@@ -2506,6 +2510,7 @@ DEF_TRAVERSE_STMT(UnresolvedLookupExpr, {
 
 DEF_TRAVERSE_STMT(UnresolvedMemberExpr, {
   TRY_TO(TraverseNestedNameSpecifierLoc(S->getQualifierLoc()));
+  TRY_TO(TraverseDeclarationNameInfo(S->getNameInfo()));
   if (S->hasExplicitTemplateArgs()) {
     TRY_TO(TraverseTemplateArgumentLocsHelper(S->getTemplateArgs(),
                                               S->getNumTemplateArgs()));

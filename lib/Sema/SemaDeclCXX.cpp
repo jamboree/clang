@@ -3781,11 +3781,12 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
       // We don't want access-control diagnostics here.
       R.suppressDiagnostics();
 
-      if (SS.isSet() && isDependentScopeSpecifier(SS)) {
+      if (canFormDependantName(SS, MemberOrBase)) {
         bool NotUnknownSpecialization = false;
         DeclContext *DC = computeDeclContext(SS, false);
-        if (CXXRecordDecl *Record = dyn_cast_or_null<CXXRecordDecl>(DC)) 
-          NotUnknownSpecialization = !Record->hasAnyDependentBases();
+        if (CXXRecordDecl *Record = dyn_cast_or_null<CXXRecordDecl>(DC))
+          NotUnknownSpecialization = !Record->hasAnyDependentBases() &&
+                                     !MemberOrBase.isTemplatedName();
 
         if (!NotUnknownSpecialization) {
           // When the scope specifier can refer to a member of an unknown
@@ -9417,8 +9418,7 @@ NamedDecl *Sema::BuildUsingDeclaration(Scope *S, AccessSpecifier AS,
   NamedDecl *D;
   NestedNameSpecifierLoc QualifierLoc = SS.getWithLocInContext(Context);
   if (!LookupContext || EllipsisLoc.isValid() ||
-       (NameInfo.getName().isDependentName() &&
-        SS.getScopeRep()->isValidTemplatedNamePrefix())) {
+      canFormDependantName(SS, NameInfo.getName())) {
     if (HasTypenameKeyword) {
       // FIXME: not all declaration name kinds are legal here
       D = UnresolvedUsingTypenameDecl::Create(Context, CurContext,

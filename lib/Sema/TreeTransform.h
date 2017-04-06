@@ -11176,9 +11176,10 @@ TreeTransform<Derived>::TransformUnresolvedMemberExpr(UnresolvedMemberExpr *Old)
   }
 
   SourceLocation TemplateKWLoc = Old->getTemplateKeywordLoc();
+  DeclarationNameInfo NameInfo(
+      getDerived().TransformDeclarationNameInfo(Old->getMemberNameInfo()));
 
-  LookupResult R(SemaRef, Old->getMemberNameInfo(),
-                 Sema::LookupOrdinaryName);
+  LookupResult R(SemaRef, NameInfo, Sema::LookupOrdinaryName);
 
   // Transform the declaration set.
   if (TransformOverloadExprDecls(Old, /*RequiresADL*/false, R))
