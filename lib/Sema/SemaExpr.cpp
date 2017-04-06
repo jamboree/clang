@@ -2206,7 +2206,7 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
     if (D) R.addDecl(D);
   }
 
-  if (R.empty() && canFormDependantName(SS, Name))
+  if (R.empty() && canFormDependentName(SS, Name))
     return ActOnDependentIdExpression(SS, TemplateKWLoc, NameInfo,
                                       IsAddressOfOperand, TemplateArgs);
 

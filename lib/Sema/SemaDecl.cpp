@@ -342,7 +342,7 @@ ParsedType Sema::getTypeName(const IdentifierInfo &II, SourceLocation NameLoc,
   switch (Result.getResultKind()) {
   case LookupResult::NotFound:
   case LookupResult::NotFoundInCurrentInstantiation:
-    if (LookupCtx && canFormDependantName(*SS, Name))
+    if (LookupCtx && canFormDependentName(*SS, Name))
       return HandleDependentName();
     if (CorrectedII) {
       TypoCorrection Correction =
@@ -13047,7 +13047,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
       // this as a dependent elaborated-type-specifier.
       // But this only makes any sense for reference-like lookups.
       if ((Previous.wasNotFoundInCurrentInstantiation() ||
-           canFormDependantName(SS, Name)) &&
+           canFormDependentName(SS, Name)) &&
           (TUK == TUK_Reference || TUK == TUK_Friend)) {
         IsDependent = true;
         return nullptr;

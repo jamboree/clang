@@ -5147,7 +5147,7 @@ public:
   DeclContext *computeDeclContext(const CXXScopeSpec &SS,
                                   bool EnteringContext = false);
   bool isDependentScopeSpecifier(const CXXScopeSpec &SS);
-  static bool canFormDependantName(const CXXScopeSpec &SS,
+  static bool canFormDependentName(const CXXScopeSpec &SS,
                                    DeclarationName Name);
   CXXRecordDecl *getCurrentInstantiationOf(NestedNameSpecifier *NNS);
 

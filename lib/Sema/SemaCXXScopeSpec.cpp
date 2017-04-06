@@ -172,7 +172,7 @@ bool Sema::isDependentScopeSpecifier(const CXXScopeSpec &SS) {
   return SS.getScopeRep()->isDependent();
 }
 
-bool Sema::canFormDependantName(const CXXScopeSpec &SS, DeclarationName Name) {
+bool Sema::canFormDependentName(const CXXScopeSpec &SS, DeclarationName Name) {
   if (!SS.isSet() || SS.isInvalid())
     return false;
 
@@ -580,7 +580,7 @@ bool Sema::BuildCXXNestedNameSpecifier(Scope *S, NestedNameSpecInfo &IdInfo,
             !(LookupCtx && LookupCtx->isRecord() &&
               (!cast<CXXRecordDecl>(LookupCtx)->hasDefinition() ||
                !cast<CXXRecordDecl>(LookupCtx)->hasAnyDependentBases())) ||
-        canFormDependantName(SS, Name)) {
+        canFormDependentName(SS, Name)) {
       // Don't speculate if we're just trying to improve error recovery.
       if (ErrorRecoveryLookup)
         return true;

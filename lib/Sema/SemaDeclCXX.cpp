@@ -3781,7 +3781,7 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
       // We don't want access-control diagnostics here.
       R.suppressDiagnostics();
 
-      if (canFormDependantName(SS, MemberOrBase)) {
+      if (canFormDependentName(SS, MemberOrBase)) {
         bool NotUnknownSpecialization = false;
         DeclContext *DC = computeDeclContext(SS, false);
         if (CXXRecordDecl *Record = dyn_cast_or_null<CXXRecordDecl>(DC))
@@ -9418,7 +9418,7 @@ NamedDecl *Sema::BuildUsingDeclaration(Scope *S, AccessSpecifier AS,
   NamedDecl *D;
   NestedNameSpecifierLoc QualifierLoc = SS.getWithLocInContext(Context);
   if (!LookupContext || EllipsisLoc.isValid() ||
-      canFormDependantName(SS, NameInfo.getName())) {
+      canFormDependentName(SS, NameInfo.getName())) {
     if (HasTypenameKeyword) {
       // FIXME: not all declaration name kinds are legal here
       D = UnresolvedUsingTypenameDecl::Create(Context, CurContext,
