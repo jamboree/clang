@@ -4815,7 +4815,9 @@ static bool isInstantiationOfUnresolvedUsingDecl(T *Pattern, Decl *Other,
   } else {
     return false;
   }
-  return Pattern->isPackExpansion() == OtherIsPackExpansion &&
+  // Jamboree: Remove the restriction for now as it prevents correct mapping for
+  // expanded pack elements.
+  return /*Pattern->isPackExpansion() == OtherIsPackExpansion &&*/
          declaresSameEntity(OtherFrom, Pattern);
 }
 
