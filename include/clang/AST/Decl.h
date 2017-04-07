@@ -858,6 +858,10 @@ protected:
     /// function parameter scope in which it was declared.
     unsigned ParameterIndex : NumParameterIndexBits;
 
+    /// Whether this parameter is a pack expansion (e.g. `T t...`).
+    unsigned IsPackExpansion : 1;
+
+    /// Whether this parameter is designatable (e.g. `T.t`).
     unsigned IsDesignatable : 1;
   };
 
@@ -1546,6 +1550,9 @@ public:
   /// \brief Determine whether this parameter is actually a function
   /// parameter pack.
   bool isParameterPack() const;
+
+  bool isPackExpansion() const { return ParmVarDeclBits.IsPackExpansion; }
+  void setPackExpansion(bool value) { ParmVarDeclBits.IsPackExpansion = value; }
 
   /// setOwningFunction - Sets the function declaration that owns this
   /// ParmVarDecl. Since ParmVarDecls are often created before the

@@ -202,6 +202,8 @@ void DeclarationName::print(raw_ostream &OS, const PrintingPolicy &Policy) {
   case DeclarationName::Identifier:
     if (const IdentifierInfo *II = N.getAsIdentifierInfo())
       OS << II->getName();
+    else
+      OS << '?';
     return;
 
   case DeclarationName::ObjCZeroArgSelector:

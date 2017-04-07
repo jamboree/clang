@@ -11484,6 +11484,9 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
       New->setDesignatable(true);
   }
 
+  if (D.isEllipsisPostfix())
+    New->setPackExpansion(true);
+
   // Add the parameter declaration into this scope.
   S->AddDecl(New);
   if (Name)

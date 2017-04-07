@@ -4836,11 +4836,10 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
              diag::err_function_parameter_pack_without_parameter_packs)
           << T <<  D.getSourceRange();
         D.setEllipsisLoc(SourceLocation());
-      } else {
-        // Make the type a PackExpansion anyway (even in case it doesn't have
-        // unexpanded parameter packs).
-        T = Context.getPackExpansionType(T, ExpansionInfo());
-        if (Name.containsUnexpandedParameterPack() && !D.isEllipsisPostfix())
+      } else if (!D.isEllipsisPostfix()) {
+        if (T->containsUnexpandedParameterPack())
+          T = Context.getPackExpansionType(T, ExpansionInfo());
+        if (Name.containsUnexpandedParameterPack())
           S.Diag(D.getEllipsisLoc(),
                  diag::err_pack_expansion_before_declarator_pack)
               << D.getSourceRange();

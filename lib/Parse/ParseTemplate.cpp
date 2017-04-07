@@ -787,7 +787,9 @@ void Parser::DiagnoseMisplacedEllipsisInDeclarator(SourceLocation EllipsisLoc,
   assert(EllipsisLoc.isValid());
   bool AlreadyHasEllipsis = D.getEllipsisLoc().isValid();
   if (!AlreadyHasEllipsis)
-    D.setEllipsisLoc(EllipsisLoc);
+      D.setEllipsisLoc(EllipsisLoc);
+  else
+    D.setEllipsisPostfix(false);
   DiagnoseMisplacedEllipsis(EllipsisLoc, D.getIdentifierLoc(),
                             AlreadyHasEllipsis, D.hasName());
 }
