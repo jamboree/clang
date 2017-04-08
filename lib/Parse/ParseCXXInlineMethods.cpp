@@ -1235,6 +1235,10 @@ bool Parser::ConsumeAndStoreInitializer(CachedTokens &Toks,
       Toks.push_back(Tok);
       ConsumeStringToken();
       break;
+    case tok::ellipsis:
+      if (CIK == CIK_DefaultArgument)
+        return true; // End of the default argument.
+      goto consume_token;
     case tok::semi:
       if (CIK == CIK_DefaultInitializer)
         return true; // End of the default initializer.

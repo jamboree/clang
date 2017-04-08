@@ -904,6 +904,9 @@ public:
   /// \brief Whether this declaration is a parameter pack.
   bool isParameterPack() const;
 
+  /// \brief Whether this declaration is a pack expansion.
+  bool isPackExpansion() const;
+
   /// \brief returns true if this declaration is a template
   bool isTemplateDecl() const;
 

@@ -4578,6 +4578,11 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
             Param->setType(ParamTy);
           }
 
+          // For a param decl expansion `T t...`, its type is `T` not `T...`,
+          // we have to make it a PackExpansionType for function prototypes.
+          if (Param->isPackExpansion())
+            ParamTy = Context.getPackExpansionType(ParamTy, ExpansionInfo());
+
           ParamTys.push_back(ParamTy);
         }
 
@@ -4836,7 +4841,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
              diag::err_function_parameter_pack_without_parameter_packs)
           << T <<  D.getSourceRange();
         D.setEllipsisLoc(SourceLocation());
-      } else if (!D.isEllipsisPostfix()) {
+      } else {
         if (T->containsUnexpandedParameterPack())
           T = Context.getPackExpansionType(T, ExpansionInfo());
         if (Name.containsUnexpandedParameterPack())

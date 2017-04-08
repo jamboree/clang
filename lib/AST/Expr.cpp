@@ -337,8 +337,8 @@ void DeclRefExpr::computeDependence(const ASTContext &Ctx) {
   ExprBits.ValueDependent |= ValueDependent;
   ExprBits.InstantiationDependent |= InstantiationDependent;
 
-  // Is the declaration a parameter pack?
-  if (getDecl()->isParameterPack())
+  // Is the declaration a parameter pack or expansion?
+  if (getDecl()->isParameterPack() || getDecl()->isPackExpansion())
     ExprBits.ContainsUnexpandedParameterPack = true;
 }
 

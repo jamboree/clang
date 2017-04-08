@@ -71,8 +71,9 @@ namespace {
     /// \brief Record occurrences of function and non-type template
     /// parameter packs in an expression.
     bool VisitDeclRefExpr(DeclRefExpr *E) {
-      if (E->getDecl()->isParameterPack())
-        Unexpanded.push_back(std::make_pair(E->getDecl(), E->getLocation()));
+      auto *D = E->getDecl();
+      if (D->isParameterPack() || D->isPackExpansion())
+        Unexpanded.push_back(std::make_pair(D, E->getLocation()));
       
       return true;
     }

@@ -5637,16 +5637,6 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
   assert(D.isPastIdentifier() &&
          "Haven't past the location of the identifier yet?");
 
-  // Parse posfix ellipsis for unexpanded templated name.
-  if (Tok.is(tok::ellipsis) && D.hasName() && !D.hasEllipsis() &&
-      !D.mayHaveDesignatorInType() &&
-      Actions.getPossiblyTemplatedName(D.getIdentifier())
-          .containsUnexpandedParameterPack()) {
-    SourceLocation EllipsisLoc = ConsumeToken();
-    D.setEllipsisLoc(EllipsisLoc);
-    D.setEllipsisPostfix(true);
-  }
-
   // Don't parse attributes unless we have parsed an unparenthesized name.
   if (D.hasName() && !D.getNumTypeObjects())
     MaybeParseCXX11Attributes(D);
@@ -6336,8 +6326,8 @@ void Parser::ParseParameterDeclarationClause(
       }
 
       if (IsNameParameterPack) {
-        if (ParmDeclarator.hasEllipsis()) {
-          // FIXME: make Param a PackExpansionDecl?
+        if (TryConsumeToken(tok::ellipsis)) {
+          cast<ParmVarDecl>(Param)->setPackExpansion(true);
         } else {
           UnexpandedParameterPack Pack(TDP, ParmDeclarator.getIdentifierLoc());
           Actions.DiagnoseUnexpandedParameterPacks(

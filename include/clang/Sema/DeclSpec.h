@@ -1792,9 +1792,6 @@ private:
   /// \brief Is this Declarator a redeclaration?
   unsigned Redeclaration : 1;
 
-  /// \brief Is the ellipsis postfix?
-  unsigned EllipsisPostfix : 1;
-
   /// \brief true if the declaration is preceded by \c __extension__.
   unsigned Extension : 1;
 
@@ -1844,8 +1841,7 @@ public:
       : DS(ds), Range(ds.getSourceRange()), Context(C),
         InvalidType(DS.getTypeSpecType() == DeclSpec::TST_error),
         GroupingParens(false), FunctionDefinition(FDK_Declaration),
-        Redeclaration(false), EllipsisPostfix(false),
-        Extension(false), ObjCIvar(false),
+        Redeclaration(false), Extension(false), ObjCIvar(false),
         ObjCWeakProperty(false), InlineStorageUsed(false),
         Attrs(ds.getAttributePool().getFactory()), AsmLabel(nullptr) {}
 
@@ -2503,9 +2499,6 @@ public:
 
   void setRedeclaration(bool Val) { Redeclaration = Val; }
   bool isRedeclaration() const { return Redeclaration; }
-
-  void setEllipsisPostfix(bool Val) { EllipsisPostfix = Val; }
-  bool isEllipsisPostfix() const { return EllipsisPostfix; }
 };
 
 /// \brief This little struct is used to capture information about

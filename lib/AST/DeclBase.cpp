@@ -197,6 +197,16 @@ bool Decl::isParameterPack() const {
   return isTemplateParameterPack();
 }
 
+bool Decl::isPackExpansion() const {
+  if (const auto *Parm = dyn_cast<ParmVarDecl>(this))
+    return Parm->isPackExpansion();
+  if (const auto *Parm = dyn_cast<UnresolvedUsingValueDecl>(this))
+    return Parm->isPackExpansion();
+  if (const auto *Parm = dyn_cast<UnresolvedUsingTypenameDecl>(this))
+    return Parm->isPackExpansion();
+  return false;
+}
+
 FunctionDecl *Decl::getAsFunction() {
   if (FunctionDecl *FD = dyn_cast<FunctionDecl>(this))
     return FD;
