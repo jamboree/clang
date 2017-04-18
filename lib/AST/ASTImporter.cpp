@@ -2962,7 +2962,7 @@ Decl *ASTNodeImporter::VisitEnumDecl(EnumDecl *D) {
   if (!DC->isFunctionOrMethod() && SearchName) {
     SmallVector<NamedDecl *, 4> ConflictingDecls;
     SmallVector<NamedDecl *, 2> FoundDecls;
-    DC->getRedeclContext()->localUncachedLookup(Name, FoundDecls);
+    DC->getRedeclContext()->localUncachedLookup(SearchName, FoundDecls);
     for (unsigned I = 0, N = FoundDecls.size(); I != N; ++I) {
       if (!FoundDecls[I]->isInIdentifierNamespace(IDNS))
         continue;
@@ -3051,7 +3051,7 @@ Decl *ASTNodeImporter::VisitRecordDecl(RecordDecl *D) {
   if (!DC->isFunctionOrMethod()) {
     SmallVector<NamedDecl *, 4> ConflictingDecls;
     SmallVector<NamedDecl *, 2> FoundDecls;
-    DC->getRedeclContext()->localUncachedLookup(Name, FoundDecls);
+    DC->getRedeclContext()->localUncachedLookup(SearchName, FoundDecls);
     for (unsigned I = 0, N = FoundDecls.size(); I != N; ++I) {
       if (!FoundDecls[I]->isInIdentifierNamespace(IDNS))
         continue;
@@ -6117,7 +6117,7 @@ Expr *ASTNodeImporter::VisitBinaryOperator(BinaryOperator *E) {
                                                       T, E->getValueKind(),
                                                       E->getObjectKind(),
                                            Importer.Import(E->getOperatorLoc()),
-                                                      E->isFPContractable());
+                                                      E->getFPFeatures());
 }
 
 Expr *ASTNodeImporter::VisitConditionalOperator(ConditionalOperator *E) {
@@ -6267,7 +6267,7 @@ Expr *ASTNodeImporter::VisitCompoundAssignOperator(CompoundAssignOperator *E) {
                                                E->getObjectKind(),
                                                CompLHSType, CompResultType,
                                            Importer.Import(E->getOperatorLoc()),
-                                               E->isFPContractable());
+                                               E->getFPFeatures());
 }
 
 bool ASTNodeImporter::ImportCastPath(CastExpr *CE, CXXCastPath &Path) {

@@ -85,6 +85,8 @@ def err_drv_clang_unsupported : Error<
   "the clang compiler does not support '%0'">;
 def err_drv_clang_unsupported_opt_cxx_darwin_i386 : Error<
   "the clang compiler does not support '%0' for C++ on Darwin/i386">;
+def err_drv_clang_unsupported_opt_faltivec : Error<
+  "the clang compiler does not support '%0', %1">;
 def err_drv_command_failed : Error<
   "%0 command failed with exit code %1 (use -v to see invocation)">;
 def err_drv_compilationdatabase : Error<
@@ -92,7 +94,7 @@ def err_drv_compilationdatabase : Error<
 def err_drv_command_signalled : Error<
   "%0 command failed due to signal (use -v to see invocation)">;
 def err_drv_force_crash : Error<
-  "failing because environment variable '%0' is set">;
+  "failing because %select{environment variable 'FORCE_CLANG_DIAGNOSTICS_CRASH' is set|'-gen-reproducer' is used}0">;
 def err_drv_invalid_mfloat_abi : Error<
   "invalid float ABI '%0'">;
 def err_drv_invalid_libcxx_deployment : Error<

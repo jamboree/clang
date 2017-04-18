@@ -6251,7 +6251,7 @@ void test_mm512_stream_si512(__m512i * __P, __m512i __A) {
 
 __m512i test_mm512_stream_load_si512(void *__P) {
   // CHECK-LABEL: @test_mm512_stream_load_si512
-  // CHECK: @llvm.x86.avx512.movntdqa
+  // CHECK: load <8 x i64>, <8 x i64>* %{{.*}}, align 64, !nontemporal
   return _mm512_stream_load_si512(__P); 
 }
 
@@ -7257,6 +7257,18 @@ __m512i test_mm512_maskz_cvtps_epu32 (__mmask16 __U, __m512 __A)
   // CHECK-LABEL: @test_mm512_maskz_cvtps_epu32
   // CHECK: @llvm.x86.avx512.mask.cvtps2udq.512
   return _mm512_maskz_cvtps_epu32( __U, __A);
+}
+
+double test_mm512_cvtsd_f64(__m512d A) {
+  // CHECK-LABEL: test_mm512_cvtsd_f64
+  // CHECK: extractelement <8 x double> %{{.*}}, i32 0
+  return _mm512_cvtsd_f64(A);
+}
+
+float test_mm512_cvtss_f32(__m512 A) {
+  // CHECK-LABEL: test_mm512_cvtss_f32
+  // CHECK: extractelement <16 x float> %{{.*}}, i32 0
+  return _mm512_cvtss_f32(A);
 }
 
 __m512d test_mm512_mask_max_pd (__m512d __W, __mmask8 __U, __m512d __A, __m512d __B)

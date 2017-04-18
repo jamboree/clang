@@ -346,9 +346,6 @@ static void linkXRayRuntimeDeps(const ToolChain &TC, const ArgList &Args,
   CmdArgs.push_back("-lpthread");
   CmdArgs.push_back("-lrt");
   CmdArgs.push_back("-lm");
-  CmdArgs.push_back("-latomic");
-
-  TC.AddCXXStdlibLibArgs(Args, CmdArgs);
 
   if (TC.getTriple().getOS() != llvm::Triple::FreeBSD)
     CmdArgs.push_back("-ldl");
@@ -2176,6 +2173,7 @@ bool Generic_GCC::GCCInstallationDetector::ScanGentooGccConfig(
     SmallVector<StringRef, 2> Lines;
     File.get()->getBuffer().split(Lines, "\n");
     for (StringRef Line : Lines) {
+      Line = Line.trim();
       // CURRENT=triple-version
       if (Line.consume_front("CURRENT=")) {
         const std::pair<StringRef, StringRef> ActiveVersion =

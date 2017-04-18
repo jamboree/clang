@@ -111,6 +111,8 @@ CodeGenModule::CodeGenModule(ASTContext &C, const HeaderSearchOptions &HSO,
     C.getTargetInfo().getMaxPointerWidth());
   Int8PtrTy = Int8Ty->getPointerTo(0);
   Int8PtrPtrTy = Int8PtrTy->getPointerTo(0);
+  AllocaInt8PtrTy = Int8Ty->getPointerTo(
+      M.getDataLayout().getAllocaAddrSpace());
 
   RuntimeCC = getTargetCodeGenInfo().getABIInfo().getRuntimeCC();
   BuiltinCC = getTargetCodeGenInfo().getABIInfo().getBuiltinCC();
@@ -159,12 +161,6 @@ CodeGenModule::CodeGenModule(ASTContext &C, const HeaderSearchOptions &HSO,
   // CoverageMappingModuleGen object.
   if (CodeGenOpts.CoverageMapping)
     CoverageMapping.reset(new CoverageMappingModuleGen(*this, *CoverageInfo));
-
-  // Record mregparm value now so it is visible through rest of codegen.
-  if (Context.getTargetInfo().getTriple().getArch() == llvm::Triple::x86)
-    getModule().addModuleFlag(llvm::Module::Error, "NumRegisterParameters",
-                              CodeGenOpts.NumRegisterParameters);
-
 }
 
 CodeGenModule::~CodeGenModule() {}
@@ -412,8 +408,11 @@ void CodeGenModule::Release() {
   EmitDeferredUnusedCoverageMappings();
   if (CoverageMapping)
     CoverageMapping->emit();
-  if (CodeGenOpts.SanitizeCfiCrossDso)
+  if (CodeGenOpts.SanitizeCfiCrossDso) {
     CodeGenFunction(*this).EmitCfiCheckFail();
+    CodeGenFunction(*this).EmitCfiCheckStub();
+  }
+  emitAtAvailableLinkGuard();
   emitLLVMUsed();
   if (SanStats)
     SanStats->finish();
@@ -423,6 +422,11 @@ void CodeGenModule::Release() {
     EmitModuleLinkOptions();
   }
 
+  // Record mregparm value now so it is visible through rest of codegen.
+  if (Context.getTargetInfo().getTriple().getArch() == llvm::Triple::x86)
+    getModule().addModuleFlag(llvm::Module::Error, "NumRegisterParameters",
+                              CodeGenOpts.NumRegisterParameters);
+  
   if (CodeGenOpts.DwarfVersion) {
     // We actually want the latest version when there are conflicts.
     // We can change from Warning to Latest if such mode is supported.
@@ -840,7 +844,7 @@ void CodeGenModule::SetLLVMFunctionAttributes(const Decl *D,
   AttributeListType AttributeList;
   ConstructAttributeList(F->getName(), Info, D, AttributeList, CallingConv,
                          false);
-  F->setAttributes(llvm::AttributeSet::get(getLLVMContext(), AttributeList));
+  F->setAttributes(llvm::AttributeList::get(getLLVMContext(), AttributeList));
   F->setCallingConv(static_cast<llvm::CallingConv::ID>(CallingConv));
 }
 
@@ -889,10 +893,10 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
         CodeGenOpts.getInlining() == CodeGenOptions::OnlyAlwaysInlining)
       B.addAttribute(llvm::Attribute::NoInline);
 
-    F->addAttributes(llvm::AttributeSet::FunctionIndex,
-                     llvm::AttributeSet::get(
-                         F->getContext(),
-                         llvm::AttributeSet::FunctionIndex, B));
+    F->addAttributes(
+        llvm::AttributeList::FunctionIndex,
+        llvm::AttributeList::get(F->getContext(),
+                                 llvm::AttributeList::FunctionIndex, B));
     return;
   }
 
@@ -958,9 +962,9 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
       B.addAttribute(llvm::Attribute::MinSize);
   }
 
-  F->addAttributes(llvm::AttributeSet::FunctionIndex,
-                   llvm::AttributeSet::get(
-                       F->getContext(), llvm::AttributeSet::FunctionIndex, B));
+  F->addAttributes(llvm::AttributeList::FunctionIndex,
+                   llvm::AttributeList::get(
+                       F->getContext(), llvm::AttributeList::FunctionIndex, B));
 
   unsigned alignment = D->getMaxAlignment() / Context.getCharWidth();
   if (alignment)
@@ -1113,7 +1117,7 @@ void CodeGenModule::SetFunctionAttributes(GlobalDecl GD, llvm::Function *F,
   if (FD->isReplaceableGlobalAllocationFunction()) {
     // A replaceable global allocation function does not act like a builtin by
     // default, only if it is invoked by a new-expression or delete-expression.
-    F->addAttribute(llvm::AttributeSet::FunctionIndex,
+    F->addAttribute(llvm::AttributeList::FunctionIndex,
                     llvm::Attribute::NoBuiltin);
 
     // A sane operator new returns a non-aliasing pointer.
@@ -1122,7 +1126,7 @@ void CodeGenModule::SetFunctionAttributes(GlobalDecl GD, llvm::Function *F,
     auto Kind = FD->getDeclName().getCXXOverloadedOperator();
     if (getCodeGenOpts().AssumeSaneOperatorNew &&
         (Kind == OO_New || Kind == OO_Array_New))
-      F->addAttribute(llvm::AttributeSet::ReturnIndex,
+      F->addAttribute(llvm::AttributeList::ReturnIndex,
                       llvm::Attribute::NoAlias);
   }
 
@@ -1486,6 +1490,30 @@ bool CodeGenModule::isInSanitizerBlacklist(llvm::GlobalVariable *GV,
     }
   }
   return false;
+}
+
+bool CodeGenModule::imbueXRayAttrs(llvm::Function *Fn, SourceLocation Loc,
+                                   StringRef Category) const {
+  if (!LangOpts.XRayInstrument)
+    return false;
+  const auto &XRayFilter = getContext().getXRayFilter();
+  using ImbueAttr = XRayFunctionFilter::ImbueAttribute;
+  auto Attr = XRayFunctionFilter::ImbueAttribute::NONE;
+  if (Loc.isValid())
+    Attr = XRayFilter.shouldImbueLocation(Loc, Category);
+  if (Attr == ImbueAttr::NONE)
+    Attr = XRayFilter.shouldImbueFunction(Fn->getName());
+  switch (Attr) {
+  case ImbueAttr::NONE:
+    return false;
+  case ImbueAttr::ALWAYS:
+    Fn->addFnAttr("function-instrument", "xray-always");
+    break;
+  case ImbueAttr::NEVER:
+    Fn->addFnAttr("function-instrument", "xray-never");
+    break;
+  }
+  return true;
 }
 
 bool CodeGenModule::MustBeEmitted(const ValueDecl *Global) {
@@ -1910,13 +1938,10 @@ static void ReplaceUsesOfNonProtoTypeWithRealFunction(llvm::GlobalValue *Old,
 ///
 /// If D is non-null, it specifies a decl that correspond to this.  This is used
 /// to set the attributes on the function when it is first created.
-llvm::Constant *
-CodeGenModule::GetOrCreateLLVMFunction(StringRef MangledName,
-                                       llvm::Type *Ty,
-                                       GlobalDecl GD, bool ForVTable,
-                                       bool DontDefer, bool IsThunk,
-                                       llvm::AttributeSet ExtraAttrs,
-                                       ForDefinition_t IsForDefinition) {
+llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
+    StringRef MangledName, llvm::Type *Ty, GlobalDecl GD, bool ForVTable,
+    bool DontDefer, bool IsThunk, llvm::AttributeList ExtraAttrs,
+    ForDefinition_t IsForDefinition) {
   const Decl *D = GD.getDecl();
 
   // Lookup the entry, lazily creating it if necessary.
@@ -2006,12 +2031,11 @@ CodeGenModule::GetOrCreateLLVMFunction(StringRef MangledName,
   assert(F->getName() == MangledName && "name was uniqued!");
   if (D)
     SetFunctionAttributes(GD, F, IsIncompleteFunction, IsThunk);
-  if (ExtraAttrs.hasAttributes(llvm::AttributeSet::FunctionIndex)) {
-    llvm::AttrBuilder B(ExtraAttrs, llvm::AttributeSet::FunctionIndex);
-    F->addAttributes(llvm::AttributeSet::FunctionIndex,
-                     llvm::AttributeSet::get(VMContext,
-                                             llvm::AttributeSet::FunctionIndex,
-                                             B));
+  if (ExtraAttrs.hasAttributes(llvm::AttributeList::FunctionIndex)) {
+    llvm::AttrBuilder B(ExtraAttrs, llvm::AttributeList::FunctionIndex);
+    F->addAttributes(llvm::AttributeList::FunctionIndex,
+                     llvm::AttributeList::get(
+                         VMContext, llvm::AttributeList::FunctionIndex, B));
   }
 
   if (!DontDefer) {
@@ -2086,7 +2110,7 @@ llvm::Constant *CodeGenModule::GetAddrOfFunction(GlobalDecl GD,
 
   StringRef MangledName = getMangledName(GD);
   return GetOrCreateLLVMFunction(MangledName, Ty, GD, ForVTable, DontDefer,
-                                 /*IsThunk=*/false, llvm::AttributeSet(),
+                                 /*IsThunk=*/false, llvm::AttributeList(),
                                  IsForDefinition);
 }
 
@@ -2132,7 +2156,7 @@ GetRuntimeFunctionDecl(ASTContext &C, StringRef Name) {
 /// type and name.
 llvm::Constant *
 CodeGenModule::CreateRuntimeFunction(llvm::FunctionType *FTy, StringRef Name,
-                                     llvm::AttributeSet ExtraAttrs,
+                                     llvm::AttributeList ExtraAttrs,
                                      bool Local) {
   llvm::Constant *C =
       GetOrCreateLLVMFunction(Name, FTy, GlobalDecl(), /*ForVTable=*/false,
@@ -2160,9 +2184,8 @@ CodeGenModule::CreateRuntimeFunction(llvm::FunctionType *FTy, StringRef Name,
 /// CreateBuiltinFunction - Create a new builtin function with the specified
 /// type and name.
 llvm::Constant *
-CodeGenModule::CreateBuiltinFunction(llvm::FunctionType *FTy,
-                                     StringRef Name,
-                                     llvm::AttributeSet ExtraAttrs) {
+CodeGenModule::CreateBuiltinFunction(llvm::FunctionType *FTy, StringRef Name,
+                                     llvm::AttributeList ExtraAttrs) {
   llvm::Constant *C =
       GetOrCreateLLVMFunction(Name, FTy, GlobalDecl(), /*ForVTable=*/false,
                               /*DontDefer=*/false, /*IsThunk=*/false, ExtraAttrs);
@@ -2914,14 +2937,8 @@ static void replaceUsesOfNonProtoConstant(llvm::Constant *old,
       continue;
 
     // Get the call site's attribute list.
-    SmallVector<llvm::AttributeSet, 8> newAttrs;
-    llvm::AttributeSet oldAttrs = callSite.getAttributes();
-
-    // Collect any return attributes from the call.
-    if (oldAttrs.hasAttributes(llvm::AttributeSet::ReturnIndex))
-      newAttrs.push_back(
-        llvm::AttributeSet::get(newFn->getContext(),
-                                oldAttrs.getRetAttributes()));
+    SmallVector<llvm::AttributeSet, 8> newArgAttrs;
+    llvm::AttributeList oldAttrs = callSite.getAttributes();
 
     // If the function was passed too few arguments, don't transform.
     unsigned newNumArgs = newFn->arg_size();
@@ -2931,26 +2948,18 @@ static void replaceUsesOfNonProtoConstant(llvm::Constant *old,
     // If any of the types mismatch, we don't transform.
     unsigned argNo = 0;
     bool dontTransform = false;
-    for (llvm::Function::arg_iterator ai = newFn->arg_begin(),
-           ae = newFn->arg_end(); ai != ae; ++ai, ++argNo) {
-      if (callSite.getArgument(argNo)->getType() != ai->getType()) {
+    for (llvm::Argument &A : newFn->args()) {
+      if (callSite.getArgument(argNo)->getType() != A.getType()) {
         dontTransform = true;
         break;
       }
 
       // Add any parameter attributes.
-      if (oldAttrs.hasAttributes(argNo + 1))
-        newAttrs.
-          push_back(llvm::
-                    AttributeSet::get(newFn->getContext(),
-                                      oldAttrs.getParamAttributes(argNo + 1)));
+      newArgAttrs.push_back(oldAttrs.getParamAttributes(argNo));
+      argNo++;
     }
     if (dontTransform)
       continue;
-
-    if (oldAttrs.hasAttributes(llvm::AttributeSet::FunctionIndex))
-      newAttrs.push_back(llvm::AttributeSet::get(newFn->getContext(),
-                                                 oldAttrs.getFnAttributes()));
 
     // Okay, we can transform this.  Create the new call instruction and copy
     // over the required information.
@@ -2975,8 +2984,9 @@ static void replaceUsesOfNonProtoConstant(llvm::Constant *old,
 
     if (!newCall->getType()->isVoidTy())
       newCall->takeName(callSite.getInstruction());
-    newCall.setAttributes(
-                     llvm::AttributeSet::get(newFn->getContext(), newAttrs));
+    newCall.setAttributes(llvm::AttributeList::get(
+        newFn->getContext(), oldAttrs.getFnAttributes(),
+        oldAttrs.getRetAttributes(), newArgAttrs));
     newCall.setCallingConv(callSite.getCallingConv());
 
     // Finally, remove the old call, replacing any uses with the new one.
@@ -3808,6 +3818,11 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
     EmitDeclContext(cast<NamespaceDecl>(D));
     break;
   case Decl::CXXRecord:
+    if (DebugInfo) {
+      if (auto *ES = D->getASTContext().getExternalSource())
+        if (ES->hasExternalDefinitions(D) == ExternalASTSource::EK_Never)
+          DebugInfo->completeUnusedClass(cast<CXXRecordDecl>(*D));
+    }
     // Emit any static data members, they may be definitions.
     for (auto *I : cast<CXXRecordDecl>(D)->decls())
       if (isa<VarDecl>(I) || isa<CXXRecordDecl>(I))

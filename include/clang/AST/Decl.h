@@ -838,7 +838,7 @@ protected:
 
     /// Describes the kind of default argument for this parameter. By default
     /// this is none. If this is normal, then the default argument is stored in
-    /// the \c VarDecl initalizer expression unless we were unble to parse
+    /// the \c VarDecl initializer expression unless we were unable to parse
     /// (even an invalid) expression for the default argument.
     unsigned DefaultArgKind : 2;
 
@@ -2688,12 +2688,17 @@ class TypedefNameDecl : public TypeDecl, public Redeclarable<TypedefNameDecl> {
   typedef std::pair<TypeSourceInfo*, QualType> ModedTInfo;
   llvm::PointerUnion<TypeSourceInfo*, ModedTInfo*> MaybeModedTInfo;
 
+  // FIXME: This can be packed into the bitfields in Decl.
+  /// If 0, we have not computed IsTransparentTag.
+  /// Otherwise, IsTransparentTag is (CacheIsTransparentTag >> 1).
+  mutable unsigned CacheIsTransparentTag : 2;
+
 protected:
   TypedefNameDecl(Kind DK, ASTContext &C, DeclContext *DC,
                   SourceLocation StartLoc, SourceLocation IdLoc,
                   DeclarationName N, TypeSourceInfo *TInfo)
       : TypeDecl(DK, DC, IdLoc, N, StartLoc), redeclarable_base(C),
-        MaybeModedTInfo(TInfo) {}
+        MaybeModedTInfo(TInfo), CacheIsTransparentTag(0) {}
 
   typedef Redeclarable<TypedefNameDecl> redeclarable_base;
   TypedefNameDecl *getNextRedeclarationImpl() override {
@@ -2746,11 +2751,22 @@ public:
   /// this typedef declaration.
   TagDecl *getAnonDeclWithTypedefName(bool AnyRedecl = false) const;
 
+  /// Determines if this typedef shares a name and spelling location with its
+  /// underlying tag type, as is the case with the NS_ENUM macro.
+  bool isTransparentTag() const {
+    if (CacheIsTransparentTag)
+      return CacheIsTransparentTag & 0x2;
+    return isTransparentTagSlow();
+  }
+
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) {
     return K >= firstTypedefName && K <= lastTypedefName;
   }
+
+private:
+  bool isTransparentTagSlow() const;
 };
 
 /// TypedefDecl - Represents the declaration of a typedef-name via the 'typedef'

@@ -12,11 +12,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Parse/Parser.h"
-#include "RAIIObjectsForParser.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/Parse/ParseDiagnostic.h"
+#include "clang/Parse/RAIIObjectsForParser.h"
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/Scope.h"
@@ -35,26 +35,6 @@ public:
   bool HandleComment(Preprocessor &PP, SourceRange Comment) override {
     S.ActOnComment(Comment);
     return false;
-  }
-};
-
-/// \brief RAIIObject to destroy the contents of a SmallVector of
-/// TemplateIdAnnotation pointers and clear the vector.
-class DestroyTemplateIdAnnotationsRAIIObj {
-  SmallVectorImpl<TemplateIdAnnotation *> &Container;
-
-public:
-  DestroyTemplateIdAnnotationsRAIIObj(
-      SmallVectorImpl<TemplateIdAnnotation *> &Container)
-      : Container(Container) {}
-
-  ~DestroyTemplateIdAnnotationsRAIIObj() {
-    for (SmallVectorImpl<TemplateIdAnnotation *>::iterator I =
-             Container.begin(),
-                                                           E = Container.end();
-         I != E; ++I)
-      (*I)->Destroy();
-    Container.clear();
   }
 };
 } // end anonymous namespace
@@ -229,6 +209,21 @@ void Parser::ConsumeExtraSemi(ExtraSemiKind Kind, unsigned TST) {
     // A single semicolon is valid after a member function definition.
     Diag(StartLoc, diag::warn_extra_semi_after_mem_fn_def)
       << FixItHint::CreateRemoval(SourceRange(StartLoc, EndLoc));
+}
+
+bool Parser::expectIdentifier() {
+  if (Tok.is(tok::identifier))
+    return false;
+  if (const auto *II = Tok.getIdentifierInfo()) {
+    if (II->isCPlusPlusKeyword(getLangOpts())) {
+      Diag(Tok, diag::err_expected_token_instead_of_objcxx_keyword)
+          << tok::identifier << Tok.getIdentifierInfo();
+      // Objective-C++: Recover by treating this keyword as a valid identifier.
+      return false;
+    }
+  }
+  Diag(Tok, diag::err_expected) << tok::identifier;
+  return true;
 }
 
 //===----------------------------------------------------------------------===//
@@ -690,6 +685,9 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
   case tok::annot_pragma_fp_contract:
     HandlePragmaFPContract();
     return nullptr;
+  case tok::annot_pragma_fp:
+    HandlePragmaFP();
+    break;
   case tok::annot_pragma_opencl_extension:
     HandlePragmaOpenCLExtension();
     return nullptr;
