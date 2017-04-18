@@ -6457,8 +6457,9 @@ void Sema::AddFunctionCandidates(const UnresolvedSetImpl &Fns,
                            CandidateSet, HasDesig,
                            SuppressUserConversions, PartialOverloading);
       } else {
-        AddOverloadCandidate(FD, F.getPair(), Args, CandidateSet,
-                             SuppressUserConversions, PartialOverloading);
+        AddOverloadCandidate(FD, F.getPair(), Args, MappedArgs, CandidateSet,
+                             HasDesig, SuppressUserConversions,
+                             PartialOverloading);
       }
     } else {
       FunctionTemplateDecl *FunTmpl = cast<FunctionTemplateDecl>(D);
