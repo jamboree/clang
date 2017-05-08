@@ -1487,6 +1487,12 @@ def fstrict_return : Flag<["-"], "fstrict-return">, Group<f_Group>,
 def fno_strict_return : Flag<["-"], "fno-strict-return">, Group<f_Group>,
   Flags<[CC1Option]>;
 
+def fallow_editor_placeholders : Flag<["-"], "fallow-editor-placeholders">,
+  Group<f_Group>, Flags<[CC1Option]>,
+  HelpText<"Treat editor placeholders as valid source code">;
+def fno_allow_editor_placeholders : Flag<["-"],
+  "fno-allow-editor-placeholders">, Group<f_Group>;
+
 def fdebug_types_section: Flag <["-"], "fdebug-types-section">, Group<f_Group>,
   Flags<[CC1Option]>, HelpText<"Place debug types in their own section (ELF Only)">;
 def fno_debug_types_section: Flag<["-"], "fno-debug-types-section">, Group<f_Group>,
@@ -1646,6 +1652,8 @@ def march_EQ : Joined<["-"], "march=">, Group<m_Group>;
 def masm_EQ : Joined<["-"], "masm=">, Group<m_Group>, Flags<[DriverOption]>;
 def mcmodel_EQ : Joined<["-"], "mcmodel=">, Group<m_Group>;
 def mimplicit_it_EQ : Joined<["-"], "mimplicit-it=">, Group<m_Group>;
+def mdefault_build_attributes : Joined<["-"], "mdefault-build-attributes">, Group<m_Group>;
+def mno_default_build_attributes : Joined<["-"], "mno-default-build-attributes">, Group<m_Group>;
 def mconstant_cfstrings : Flag<["-"], "mconstant-cfstrings">, Group<clang_ignored_m_Group>;
 def mconsole : Joined<["-"], "mconsole">, Group<m_Group>, Flags<[DriverOption]>;
 def mwindows : Joined<["-"], "mwindows">, Group<m_Group>, Flags<[DriverOption]>;
@@ -1653,6 +1661,7 @@ def mdll : Joined<["-"], "mdll">, Group<m_Group>, Flags<[DriverOption]>;
 def municode : Joined<["-"], "municode">, Group<m_Group>, Flags<[DriverOption]>;
 def mthreads : Joined<["-"], "mthreads">, Group<m_Group>, Flags<[DriverOption]>;
 def mcpu_EQ : Joined<["-"], "mcpu=">, Group<m_Group>;
+def mmcu_EQ : Joined<["-"], "mmcu=">, Group<m_Group>;
 def mdynamic_no_pic : Joined<["-"], "mdynamic-no-pic">, Group<m_Group>;
 def mfix_and_continue : Flag<["-"], "mfix-and-continue">, Group<clang_ignored_m_Group>;
 def mieee_fp : Flag<["-"], "mieee-fp">, Group<clang_ignored_m_Group>;
@@ -1679,6 +1688,8 @@ def mllvm : Separate<["-"], "mllvm">, Flags<[CC1Option,CC1AsOption,CoreOption]>,
   HelpText<"Additional arguments to forward to LLVM's option processing">;
 def mmacosx_version_min_EQ : Joined<["-"], "mmacosx-version-min=">,
   Group<m_Group>, HelpText<"Set Mac OS X deployment target">;
+def mmacos_version_min_EQ : Joined<["-"], "mmacos-version-min=">,
+  Group<m_Group>, Alias<mmacosx_version_min_EQ>;
 def mms_bitfields : Flag<["-"], "mms-bitfields">, Group<m_Group>, Flags<[CC1Option]>,
   HelpText<"Set the default structure layout to be compatible with the Microsoft compiler standard">;
 def mno_ms_bitfields : Flag<["-"], "mno-ms-bitfields">, Group<m_Group>,

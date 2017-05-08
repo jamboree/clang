@@ -498,6 +498,9 @@ bool Sema::BuildCXXNestedNameSpecifier(Scope *S, NestedNameSpecInfo &IdInfo,
     return true;
   }
 
+  if (IdInfo.Identifier->isEditorPlaceholder())
+    return true;
+
   DeclarationName Name = getPossiblyTemplatedName(IdInfo.Identifier);
   LookupResult Found(*this, Name, IdInfo.IdentifierLoc,
                      OnlyNamespace ? LookupNamespaceName

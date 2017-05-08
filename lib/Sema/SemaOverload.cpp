@@ -11798,6 +11798,10 @@ static void AddOverloadedCallCandidate(Sema &S,
       assert(!KnownValid && "Explicit template arguments?");
       return;
     }
+    // Prevent ill-formed function decls to be added as overload candidates.
+    if (!dyn_cast<FunctionProtoType>(Func->getType()->getAs<FunctionType>()))
+      return;
+
     S.AddOverloadCandidate(Func, FoundDecl, Args, MappedArgs,
                            CandidateSet, HasDesig,
                            /*SuppressUsedConversions=*/false,

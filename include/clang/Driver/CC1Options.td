@@ -297,6 +297,9 @@ def fsanitize_coverage_trace_pc
 def fsanitize_coverage_trace_pc_guard
     : Flag<["-"], "fsanitize-coverage-trace-pc-guard">,
       HelpText<"Enable PC tracing with guard in sanitizer coverage">;
+def fsanitize_coverage_no_prune
+    : Flag<["-"], "fsanitize-coverage-no-prune">,
+      HelpText<"Disable coverage pruning (i.e. instrument all blocks/edges)">;
 def fprofile_instrument_EQ : Joined<["-"], "fprofile-instrument=">,
     HelpText<"Enable PGO instrumentation. The accepted value is clang, llvm, "
              "or none">;
@@ -573,6 +576,8 @@ def fblocks_runtime_optional : Flag<["-"], "fblocks-runtime-optional">,
   HelpText<"Weakly link in the blocks runtime">;
 def fexternc_nounwind : Flag<["-"], "fexternc-nounwind">,
   HelpText<"Assume all functions with C linkage do not unwind">;
+def enable_split_dwarf : Flag<["-"], "enable-split-dwarf">,
+  HelpText<"Use split dwarf/Fission">;
 def split_dwarf_file : Separate<["-"], "split-dwarf-file">,
   HelpText<"File name to use for split dwarf debug info output">;
 def fno_wchar : Flag<["-"], "fno-wchar">,

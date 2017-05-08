@@ -171,9 +171,14 @@ DiagnoseAvailabilityOfDecl(Sema &S, NamedDecl *D, SourceLocation Loc,
   if (AvailabilityResult Result =
           S.ShouldDiagnoseAvailabilityOfDecl(D, &Message)) {
 
-    if (Result == AR_NotYetIntroduced && S.getCurFunctionOrMethodDecl()) {
-      S.getEnclosingFunction()->HasPotentialAvailabilityViolations = true;
-      return;
+    if (Result == AR_NotYetIntroduced) {
+      if (S.getCurFunctionOrMethodDecl()) {
+        S.getEnclosingFunction()->HasPotentialAvailabilityViolations = true;
+        return;
+      } else if (S.getCurBlock() || S.getCurLambda()) {
+        S.getCurFunction()->HasPotentialAvailabilityViolations = true;
+        return;
+      }
     }
 
     const ObjCPropertyDecl *ObjCPDecl = nullptr;
@@ -2130,6 +2135,12 @@ Sema::ActOnIdExpression(Scope *S, CXXScopeSpec &SS,
   DeclarationName Name = NameInfo.getName();
   SourceLocation NameLoc = NameInfo.getLoc();
   IdentifierInfo *II = Name.getAsIdentifierInfo();
+
+  if (II && II->isEditorPlaceholder()) {
+    // FIXME: When typed placeholders are supported we can create a typed
+    // placeholder expression node.
+    return ExprError();
+  }
 
   // C++ [temp.dep.expr]p3:
   //   An id-expression is type-dependent if it contains:
@@ -5297,8 +5308,7 @@ ExprResult Sema::ActOnCallExpr(Scope *Scope, Expr *Fn, SourceLocation LParenLoc,
   if (Fn->getType() == Context.OverloadTy) {
     OverloadExpr::FindResult find = OverloadExpr::find(Fn);
 
-    // We aren't supposed to apply this logic for if there'Scope an '&'
-    // involved.
+    // We aren't supposed to apply this logic if there's an '&' involved.
     if (!find.HasFormOfMemberPointer) {
       OverloadExpr *ovl = find.Expression;
       if (UnresolvedLookupExpr *ULE = dyn_cast<UnresolvedLookupExpr>(ovl))
@@ -5445,9 +5455,11 @@ Sema::BuildResolvedCallExpr(Expr *Fn, NamedDecl *NDecl,
   // that the callee might not preserve them. This is easy to diagnose here,
   // but can be very challenging to debug.
   if (auto *Caller = getCurFunctionDecl())
-    if (Caller->hasAttr<ARMInterruptAttr>())
-      if (!FDecl || !FDecl->hasAttr<ARMInterruptAttr>())
+    if (Caller->hasAttr<ARMInterruptAttr>()) {
+      bool VFP = Context.getTargetInfo().hasFeature("vfp");
+      if (VFP && (!FDecl || !FDecl->hasAttr<ARMInterruptAttr>()))
         Diag(Fn->getExprLoc(), diag::warn_arm_interrupt_calling_convention);
+    }
 
   // Promote the function operand.
   // We special-case function promotion here because we only allow promoting
@@ -6524,14 +6536,13 @@ static QualType checkConditionalPointerCompatibility(Sema &S, ExprResult &LHS,
       return S.Context
           .getQualifiedType(CompositeTy.getUnqualifiedType(), CompositeQuals)
           .withCVRQualifiers(MergedCVRQual);
-    } else
-      return CompositeTy.withCVRQualifiers(MergedCVRQual);
+    }
+    return CompositeTy.withCVRQualifiers(MergedCVRQual);
   }();
   if (IsBlockPointer)
     ResultTy = S.Context.getBlockPointerType(ResultTy);
-  else {
+  else
     ResultTy = S.Context.getPointerType(ResultTy);
-  }
 
   LHS = S.ImpCastExprToType(LHS.get(), ResultTy, LHSCastKind);
   RHS = S.ImpCastExprToType(RHS.get(), ResultTy, RHSCastKind);
@@ -12595,6 +12606,9 @@ ExprResult Sema::ActOnBlockStmtExpr(SourceLocation CaretLoc,
 
   BSI->TheDecl->setBody(cast<CompoundStmt>(Body));
 
+  if (Body && getCurFunction()->HasPotentialAvailabilityViolations)
+    DiagnoseUnguardedAvailabilityViolations(BSI->TheDecl);
+
   // Try to apply the named return value optimization. We have to check again
   // if we can do this, though, because blocks keep return statements around
   // to deduce an implicit return type.
@@ -15463,7 +15477,7 @@ static ExprResult diagnoseUnknownAnyExpr(Sema &S, Expr *E) {
 }
 
 /// Check for operands with placeholder types and complain if found.
-/// Returns true if there was an error and no recovery was possible.
+/// Returns ExprError() if there was an error and no recovery was possible.
 ExprResult Sema::CheckPlaceholderExpr(Expr *E) {
   if (!getLangOpts().CPlusPlus) {
     // C cannot handle TypoExpr nodes on either side of a binop because it

@@ -452,6 +452,29 @@ bool Lexer::getRawToken(SourceLocation Loc, Token &Result,
   return false;
 }
 
+/// Returns the pointer that points to the beginning of line that contains
+/// the given offset, or null if the offset if invalid.
+static const char *findBeginningOfLine(StringRef Buffer, unsigned Offset) {
+  const char *BufStart = Buffer.data();
+  if (Offset >= Buffer.size())
+    return nullptr;
+  const char *StrData = BufStart + Offset;
+
+  if (StrData[0] == '\n' || StrData[0] == '\r')
+    return StrData;
+
+  const char *LexStart = StrData;
+  while (LexStart != BufStart) {
+    if (LexStart[0] == '\n' || LexStart[0] == '\r') {
+      ++LexStart;
+      break;
+    }
+
+    --LexStart;
+  }
+  return LexStart;
+}
+
 static SourceLocation getBeginningOfFileToken(SourceLocation Loc,
                                               const SourceManager &SM,
                                               const LangOptions &LangOpts) {
@@ -467,27 +490,15 @@ static SourceLocation getBeginningOfFileToken(SourceLocation Loc,
 
   // Back up from the current location until we hit the beginning of a line
   // (or the buffer). We'll relex from that point.
-  const char *BufStart = Buffer.data();
-  if (LocInfo.second >= Buffer.size())
+  const char *StrData = Buffer.data() + LocInfo.second;
+  const char *LexStart = findBeginningOfLine(Buffer, LocInfo.second);
+  if (!LexStart || LexStart == StrData)
     return Loc;
-  
-  const char *StrData = BufStart+LocInfo.second;
-  if (StrData[0] == '\n' || StrData[0] == '\r')
-    return Loc;
-
-  const char *LexStart = StrData;
-  while (LexStart != BufStart) {
-    if (LexStart[0] == '\n' || LexStart[0] == '\r') {
-      ++LexStart;
-      break;
-    }
-
-    --LexStart;
-  }
   
   // Create a lexer starting at the beginning of this token.
   SourceLocation LexerStartLoc = Loc.getLocWithOffset(-LocInfo.second);
-  Lexer TheLexer(LexerStartLoc, LangOpts, BufStart, LexStart, Buffer.end());
+  Lexer TheLexer(LexerStartLoc, LangOpts, Buffer.data(), LexStart,
+                 Buffer.end());
   TheLexer.SetCommentRetentionState(true);
   
   // Lex tokens until we find the token that contains the source location.
@@ -1038,6 +1049,27 @@ bool Lexer::isIdentifierBodyChar(char c, const LangOptions &LangOpts) {
   return isIdentifierBody(c, LangOpts.DollarIdents);
 }
 
+StringRef Lexer::getIndentationForLine(SourceLocation Loc,
+                                       const SourceManager &SM) {
+  if (Loc.isInvalid() || Loc.isMacroID())
+    return "";
+  std::pair<FileID, unsigned> LocInfo = SM.getDecomposedLoc(Loc);
+  if (LocInfo.first.isInvalid())
+    return "";
+  bool Invalid = false;
+  StringRef Buffer = SM.getBufferData(LocInfo.first, &Invalid);
+  if (Invalid)
+    return "";
+  const char *Line = findBeginningOfLine(Buffer, LocInfo.second);
+  if (!Line)
+    return "";
+  StringRef Rest = Buffer.substr(Line - Buffer.data());
+  size_t NumWhitespaceChars = Rest.find_first_not_of(" \t");
+  return NumWhitespaceChars == StringRef::npos
+             ? ""
+             : Rest.take_front(NumWhitespaceChars);
+}
+
 //===----------------------------------------------------------------------===//
 // Diagnostics forwarding code.
 //===----------------------------------------------------------------------===//
@@ -1171,6 +1203,8 @@ const char *Lexer::SkipEscapedNewLines(const char *P) {
       // If not a trigraph for escape, bail out.
       if (P[1] != '?' || P[2] != '/')
         return P;
+      // FIXME: Take LangOpts into account; the language might not
+      // support trigraphs.
       AfterEscape = P+3;
     } else {
       return P;
@@ -2079,17 +2113,17 @@ bool Lexer::SkipLineComment(Token &Result, const char *CurPtr,
         HasSpace = true;
       }
 
-      if (*EscapePtr == '\\') // Escaped newline.
+      if (*EscapePtr == '\\')
+        // Escaped newline.
         CurPtr = EscapePtr;
       else if (EscapePtr[0] == '/' && EscapePtr[-1] == '?' &&
-               EscapePtr[-2] == '?') // Trigraph-escaped newline.
+               EscapePtr[-2] == '?' && LangOpts.Trigraphs)
+        // Trigraph-escaped newline.
         CurPtr = EscapePtr-2;
       else
         break; // This is a newline, we're done.
 
       // If there was space between the backslash and newline, warn about it.
-      // FIXME: This warning is bogus if trigraphs are disabled and the line
-      // ended with '?' '?' '\\' '\n'.
       if (HasSpace && !isLexingRawMode())
         Diag(EscapePtr, diag::backslash_newline_space);
     }
@@ -2712,6 +2746,37 @@ bool Lexer::HandleEndOfConflictMarker(const char *CurPtr) {
   }
   
   return false;
+}
+
+static const char *findPlaceholderEnd(const char *CurPtr,
+                                      const char *BufferEnd) {
+  if (CurPtr == BufferEnd)
+    return nullptr;
+  BufferEnd -= 1; // Scan until the second last character.
+  for (; CurPtr != BufferEnd; ++CurPtr) {
+    if (CurPtr[0] == '#' && CurPtr[1] == '>')
+      return CurPtr + 2;
+  }
+  return nullptr;
+}
+
+bool Lexer::lexEditorPlaceholder(Token &Result, const char *CurPtr) {
+  assert(CurPtr[-1] == '<' && CurPtr[0] == '#' && "Not a placeholder!");
+  if (!PP || LexingRawMode)
+    return false;
+  const char *End = findPlaceholderEnd(CurPtr + 1, BufferEnd);
+  if (!End)
+    return false;
+  const char *Start = CurPtr - 1;
+  if (!LangOpts.AllowEditorPlaceholders)
+    Diag(Start, diag::err_placeholder_in_source);
+  Result.startToken();
+  FormTokenWithChars(Result, End, tok::raw_identifier);
+  Result.setRawIdentifierData(Start);
+  PP->LookUpIdentifierInfo(Result);
+  Result.setFlag(Token::IsEditorPlaceholder);
+  BufferPtr = End;
+  return true;
 }
 
 bool Lexer::isCodeCompletionPoint(const char *CurPtr) const {
@@ -3471,6 +3536,8 @@ LexNextToken:
     } else if (LangOpts.Digraphs && Char == '%') {     // '<%' -> '{'
       CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
       Kind = tok::l_brace;
+    } else if (Char == '#' && lexEditorPlaceholder(Result, CurPtr)) {
+      return true;
     } else {
       Kind = tok::less;
     }
