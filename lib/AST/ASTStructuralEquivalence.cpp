@@ -71,9 +71,9 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
 
   switch (NNS1->getKind()) {
-  case NestedNameSpecifier::Identifier:
-    return IsStructurallyEquivalent(NNS1->getAsIdentifier(),
-                                    NNS2->getAsIdentifier());
+  case NestedNameSpecifier::DeclName:
+    return IsStructurallyEquivalent(Context, NNS1->getAsDeclName(),
+                                    NNS2->getAsDeclName());
   case NestedNameSpecifier::Namespace:
     return IsStructurallyEquivalent(Context, NNS1->getAsNamespace(),
                                     NNS2->getAsNamespace());
@@ -157,6 +157,14 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
   return false;
 }
 
+/// \brief Determine whether two declnames are equivalent.
+static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
+                                     DeclarationName N1,
+                                     DeclarationName N2) {
+  // FIXME: Is this correct?
+  return N1.getCanonicalName() == N2.getCanonicalName();
+}
+
 /// Determine whether two template arguments are equivalent.
 static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                      const TemplateArgument &Arg1,
@@ -208,6 +216,15 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
         return false;
 
     return true;
+
+  case TemplateArgument::DeclName:
+    return IsStructurallyEquivalent(Context, Arg1.getAsDeclName(),
+                                    Arg2.getAsDeclName());
+
+  case TemplateArgument::DeclNameExpansion:
+    return IsStructurallyEquivalent(Context,
+                                    Arg1.getAsDeclNameOrDeclNamePattern(),
+                                    Arg2.getAsDeclNameOrDeclNamePattern());
   }
 
   llvm_unreachable("Invalid template argument kind");
@@ -613,8 +630,8 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
     if (!IsStructurallyEquivalent(Context, Typename1->getQualifier(),
                                   Typename2->getQualifier()))
       return false;
-    if (!IsStructurallyEquivalent(Typename1->getIdentifier(),
-                                  Typename2->getIdentifier()))
+    if (!IsStructurallyEquivalent(Context, Typename1->getDeclName(),
+                                  Typename2->getDeclName()))
       return false;
 
     break;
@@ -707,6 +724,18 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
   case Type::Pipe: {
     if (!IsStructurallyEquivalent(Context, cast<PipeType>(T1)->getElementType(),
                                   cast<PipeType>(T2)->getElementType()))
+      return false;
+    break;
+  }
+
+  case Type::Designating: {
+    const DesignatingType *Ptr1 = cast<DesignatingType>(T1);
+    const DesignatingType *Ptr2 = cast<DesignatingType>(T2);
+    if (!IsStructurallyEquivalent(Context, Ptr1->getInnerType(),
+                                  Ptr2->getInnerType()))
+      return false;
+    if (!IsStructurallyEquivalent(Context, Ptr1->getDesigName(),
+                                  Ptr2->getDesigName()))
       return false;
     break;
   }

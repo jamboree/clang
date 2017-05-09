@@ -1220,6 +1220,8 @@ void ASTDumper::VisitFieldDecl(const FieldDecl *D) {
 
 void ASTDumper::VisitVarDecl(const VarDecl *D) {
   dumpName(D);
+  if (D->isPackExpansion())
+    OS << " ...";
   dumpType(D->getType());
   StorageClass SC = D->getStorageClass();
   if (SC != SC_None)

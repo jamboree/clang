@@ -1746,7 +1746,7 @@ private:
       if (!NewDI) return nullptr;
       NewDI =
           SemaRef.CheckPackExpansion(NewDI, PackTL.getEllipsisLoc(),
-                                     PackTL.getTypePtr()->getNumExpansions());
+                                     PackTL.getTypePtr()->getExpansionInfo());
     } else
       NewDI = SemaRef.SubstType(OldDI, Args, OldParam->getLocation(),
                                 OldParam->getDeclName());
