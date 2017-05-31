@@ -469,6 +469,7 @@ def arch__errors__fatal : Flag<["-"], "arch_errors_fatal">;
 def arch : Separate<["-"], "arch">, Flags<[DriverOption]>;
 def arch__only : Separate<["-"], "arch_only">;
 def a : Joined<["-"], "a">;
+def autocomplete : Joined<["--"], "autocomplete=">;
 def bind__at__load : Flag<["-"], "bind_at_load">;
 def bundle__loader : Separate<["-"], "bundle_loader">;
 def bundle : Flag<["-"], "bundle">;
@@ -827,6 +828,9 @@ def fno_sanitize_address_use_after_scope : Flag<["-"], "fno-sanitize-address-use
                                            Group<f_clang_Group>,
                                            Flags<[CoreOption, DriverOption]>,
                                            HelpText<"Disable use-after-scope detection in AddressSanitizer">;
+def fsanitize_address_globals_dead_stripping : Flag<["-"], "fsanitize-address-globals-dead-stripping">,
+                                        Group<f_clang_Group>,
+                                        HelpText<"Enable linker dead stripping of globals in AddressSanitizer">;
 def fsanitize_recover : Flag<["-"], "fsanitize-recover">, Group<f_clang_Group>;
 def fno_sanitize_recover : Flag<["-"], "fno-sanitize-recover">,
                            Flags<[CoreOption, DriverOption]>,
@@ -1737,6 +1741,7 @@ def mno_avx : Flag<["-"], "mno-avx">, Group<m_x86_Features_Group>;
 def mno_avx2 : Flag<["-"], "mno-avx2">, Group<m_x86_Features_Group>;
 def mno_avx512f : Flag<["-"], "mno-avx512f">, Group<m_x86_Features_Group>;
 def mno_avx512cd : Flag<["-"], "mno-avx512cd">, Group<m_x86_Features_Group>;
+def mno_avx512vpopcntdq : Flag<["-"], "mno-avx512vpopcntdq">, Group<m_x86_Features_Group>;
 def mno_avx512er : Flag<["-"], "mno-avx512er">, Group<m_x86_Features_Group>;
 def mno_avx512pf : Flag<["-"], "mno-avx512pf">, Group<m_x86_Features_Group>;
 def mno_avx512dq : Flag<["-"], "mno-avx512dq">, Group<m_x86_Features_Group>;
@@ -1937,6 +1942,7 @@ def mavx : Flag<["-"], "mavx">, Group<m_x86_Features_Group>;
 def mavx2 : Flag<["-"], "mavx2">, Group<m_x86_Features_Group>;
 def mavx512f : Flag<["-"], "mavx512f">, Group<m_x86_Features_Group>;
 def mavx512cd : Flag<["-"], "mavx512cd">, Group<m_x86_Features_Group>;
+def mavx512vpopcntdq : Flag<["-"], "mavx512vpopcntdq">, Group<m_x86_Features_Group>;
 def mavx512er : Flag<["-"], "mavx512er">, Group<m_x86_Features_Group>;
 def mavx512pf : Flag<["-"], "mavx512pf">, Group<m_x86_Features_Group>;
 def mavx512dq : Flag<["-"], "mavx512dq">, Group<m_x86_Features_Group>;

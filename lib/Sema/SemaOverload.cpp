@@ -6362,11 +6362,11 @@ EnableIfAttr *Sema::CheckEnableIf(FunctionDecl *Function, ArrayRef<Expr *> Args,
 }
 
 template <typename CheckFn>
-static bool diagnoseDiagnoseIfAttrsWith(Sema &S, const FunctionDecl *FD,
+static bool diagnoseDiagnoseIfAttrsWith(Sema &S, const NamedDecl *ND,
                                         bool ArgDependent, SourceLocation Loc,
                                         CheckFn &&IsSuccessful) {
   SmallVector<const DiagnoseIfAttr *, 8> Attrs;
-  for (const auto *DIA : FD->specific_attrs<DiagnoseIfAttr>()) {
+  for (const auto *DIA : ND->specific_attrs<DiagnoseIfAttr>()) {
     if (ArgDependent == DIA->getArgDependent())
       Attrs.push_back(DIA);
   }
@@ -6413,16 +6413,16 @@ bool Sema::diagnoseArgDependentDiagnoseIfAttrs(const FunctionDecl *Function,
         // EvaluateWithSubstitution only cares about the position of each
         // argument in the arg list, not the ParmVarDecl* it maps to.
         if (!DIA->getCond()->EvaluateWithSubstitution(
-                Result, Context, DIA->getParent(), Args, ThisArg))
+                Result, Context, cast<FunctionDecl>(DIA->getParent()), Args, ThisArg))
           return false;
         return Result.isInt() && Result.getInt().getBoolValue();
       });
 }
 
-bool Sema::diagnoseArgIndependentDiagnoseIfAttrs(const FunctionDecl *Function,
+bool Sema::diagnoseArgIndependentDiagnoseIfAttrs(const NamedDecl *ND,
                                                  SourceLocation Loc) {
   return diagnoseDiagnoseIfAttrsWith(
-      *this, Function, /*ArgDependent=*/false, Loc,
+      *this, ND, /*ArgDependent=*/false, Loc,
       [&](const DiagnoseIfAttr *DIA) {
         bool Result;
         return DIA->getCond()->EvaluateAsBooleanCondition(Result, Context) &&
@@ -11580,12 +11580,12 @@ Sema::resolveAddressOfOnlyViableOverloadCandidate(Expr *E,
 /// \brief Given an overloaded function, tries to turn it into a non-overloaded
 /// function reference using resolveAddressOfOnlyViableOverloadCandidate. This
 /// will perform access checks, diagnose the use of the resultant decl, and, if
-/// necessary, perform a function-to-pointer decay.
+/// requested, potentially perform a function-to-pointer decay.
 ///
 /// Returns false if resolveAddressOfOnlyViableOverloadCandidate fails.
 /// Otherwise, returns true. This may emit diagnostics and return true.
 bool Sema::resolveAndFixAddressOfOnlyViableOverloadCandidate(
-    ExprResult &SrcExpr) {
+    ExprResult &SrcExpr, bool DoFunctionPointerConverion) {
   Expr *E = SrcExpr.get();
   assert(E->getType() == Context.OverloadTy && "SrcExpr must be an overload");
 
@@ -11600,7 +11600,7 @@ bool Sema::resolveAndFixAddressOfOnlyViableOverloadCandidate(
   DiagnoseUseOfDecl(Found, E->getExprLoc());
   CheckAddressOfMemberAccess(E, DAP);
   Expr *Fixed = FixOverloadedFunctionReference(E, DAP, Found);
-  if (Fixed->getType()->isFunctionType())
+  if (DoFunctionPointerConverion && Fixed->getType()->isFunctionType())
     SrcExpr = DefaultFunctionArrayConversion(Fixed, /*Diagnose=*/false);
   else
     SrcExpr = Fixed;

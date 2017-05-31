@@ -407,12 +407,11 @@ llvm::Constant *TargetCodeGenInfo::getNullPointer(const CodeGen::CodeGenModule &
 }
 
 llvm::Value *TargetCodeGenInfo::performAddrSpaceCast(
-    CodeGen::CodeGenFunction &CGF, llvm::Value *Src, QualType SrcTy,
-    QualType DestTy) const {
+    CodeGen::CodeGenFunction &CGF, llvm::Value *Src, unsigned SrcAddr,
+    unsigned DestAddr, llvm::Type *DestTy, bool isNonNull) const {
   // Since target may map different address spaces in AST to the same address
   // space, an address space conversion may end up as a bitcast.
-  return CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(Src,
-             CGF.ConvertType(DestTy));
+  return CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(Src, DestTy);
 }
 
 static bool isEmptyRecord(ASTContext &Context, QualType T, bool AllowArrays);
@@ -3159,8 +3158,7 @@ GetX86_64ByValArgumentPair(llvm::Type *Lo, llvm::Type *Hi,
     }
   }
 
-  llvm::StructType *Result = llvm::StructType::get(Lo, Hi, nullptr);
-
+  llvm::StructType *Result = llvm::StructType::get(Lo, Hi);
 
   // Verify that the second element is at an 8-byte offset.
   assert(TD.getStructLayout(Result)->getElementOffset(1) == 8 &&
@@ -3235,8 +3233,7 @@ classifyReturnType(QualType RetTy) const {
   case ComplexX87:
     assert(Hi == ComplexX87 && "Unexpected ComplexX87 classification.");
     ResType = llvm::StructType::get(llvm::Type::getX86_FP80Ty(getVMContext()),
-                                    llvm::Type::getX86_FP80Ty(getVMContext()),
-                                    nullptr);
+                                    llvm::Type::getX86_FP80Ty(getVMContext()));
     break;
   }
 
@@ -3732,7 +3729,7 @@ Address X86_64ABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
       CGF.Builder.CreateConstInBoundsByteGEP(RegAddrLo,
                                              CharUnits::fromQuantity(16));
     llvm::Type *DoubleTy = CGF.DoubleTy;
-    llvm::StructType *ST = llvm::StructType::get(DoubleTy, DoubleTy, nullptr);
+    llvm::StructType *ST = llvm::StructType::get(DoubleTy, DoubleTy);
     llvm::Value *V;
     Address Tmp = CGF.CreateMemTemp(Ty);
     Tmp = CGF.Builder.CreateElementBitCast(Tmp, ST);
@@ -4637,7 +4634,7 @@ PPC64_SVR4_ABIInfo::classifyReturnType(QualType RetTy) const {
       llvm::Type *CoerceTy;
       if (Bits > GPRBits) {
         CoerceTy = llvm::IntegerType::get(getVMContext(), GPRBits);
-        CoerceTy = llvm::StructType::get(CoerceTy, CoerceTy, nullptr);
+        CoerceTy = llvm::StructType::get(CoerceTy, CoerceTy);
       } else
         CoerceTy =
             llvm::IntegerType::get(getVMContext(), llvm::alignTo(Bits, 8));
@@ -4824,6 +4821,9 @@ private:
   bool isSwiftErrorInRegister() const override {
     return true;
   }
+
+  bool isLegalVectorTypeForSwift(CharUnits totalSize, llvm::Type *eltTy,
+                                 unsigned elts) const override;
 };
 
 class AArch64TargetCodeGenInfo : public TargetCodeGenInfo {
@@ -4995,6 +4995,17 @@ bool AArch64ABIInfo::isIllegalVectorType(QualType Ty) const {
     return Size != 64 && (Size != 128 || NumElements == 1);
   }
   return false;
+}
+
+bool AArch64ABIInfo::isLegalVectorTypeForSwift(CharUnits totalSize,
+                                               llvm::Type *eltTy,
+                                               unsigned elts) const {
+  if (!llvm::isPowerOf2_32(elts))
+    return false;
+  if (totalSize.getQuantity() != 8 &&
+      (totalSize.getQuantity() != 16 || elts == 1))
+    return false;
+  return true;
 }
 
 bool AArch64ABIInfo::isHomogeneousAggregateBaseType(QualType Ty) const {
@@ -5385,6 +5396,8 @@ private:
   bool isSwiftErrorInRegister() const override {
     return true;
   }
+  bool isLegalVectorTypeForSwift(CharUnits totalSize, llvm::Type *eltTy,
+                                 unsigned elts) const override;
 };
 
 class ARMTargetCodeGenInfo : public TargetCodeGenInfo {
@@ -5895,6 +5908,20 @@ bool ARMABIInfo::isIllegalVectorType(QualType Ty) const {
     }
   }
   return false;
+}
+
+bool ARMABIInfo::isLegalVectorTypeForSwift(CharUnits vectorSize,
+                                           llvm::Type *eltTy,
+                                           unsigned numElts) const {
+  if (!llvm::isPowerOf2_32(numElts))
+    return false;
+  unsigned size = getDataLayout().getTypeStoreSizeInBits(eltTy);
+  if (size > 64)
+    return false;
+  if (vectorSize.getQuantity() != 8 &&
+      (vectorSize.getQuantity() != 16 || numElts == 1))
+    return false;
+  return true;
 }
 
 bool ARMABIInfo::isHomogeneousAggregateBaseType(QualType Ty) const {
@@ -6560,6 +6587,11 @@ public:
       Fn->addFnAttr("nomips16");
     }
 
+    if (FD->hasAttr<MicroMipsAttr>())
+      Fn->addFnAttr("micromips");
+    else if (FD->hasAttr<NoMicroMipsAttr>())
+      Fn->addFnAttr("nomicromips");
+
     const MipsInterruptAttr *Attr = FD->getAttr<MipsInterruptAttr>();
     if (!Attr)
       return;
@@ -6694,6 +6726,14 @@ MipsABIInfo::classifyArgumentType(QualType Ty, uint64_t &Offset) const {
       Offset = OrigOffset + MinABIStackAlignInBytes;
       return getNaturalAlignIndirect(Ty, RAA == CGCXXABI::RAA_DirectInMemory);
     }
+
+    // Use indirect if the aggregate cannot fit into registers for
+    // passing arguments according to the ABI
+    unsigned Threshold = IsO32 ? 16 : 64;
+
+    if(getContext().getTypeSizeInChars(Ty) > CharUnits::fromQuantity(Threshold))
+      return ABIArgInfo::getIndirect(CharUnits::fromQuantity(Align), true,
+                                     getContext().getTypeAlign(Ty) / 8 > Align);
 
     // If we have reached here, aggregates are passed directly by coercing to
     // another structure type. Padding is inserted if the offset of the
@@ -7037,12 +7077,12 @@ ABIArgInfo HexagonABIInfo::classifyArgumentType(QualType Ty) const {
             ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
   }
 
+  if (CGCXXABI::RecordArgABI RAA = getRecordArgABI(Ty, getCXXABI()))
+    return getNaturalAlignIndirect(Ty, RAA == CGCXXABI::RAA_DirectInMemory);
+
   // Ignore empty records.
   if (isEmptyRecord(getContext(), Ty, true))
     return ABIArgInfo::getIgnore();
-
-  if (CGCXXABI::RecordArgABI RAA = getRecordArgABI(Ty, getCXXABI()))
-    return getNaturalAlignIndirect(Ty, RAA == CGCXXABI::RAA_DirectInMemory);
 
   uint64_t Size = getContext().getTypeSize(Ty);
   if (Size > 64)
@@ -7286,6 +7326,11 @@ public:
 
   llvm::Constant *getNullPointer(const CodeGen::CodeGenModule &CGM,
       llvm::PointerType *T, QualType QT) const override;
+
+  unsigned getASTAllocaAddressSpace() const override {
+    return LangAS::FirstTargetAddressSpace +
+           getABIInfo().getDataLayout().getAllocaAddrSpace();
+  }
 };
 }
 

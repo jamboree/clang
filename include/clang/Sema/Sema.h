@@ -691,17 +691,37 @@ public:
   class SynthesizedFunctionScope {
     Sema &S;
     Sema::ContextRAII SavedContext;
+    bool PushedCodeSynthesisContext = false;
 
   public:
     SynthesizedFunctionScope(Sema &S, DeclContext *DC)
-      : S(S), SavedContext(S, DC)
-    {
+        : S(S), SavedContext(S, DC) {
       S.PushFunctionScope();
       S.PushExpressionEvaluationContext(
           Sema::ExpressionEvaluationContext::PotentiallyEvaluated);
+      if (auto *FD = dyn_cast<FunctionDecl>(DC))
+        FD->setWillHaveBody(true);
+      else
+        assert(isa<ObjCMethodDecl>(DC));
+    }
+
+    void addContextNote(SourceLocation UseLoc) {
+      assert(!PushedCodeSynthesisContext);
+
+      Sema::CodeSynthesisContext Ctx;
+      Ctx.Kind = Sema::CodeSynthesisContext::DefiningSynthesizedFunction;
+      Ctx.PointOfInstantiation = UseLoc;
+      Ctx.Entity = cast<Decl>(S.CurContext);
+      S.pushCodeSynthesisContext(Ctx);
+
+      PushedCodeSynthesisContext = true;
     }
 
     ~SynthesizedFunctionScope() {
+      if (PushedCodeSynthesisContext)
+        S.popCodeSynthesisContext();
+      if (auto *FD = dyn_cast<FunctionDecl>(S.CurContext))
+        FD->setWillHaveBody(false);
       S.PopExpressionEvaluationContext();
       S.PopFunctionScopeInfo();
     }
@@ -1075,6 +1095,10 @@ public:
   /// to ensure that we don't emit a "redefinition" error if we encounter a
   /// correctly named definition after the renamed definition.
   llvm::SmallPtrSet<const NamedDecl *, 4> TypoCorrectedFunctionDefinitions;
+
+  /// Stack of types that correspond to the parameter entities that are
+  /// currently being copy-initialized. Can be empty.
+  llvm::SmallVector<QualType, 4> CurrentParameterCopyTypes;
 
   void ReadMethodPool(Selector Sel);
   void updateOutOfDateSelector(Selector Sel);
@@ -1460,17 +1484,20 @@ private:
   /// The modules we're currently parsing.
   llvm::SmallVector<ModuleScope, 16> ModuleScopes;
 
-  VisibleModuleSet VisibleModules;
+  /// Get the module whose scope we are currently within.
+  Module *getCurrentModule() const {
+    return ModuleScopes.empty() ? nullptr : ModuleScopes.back().Module;
+  }
 
-  Module *CachedFakeTopLevelModule;
+  VisibleModuleSet VisibleModules;
 
 public:
   /// \brief Get the module owning an entity.
-  Module *getOwningModule(Decl *Entity);
+  Module *getOwningModule(Decl *Entity) { return Entity->getOwningModule(); }
 
   /// \brief Make a merged definition of an existing hidden definition \p ND
   /// visible at the specified location.
-  void makeMergedDefinitionVisible(NamedDecl *ND, SourceLocation Loc);
+  void makeMergedDefinitionVisible(NamedDecl *ND);
 
   bool isModuleVisible(Module *M) { return VisibleModules.isVisible(M); }
 
@@ -1503,6 +1530,12 @@ public:
   bool
   hasVisibleDefaultArgument(const NamedDecl *D,
                             llvm::SmallVectorImpl<Module *> *Modules = nullptr);
+
+  /// Determine if there is a visible declaration of \p D that is an explicit
+  /// specialization declaration for a specialization of a template. (For a
+  /// member specialization, use hasVisibleMemberSpecialization.)
+  bool hasVisibleExplicitSpecialization(
+      const NamedDecl *D, llvm::SmallVectorImpl<Module *> *Modules = nullptr);
 
   /// Determine if there is a visible declaration of \p D that is a member
   /// specialization declaration (as opposed to an instantiated declaration).
@@ -1597,7 +1630,7 @@ public:
                                Scope *S,
                                CXXScopeSpec *SS,
                                ParsedType &SuggestedType,
-                               bool AllowClassTemplates = false);
+                               bool IsTemplateName = false);
 
   /// Attempt to behave like MSVC in situations where lookup of an unqualified
   /// type name has failed in a dependent context. In these situations, we
@@ -1746,6 +1779,23 @@ public:
   };
   TemplateNameKindForDiagnostics
   getTemplateNameKindForDiagnostics(TemplateName Name);
+
+  /// Determine whether it's plausible that E was intended to be a
+  /// template-name.
+  bool mightBeIntendedToBeTemplateName(ExprResult E) {
+    if (!getLangOpts().CPlusPlus || E.isInvalid())
+      return false;
+    if (auto *DRE = dyn_cast<DeclRefExpr>(E.get()))
+      return !DRE->hasExplicitTemplateArgs();
+    if (auto *ME = dyn_cast<MemberExpr>(E.get()))
+      return !ME->hasExplicitTemplateArgs();
+    // Any additional cases recognized here should also be handled by
+    // diagnoseExprIntendedAsTemplateName.
+    return false;
+  }
+  void diagnoseExprIntendedAsTemplateName(Scope *S, ExprResult TemplateName,
+                                          SourceLocation Less,
+                                          SourceLocation Greater);
 
   Decl *ActOnDeclarator(Scope *S, Declarator &D);
 
@@ -2352,6 +2402,7 @@ public:
   void MergeVarDeclTypes(VarDecl *New, VarDecl *Old, bool MergeTypeWithOld);
   void MergeVarDeclExceptionSpecs(VarDecl *New, VarDecl *Old);
   bool checkVarDeclRedefinition(VarDecl *OldDefn, VarDecl *NewDefn);
+  void notePreviousDefinition(const NamedDecl *Old, SourceLocation New);
   bool MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old, Scope *S);
 
   // AssignmentAction - This is used by all the assignment diagnostic functions
@@ -2758,7 +2809,7 @@ public:
   /// of a function.
   ///
   /// Returns true if any errors were emitted.
-  bool diagnoseArgIndependentDiagnoseIfAttrs(const FunctionDecl *Function,
+  bool diagnoseArgIndependentDiagnoseIfAttrs(const NamedDecl *ND,
                                              SourceLocation Loc);
 
   /// Returns whether the given function's address can be taken or not,
@@ -2788,7 +2839,8 @@ public:
   resolveAddressOfOnlyViableOverloadCandidate(Expr *E,
                                               DeclAccessPair &FoundResult);
 
-  bool resolveAndFixAddressOfOnlyViableOverloadCandidate(ExprResult &SrcExpr);
+  bool resolveAndFixAddressOfOnlyViableOverloadCandidate(
+      ExprResult &SrcExpr, bool DoFunctionPointerConversion = false);
 
   FunctionDecl *
   ResolveSingleFunctionTemplateSpecialization(OverloadExpr *ovl,
@@ -3118,7 +3170,8 @@ public:
                           bool IncludeGlobalScope = true);
   void LookupVisibleDecls(DeclContext *Ctx, LookupNameKind Kind,
                           VisibleDeclConsumer &Consumer,
-                          bool IncludeGlobalScope = true);
+                          bool IncludeGlobalScope = true,
+                          bool IncludeDependentBases = false);
 
   enum CorrectTypoKind {
     CTK_NonError,     // CorrectTypo used in a non error recovery situation.
@@ -6172,6 +6225,7 @@ public:
                          TemplateArgumentListInfo *ExplicitTemplateArgs,
                                            LookupResult &Previous);
   bool CheckMemberSpecialization(NamedDecl *Member, LookupResult &Previous);
+  void CompleteMemberSpecialization(NamedDecl *Member, LookupResult &Previous);
 
   DeclResult
   ActOnExplicitInstantiation(Scope *S,
@@ -7050,6 +7104,10 @@ public:
 
       /// We are declaring an implicit special member function.
       DeclaringSpecialMember,
+
+      /// We are defining a synthesized function (such as a defaulted special
+      /// member).
+      DefiningSynthesizedFunction,
     } Kind;
 
     /// \brief Was the enclosing context a non-instantiation SFINAE context?
@@ -7467,9 +7525,9 @@ public:
   /// but have not yet been performed.
   std::deque<PendingImplicitInstantiation> PendingInstantiations;
 
-  class SavePendingInstantiationsAndVTableUsesRAII {
+  class GlobalEagerInstantiationScope {
   public:
-    SavePendingInstantiationsAndVTableUsesRAII(Sema &S, bool Enabled)
+    GlobalEagerInstantiationScope(Sema &S, bool Enabled)
         : S(S), Enabled(Enabled) {
       if (!Enabled) return;
 
@@ -7477,7 +7535,14 @@ public:
       SavedVTableUses.swap(S.VTableUses);
     }
 
-    ~SavePendingInstantiationsAndVTableUsesRAII() {
+    void perform() {
+      if (Enabled) {
+        S.DefineUsedVTables();
+        S.PerformPendingInstantiations();
+      }
+    }
+
+    ~GlobalEagerInstantiationScope() {
       if (!Enabled) return;
 
       // Restore the set of pending vtables.
@@ -7507,14 +7572,16 @@ public:
   /// types, static variables, enumerators, etc.
   std::deque<PendingImplicitInstantiation> PendingLocalImplicitInstantiations;
 
-  class SavePendingLocalImplicitInstantiationsRAII {
+  class LocalEagerInstantiationScope {
   public:
-    SavePendingLocalImplicitInstantiationsRAII(Sema &S): S(S) {
+    LocalEagerInstantiationScope(Sema &S) : S(S) {
       SavedPendingLocalImplicitInstantiations.swap(
           S.PendingLocalImplicitInstantiations);
     }
 
-    ~SavePendingLocalImplicitInstantiationsRAII() {
+    void perform() { S.PerformPendingInstantiations(/*LocalOnly=*/true); }
+
+    ~LocalEagerInstantiationScope() {
       assert(S.PendingLocalImplicitInstantiations.empty() &&
              "there shouldn't be any pending local implicit instantiations");
       SavedPendingLocalImplicitInstantiations.swap(
@@ -7524,7 +7591,7 @@ public:
   private:
     Sema &S;
     std::deque<PendingImplicitInstantiation>
-    SavedPendingLocalImplicitInstantiations;
+        SavedPendingLocalImplicitInstantiations;
   };
 
   /// A helper class for building up ExtParameterInfos.
@@ -9377,6 +9444,8 @@ public:
   /// type checking binary operators (subroutines of CreateBuiltinBinOp).
   QualType InvalidOperands(SourceLocation Loc, ExprResult &LHS,
                            ExprResult &RHS);
+  QualType InvalidLogicalVectorOperands(SourceLocation Loc, ExprResult &LHS,
+                                 ExprResult &RHS);
   QualType CheckPointerToMemberOperands( // C++ 5.5
     ExprResult &LHS, ExprResult &RHS, ExprValueKind &VK,
     SourceLocation OpLoc, bool isIndirect);
@@ -10131,6 +10200,7 @@ public:
                                              MacroInfo *MacroInfo,
                                              unsigned Argument);
   void CodeCompleteNaturalLanguage();
+  void CodeCompleteAvailabilityPlatformName();
   void GatherGlobalCodeCompletions(CodeCompletionAllocator &Allocator,
                                    CodeCompletionTUInfo &CCTUInfo,
                   SmallVectorImpl<CodeCompletionResult> &Results);
@@ -10198,6 +10268,7 @@ private:
   bool SemaBuiltinVAStartARM(CallExpr *Call);
   bool SemaBuiltinUnorderedCompare(CallExpr *TheCall);
   bool SemaBuiltinFPClassification(CallExpr *TheCall, unsigned NumArgs);
+  bool SemaBuiltinVSX(CallExpr *TheCall);
   bool SemaBuiltinOSLogFormat(CallExpr *TheCall);
 
 public:
