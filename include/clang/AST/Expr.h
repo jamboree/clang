@@ -4309,9 +4309,6 @@ public:
   }
 
   Designator *getDesignator(unsigned Idx) { return &designators()[Idx]; }
-  const Designator *getDesignator(unsigned Idx) const {
-    return &designators()[Idx];
-  }
 
   const Designator *getDesignator(unsigned Idx) const {
     return &designators()[Idx];

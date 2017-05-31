@@ -94,8 +94,8 @@ void ODRHash::AddNestedNameSpecifier(const NestedNameSpecifier *NNS) {
   auto Kind = NNS->getKind();
   ID.AddInteger(Kind);
   switch (Kind) {
-  case NestedNameSpecifier::Identifier:
-    AddIdentifierInfo(NNS->getAsIdentifier());
+  case NestedNameSpecifier::DeclName:
+    AddDeclarationName(NNS->getAsDeclName());
     break;
   case NestedNameSpecifier::Namespace:
     AddDecl(NNS->getAsNamespace());
@@ -397,6 +397,10 @@ public:
     }
   }
 
+  void AddDeclarationName(DeclarationName Name) {
+    Hash.AddDeclarationName(Name);
+  }
+
   void VisitQualifiers(Qualifiers Quals) {
     ID.AddInteger(Quals.getAsOpaqueValue());
   }
@@ -492,7 +496,7 @@ public:
 
   void VisitDependentNameType(const DependentNameType *T) {
     AddNestedNameSpecifier(T->getQualifier());
-    AddIdentifierInfo(T->getIdentifier());
+    AddDeclarationName(T->getDeclName());
     VisitTypeWithKeyword(T);
   }
 

@@ -13710,7 +13710,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
         // issue an error and recover by making this tag be anonymous.
         Diag(NameLoc, diag::err_redefinition_different_kind) << Name;
         notePreviousDefinition(PrevDecl, NameLoc);
-        Name = nullptr;
+        Name = {};
         Invalid = true;
       }
 
