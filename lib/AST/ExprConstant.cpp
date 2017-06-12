@@ -736,6 +736,7 @@ namespace {
             if (!HasFoldFailureDiagnostic)
               break;
             // We've already failed to fold something. Keep that diagnostic.
+            LLVM_FALLTHROUGH;
           case EM_ConstantExpression:
           case EM_PotentialConstantExpression:
           case EM_ConstantExpressionUnevaluated:
@@ -10375,6 +10376,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
     }
 
     // OffsetOf falls through here.
+    LLVM_FALLTHROUGH;
   }
   case Expr::OffsetOfExprClass: {
     // Note that per C99, offsetof must be an ICE. And AFAIK, using
@@ -10477,6 +10479,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
       return Worst(LHSResult, RHSResult);
     }
     }
+    LLVM_FALLTHROUGH;
   }
   case Expr::ImplicitCastExprClass:
   case Expr::CStyleCastExprClass:

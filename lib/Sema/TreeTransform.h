@@ -7050,6 +7050,8 @@ TreeTransform<Derived>::TransformCoroutineBodyStmt(CoroutineBodyStmt *S) {
       Builder.ReturnStmt = Res.get();
     }
   }
+  if (!Builder.buildParameterMoves())
+    return StmtError();
 
   return getDerived().RebuildCoroutineBodyStmt(Builder);
 }

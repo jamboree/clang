@@ -391,8 +391,11 @@ static ReadySuspendResumeResult buildCoawaitCalls(Sema &S, VarDecl *CoroPromise,
     // [expr.await]p3 [...]
     //   - await-suspend is the expression e.await_suspend(h), which shall be
     //     a prvalue of type void or bool.
-    QualType RetType = AwaitSuspend->getType();
-    if (RetType != S.Context.BoolTy && RetType != S.Context.VoidTy) {
+    QualType RetType = AwaitSuspend->getCallReturnType(S.Context);
+    // non-class prvalues always have cv-unqualified types
+    QualType AdjRetType = RetType.getUnqualifiedType();
+    if (RetType->isReferenceType() ||
+        (AdjRetType != S.Context.BoolTy && AdjRetType != S.Context.VoidTy)) {
       S.Diag(AwaitSuspend->getCalleeDecl()->getLocation(),
              diag::err_await_suspend_invalid_return_type)
           << RetType;
@@ -437,6 +440,7 @@ VarDecl *Sema::buildCoroutinePromise(SourceLocation Loc) {
   if (VD->isInvalidDecl())
     return nullptr;
   ActOnUninitializedDecl(VD);
+  FD->addDecl(VD);
   assert(!VD->isInvalidDecl());
   return VD;
 }
@@ -826,6 +830,12 @@ bool CoroutineStmtBuilder::buildDependentStatements() {
                   makeGroDeclAndReturnStmt() && makeReturnOnAllocFailure() &&
                   makeNewAndDeleteExpr();
   return this->IsValid;
+}
+
+bool CoroutineStmtBuilder::buildParameterMoves() {
+  assert(this->IsValid && "coroutine already invalid");
+  assert(this->ParamMoves.empty() && "param moves already built");
+  return this->IsValid = makeParamMoves();
 }
 
 bool CoroutineStmtBuilder::makePromiseStmt() {
@@ -1240,14 +1250,13 @@ static Expr *castForMoving(Sema &S, Expr *E, QualType T = QualType()) {
       .get();
 }
 
+
 /// \brief Build a variable declaration for move parameter.
 static VarDecl *buildVarDecl(Sema &S, SourceLocation Loc, QualType Type,
-                             StringRef Name) {
-  DeclContext *DC = S.CurContext;
-  IdentifierInfo *II = &S.PP.getIdentifierTable().get(Name);
+                             IdentifierInfo *II) {
   TypeSourceInfo *TInfo = S.Context.getTrivialTypeSourceInfo(Type, Loc);
   VarDecl *Decl =
-      VarDecl::Create(S.Context, DC, Loc, Loc, II, Type, TInfo, SC_None);
+      VarDecl::Create(S.Context, S.CurContext, Loc, Loc, II, Type, TInfo, SC_None);
   Decl->setImplicit();
   return Decl;
 }
@@ -1260,9 +1269,6 @@ bool CoroutineStmtBuilder::makeParamMoves() {
 
     // No need to copy scalars, llvm will take care of them.
     if (Ty->getAsCXXRecordDecl()) {
-      if (!paramDecl->getIdentifier())
-        continue;
-
       ExprResult ParamRef =
           S.BuildDeclRefExpr(paramDecl, paramDecl->getType(),
                              ExprValueKind::VK_LValue, Loc); // FIXME: scope?
@@ -1271,8 +1277,7 @@ bool CoroutineStmtBuilder::makeParamMoves() {
 
       Expr *RCast = castForMoving(S, ParamRef.get());
 
-      auto D = buildVarDecl(S, Loc, Ty, paramDecl->getIdentifier()->getName());
-
+      auto D = buildVarDecl(S, Loc, Ty, paramDecl->getIdentifier());
       S.AddInitializerToDecl(D, RCast, /*DirectInit=*/true);
 
       // Convert decl to a statement.
