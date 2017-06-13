@@ -1425,7 +1425,7 @@ public:
 
   ImplicitParamDecl(ASTContext &C, QualType Type, ImplicitParamKind ParamKind)
       : VarDecl(ImplicitParam, C, /*DC=*/nullptr, SourceLocation(),
-                SourceLocation(), /*Id=*/nullptr, Type,
+                SourceLocation(), /*Id=*/{}, Type,
                 /*TInfo=*/nullptr, SC_None) {
     NonParmVarDeclBits.ImplicitParamKind = ParamKind;
     setImplicit();
