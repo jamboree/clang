@@ -163,11 +163,12 @@ Retry:
   SourceLocation AtLoc;
   switch (Kind) {
   case tok::at: // May be a @try or @throw statement
-    {
+    if (getLangOpts().ObjC1) {
       ProhibitAttributes(Attrs); // TODO: is it correct?
-      AtLoc = ConsumeToken();  // consume @
+      AtLoc = ConsumeToken();    // consume @
       return ParseObjCAtStatement(AtLoc);
     }
+    goto Fallback;
 
   case tok::code_completion:
     Actions.CodeCompleteOrdinaryName(getCurScope(), Sema::PCC_Statement);
@@ -206,7 +207,8 @@ Retry:
     LLVM_FALLTHROUGH;
   }
 
-  default: {
+  default:
+  Fallback: {
     if ((getLangOpts().CPlusPlus || getLangOpts().MicrosoftExt ||
          Allowed == ACK_Any) &&
         isDeclarationStatement()) {

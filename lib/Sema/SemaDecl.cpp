@@ -4151,6 +4151,18 @@ Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS, DeclSpec &DS,
     return TagD;
   }
 
+  if (DS.isOtherContextSpecified()) {
+    if (Tag)
+      Diag(DS.getContextSpecLoc(), diag::err_context_spec_tag)
+          << GetDiagnosticTypeSpecifierID(DS.getTypeSpecType())
+          << DeclSpec::getSpecifierName(DS.getContextSpec());
+    else
+      Diag(DS.getConstexprSpecLoc(), diag::err_context_spec_no_declarators)
+          << DeclSpec::getSpecifierName(DS.getContextSpec());
+    // Don't emit warnings after this error.
+    return TagD;
+  }
+
   if (DS.isConceptSpecified()) {
     // C++ Concepts TS [dcl.spec.concept]p1: A concept definition refers to
     // either a function concept and its definition or a variable concept and
@@ -5627,9 +5639,10 @@ Sema::ActOnTypedefDeclarator(Scope* S, Declarator& D, DeclContext* DC,
   if (D.getDeclSpec().isInlineSpecified())
     Diag(D.getDeclSpec().getInlineSpecLoc(), diag::err_inline_non_function)
         << getLangOpts().CPlusPlus1z;
-  if (D.getDeclSpec().isConstexprSpecified())
-    Diag(D.getDeclSpec().getConstexprSpecLoc(), diag::err_invalid_constexpr)
-      << 1;
+  if (auto CS = D.getDeclSpec().getContextSpec())
+    Diag(D.getDeclSpec().getContextSpecLoc(), diag::err_invalid_context_spec)
+      << 2 << DeclSpec::getSpecifierName(CS);
+
   if (D.getDeclSpec().isConceptSpecified())
     Diag(D.getDeclSpec().getConceptSpecLoc(),
          diag::err_concept_wrong_decl_kind);
@@ -6512,6 +6525,13 @@ NamedDecl *Sema::ActOnVariableDeclarator(
         Diag(D.getIdentifierLoc(), diag::err_variable_concept_bool_decl);
         NewVD->setInvalidDecl(true);
       }
+    }
+
+    // Context specifier shall be applied only to the declaration of a function.
+    if (D.getDeclSpec().isOtherContextSpecified()) {
+      Diag(D.getDeclSpec().getContextSpecLoc(), diag::err_invalid_context_spec)
+          << 0 << DeclSpec::getSpecifierName(D.getDeclSpec().getContextSpec());
+      NewVD->setInvalidDecl(true);
     }
   }
 
@@ -11659,9 +11679,9 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   if (DS.isInlineSpecified())
     Diag(DS.getInlineSpecLoc(), diag::err_inline_non_function)
         << getLangOpts().CPlusPlus1z;
-  if (DS.isConstexprSpecified())
-    Diag(DS.getConstexprSpecLoc(), diag::err_invalid_constexpr)
-      << 0;
+  if (auto CS = DS.getContextSpec())
+    Diag(D.getDeclSpec().getContextSpecLoc(), diag::err_invalid_context_spec)
+        << 1 << DeclSpec::getSpecifierName(CS);
   if (DS.isConceptSpecified())
     Diag(DS.getConceptSpecLoc(), diag::err_concept_wrong_decl_kind);
 

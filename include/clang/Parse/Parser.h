@@ -1652,6 +1652,8 @@ private:
 
   bool ParseCXXTypeSpecifierSeq(DeclSpec &DS);
 
+  void ParseContextSpecifier(DeclSpec &DS);
+
   //===--------------------------------------------------------------------===//
   // C++ 5.3.4 and 5.3.5: C++ new and delete
   bool ParseExpressionListOrTypeId(SmallVectorImpl<Expr*> &Exprs,
@@ -1769,6 +1771,7 @@ private:
   StmtResult ParseContinueStatement();
   StmtResult ParseBreakStatement();
   StmtResult ParseReturnStatement();
+  StmtResult ParseReturnBreakStatement();
   StmtResult ParseAsmStatement(bool &msAsm);
   StmtResult ParseMicrosoftAsmStatement(SourceLocation AsmLoc);
   StmtResult ParsePragmaLoopHint(StmtVector &Stmts,
@@ -2396,6 +2399,8 @@ private:
                                           SourceLocation FriendLoc);
 
   bool isCXX11FinalKeyword() const;
+
+  ContextType ParseContextType(SourceLocation *EndLoc);
 
   /// DeclaratorScopeObj - RAII object used in Parser::ParseDirectDeclarator to
   /// enter a new C++ declarator scope and exit it when the function is

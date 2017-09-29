@@ -328,6 +328,15 @@ public:
     PQ_FunctionSpecifier     = 8
   };
 
+  // context-specifier
+  enum ContextSpecifier : unsigned {
+    CS_unspecified = 0,
+    CS_constexpr,
+    CS_generic,
+    CS_plain,
+    CS_async,
+  };
+
 private:
   // storage-class-specifier
   /*SCS*/unsigned StorageClassSpec : 3;
@@ -358,12 +367,12 @@ private:
   // friend-specifier
   unsigned Friend_specified : 1;
 
-  // constexpr-specifier
-  unsigned Constexpr_specified : 1;
-
   // concept-specifier
   unsigned Concept_specified : 1;
 
+  // context-specifier
+  ContextSpecifier ContextSpec : 3;
+  
   union {
     UnionParsedType TypeRep;
     Decl *DeclRep;
@@ -393,7 +402,7 @@ private:
       TQ_unalignedLoc;
   SourceLocation FS_inlineLoc, FS_virtualLoc, FS_explicitLoc, FS_noreturnLoc;
   SourceLocation FS_forceinlineLoc;
-  SourceLocation FriendLoc, ModulePrivateLoc, ConstexprLoc, ConceptLoc;
+  SourceLocation FriendLoc, ModulePrivateLoc, ConceptLoc, ContextSpecLoc;
   SourceLocation TQ_pipeLoc;
 
   WrittenBuiltinSpecs writtenBS;
@@ -438,8 +447,8 @@ public:
       FS_explicit_specified(false),
       FS_noreturn_specified(false),
       Friend_specified(false),
-      Constexpr_specified(false),
       Concept_specified(false),
+      ContextSpec(CS_unspecified),
       Attrs(attrFactory),
       writtenBS(),
       ObjCQualifiers(nullptr) {
@@ -536,6 +545,7 @@ public:
   static const char *getSpecifierName(DeclSpec::TSW W);
   static const char *getSpecifierName(DeclSpec::SCS S);
   static const char *getSpecifierName(DeclSpec::TSCS S);
+  static const char *getSpecifierName(DeclSpec::ContextSpecifier C);
 
   // type-qualifiers
 
@@ -700,26 +710,37 @@ public:
   bool SetConceptSpec(SourceLocation Loc, const char *&PrevSpec,
                       unsigned &DiagID);
 
+  bool SetContextSpec(ContextSpecifier C, SourceLocation Loc,
+                      const char *&PrevSpec, unsigned &DiagID);
+
   bool isFriendSpecified() const { return Friend_specified; }
   SourceLocation getFriendSpecLoc() const { return FriendLoc; }
 
   bool isModulePrivateSpecified() const { return ModulePrivateLoc.isValid(); }
   SourceLocation getModulePrivateSpecLoc() const { return ModulePrivateLoc; }
   
-  bool isConstexprSpecified() const { return Constexpr_specified; }
-  SourceLocation getConstexprSpecLoc() const { return ConstexprLoc; }
+  /// Constexpr is just a special case of context.
+  bool isConstexprSpecified() const { return ContextSpec == CS_constexpr; }
+  SourceLocation getConstexprSpecLoc() const { return ContextSpecLoc; }
 
   bool isConceptSpecified() const { return Concept_specified; }
   SourceLocation getConceptSpecLoc() const { return ConceptLoc; }
 
-  void ClearConstexprSpec() {
-    Constexpr_specified = false;
-    ConstexprLoc = SourceLocation();
-  }
+  /// \brief Return true if context other than constexpr is specified.
+  bool isOtherContextSpecified() const { return ContextSpec > CS_constexpr; }
+  ContextSpecifier getContextSpec() const { return ContextSpec; }
+  SourceLocation getContextSpecLoc() const { return ContextSpecLoc; }
+
+  void ClearConstexprSpec() { ClearContextSpec(); }
 
   void ClearConceptSpec() {
     Concept_specified = false;
     ConceptLoc = SourceLocation();
+  }
+
+  void ClearContextSpec() {
+    ContextSpec = CS_unspecified;
+    ContextSpecLoc = SourceLocation();
   }
 
   AttributePool &getAttributePool() const {

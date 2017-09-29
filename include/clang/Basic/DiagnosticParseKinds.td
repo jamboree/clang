@@ -334,6 +334,8 @@ def err_typename_invalid_constexpr : Error<
   "type name does not allow constexpr specifier to be specified">;
 def err_typename_identifiers_only : Error<
   "typename is allowed for identifiers only">;
+def err_typename_invalid_context_spec : Error<
+  "type name does not allow %0 specifier to be specified">;
 
 def err_friend_invalid_in_context : Error<
   "'friend' used outside of class">;
@@ -825,6 +827,12 @@ def warn_cxx14_compat_constexpr_on_lambda : Warning<
   InGroup<CXXPre17Compat>, DefaultIgnore;
 def ext_constexpr_on_lambda_cxx17 : ExtWarn<
   "'constexpr' on lambda expressions is a C++17 extension">, InGroup<CXX17>;
+
+// C++Ex contexts
+def err_expected_context_name : Error<
+  "expected context name">;
+def err_unknown_context : Error<
+  "unknown context '%0'">;
 
 // Availability attribute
 def err_expected_version : Error<

@@ -1384,10 +1384,13 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw___is_rvalue_expr:
     return ParseExpressionTrait();
       
-  case tok::at: {
-    SourceLocation AtLoc = ConsumeToken();
-    return ParseObjCAtExpression(AtLoc);
-  }
+  case tok::at:
+    if (getLangOpts().ObjC1) {
+      SourceLocation AtLoc = ConsumeToken();
+      return ParseObjCAtExpression(AtLoc);
+    }
+    goto Fallback;
+
   case tok::caret:
     Res = ParseBlockLiteralExpression();
     break;
@@ -1418,6 +1421,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     }
     // FALL THROUGH.
   default:
+  Fallback:
     NotCastExpr = true;
     return ExprError();
   }

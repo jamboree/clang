@@ -481,7 +481,41 @@ public:
     return T->getStmtClass() == CoreturnStmtClass;
   }
 };
+#if 0
+/// ContextBodyStmt - This represents a C++ context block.
+///
+class ContextBodyStmt : public Stmt {
+    SourceLocation ContextLoc;
+    Stmt *Body;
 
+public:
+    ContextBodyStmt(Stmt *body)
+        : Stmt(ContextBodyStmtClass), Body(body) {}
+
+    /// \brief Retrieve the body of the coroutine as written. This will be either
+    /// a CompoundStmt or a TryStmt.
+    Stmt *getBody() const {
+        return Body;
+    }
+
+    SourceLocation getLocStart() const LLVM_READONLY {
+        return getBody()->getLocStart();
+    }
+    SourceLocation getLocEnd() const LLVM_READONLY {
+        return getBody()->getLocEnd();
+    }
+
+    child_range children() {
+        return child_range(&Body, &Body + 1);
+    }
+
+    static bool classof(const Stmt *T) {
+        return T->getStmtClass() == ContextBodyStmtClass;
+    }
+
+    friend class ASTStmtReader;
+};
+#endif
 }  // end namespace clang
 
 #endif

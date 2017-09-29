@@ -4396,6 +4396,7 @@ static void AddKeywordsToConsumer(Sema &SemaRef,
         Consumer.addKeywordResult("char16_t");
         Consumer.addKeywordResult("char32_t");
         Consumer.addKeywordResult("constexpr");
+        Consumer.addKeywordResult("generic");
         Consumer.addKeywordResult("decltype");
         Consumer.addKeywordResult("thread_local");
       }

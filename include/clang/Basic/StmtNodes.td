@@ -52,6 +52,9 @@ def CXXForRangeStmt : Stmt;
 def CoroutineBodyStmt : Stmt;
 def CoreturnStmt : Stmt;
 
+// [C++Ex] Context statements
+//def ContextBodyStmt : Stmt;
+
 // Expressions
 def Expr : Stmt<1>;
 def PredefinedExpr : DStmt<Expr>;

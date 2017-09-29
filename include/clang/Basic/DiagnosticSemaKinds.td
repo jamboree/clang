@@ -2226,9 +2226,6 @@ def warn_cxx14_compat_constexpr_not_const : Warning<
   "'constexpr' non-static member function will not be implicitly 'const' "
   "in C++14; add 'const' to avoid a change in behavior">,
   InGroup<DiagGroup<"constexpr-not-const">>;
-def err_invalid_constexpr : Error<
-  "%select{function parameter|typedef|non-static data member}0 "
-  "cannot be constexpr">;
 def err_invalid_constexpr_member : Error<"non-static data member cannot be "
   "constexpr%select{; did you intend to make it %select{const|static}0?|}1">;
 def err_constexpr_tag : Error<
@@ -2346,6 +2343,15 @@ def warn_private_extern : Warning<
   "private to the linkage unit and is deprecated">, InGroup<PrivateExtern>;
 def note_private_extern : Note<
   "use __attribute__((visibility(\"hidden\"))) attribute instead">;
+
+// [C++Ex] Context
+def err_invalid_context_spec : Error<
+  "%select{variable|function parameter|typedef}0 cannot be %1">;
+def err_context_spec_tag : Error<
+  "%select{class|struct|interface|union|enum}0 cannot be marked %1">;
+def err_context_spec_no_declarators : Error<
+  "%0 can only be used in function declarations">;
+//def note_context_spec : Note<"context specifier is here">;
 
 // C++ Concepts TS
 def err_concept_wrong_decl_kind : Error<

@@ -2395,6 +2395,13 @@ void Parser::ParseSpecifierQualifierList(DeclSpec &DS, AccessSpecifier AS,
     Diag(DS.getConstexprSpecLoc(), diag::err_typename_invalid_constexpr);
     DS.ClearConstexprSpec();
   }
+
+  // Issue diagnostic and remove other context specfier if present.
+  if (DS.isOtherContextSpecified()) {
+    Diag(DS.getContextSpecLoc(), diag::err_typename_invalid_context_spec)
+        << DeclSpec::getSpecifierName(DS.getContextSpec());
+    DS.ClearContextSpec();
+  }
 }
 
 /// isValidAfterIdentifierInDeclaratorAfterDeclSpec - Return true if the
@@ -2839,6 +2846,33 @@ Parser::DiagnoseMissingSemiAfterTagDefinition(DeclSpec &DS, AccessSpecifier AS,
   return false;
 }
 
+void Parser::ParseContextSpecifier(DeclSpec &DS) {
+  assert(Tok.is(tok::at));
+  const char *PrevSpec = nullptr;
+  unsigned DiagID = 0;
+  SourceLocation atLoc(Tok.getLocation());
+  SourceLocation endLoc;
+  ConsumeToken();
+  bool isInvalid = false;
+  switch (ParseContextType(&endLoc)) {
+  case CT_plain:
+    isInvalid = DS.SetContextSpec(DeclSpec::CS_plain, atLoc, PrevSpec, DiagID);
+    break;
+  case CT_async:
+    isInvalid = DS.SetContextSpec(DeclSpec::CS_async, atLoc, PrevSpec, DiagID);
+    break;
+  default:
+    return;
+  }
+  if (isInvalid) {
+    if (DiagID == diag::ext_duplicate_declspec)
+      Diag(atLoc, DiagID) << PrevSpec << FixItHint::CreateRemoval(
+                                             SourceRange(atLoc, endLoc));
+    else
+      Diag(atLoc, DiagID) << PrevSpec;
+  }
+}
+
 /// ParseDeclarationSpecifiers
 ///       declaration-specifiers: [C99 6.7]
 ///         storage-class-specifier declaration-specifiers[opt]
@@ -2937,6 +2971,10 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
 
       ParseCXX11Attributes(attrs);
       AttrsLastTime = true;
+      continue;
+
+    case tok::at:
+      ParseContextSpecifier(DS);
       continue;
 
     case tok::code_completion: {
@@ -3467,6 +3505,12 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
     // concept
     case tok::kw_concept:
       isInvalid = DS.SetConceptSpec(Loc, PrevSpec, DiagID);
+      break;
+
+    // generic context
+    case tok::kw_generic:
+      isInvalid =
+          DS.SetContextSpec(DeclSpec::CS_generic, Loc, PrevSpec, DiagID);
       break;
 
     // type-specifier
@@ -4820,9 +4864,16 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
     // C++ Concepts TS - concept
   case tok::kw_concept:
 
+    // C++Ex context-specifier
+  case tok::kw_generic:
+  
     // C11 _Atomic
   case tok::kw__Atomic:
     return true;
+
+    // C++Ex context-specifier
+  case tok::at:
+    return NextToken().is(tok::identifier);
 
     // GNU ObjC bizarre protocol extension: <proto1,proto2> with implicit 'id'.
   case tok::less:

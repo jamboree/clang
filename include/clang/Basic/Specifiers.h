@@ -295,6 +295,12 @@ namespace clang {
   llvm::StringRef getNullabilitySpelling(NullabilityKind kind,
                                          bool isContextSensitive = false);
 
+  enum ContextType {
+    CT_unknown, ///<
+    CT_plain,   ///<
+    CT_async    ///<
+  };
+
   /// \brief Kinds of parameter ABI.
   enum class ParameterABI {
     /// This parameter uses ordinary ABI rules for its type.
