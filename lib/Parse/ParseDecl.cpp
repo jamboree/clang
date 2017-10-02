@@ -2396,10 +2396,10 @@ void Parser::ParseSpecifierQualifierList(DeclSpec &DS, AccessSpecifier AS,
     DS.ClearConstexprSpec();
   }
 
-  // Issue diagnostic and remove other context specfier if present.
-  if (DS.isOtherContextSpecified()) {
+  // Issue diagnostic and remove context specfier if present.
+  if (auto CS = DS.getContextSpec()) {
     Diag(DS.getContextSpecLoc(), diag::err_typename_invalid_context_spec)
-        << DeclSpec::getSpecifierName(DS.getContextSpec());
+        << DeclSpec::getSpecifierName(CS);
     DS.ClearContextSpec();
   }
 }

@@ -331,7 +331,6 @@ public:
   // context-specifier
   enum ContextSpecifier : unsigned {
     CS_unspecified = 0,
-    CS_constexpr,
     CS_generic,
     CS_plain,
     CS_async,
@@ -367,11 +366,14 @@ private:
   // friend-specifier
   unsigned Friend_specified : 1;
 
+  // constexpr-specifier
+  unsigned Constexpr_specified : 1;
+
   // concept-specifier
   unsigned Concept_specified : 1;
 
   // context-specifier
-  ContextSpecifier ContextSpec : 3;
+  ContextSpecifier ContextSpec : 2;
   
   union {
     UnionParsedType TypeRep;
@@ -402,7 +404,8 @@ private:
       TQ_unalignedLoc;
   SourceLocation FS_inlineLoc, FS_virtualLoc, FS_explicitLoc, FS_noreturnLoc;
   SourceLocation FS_forceinlineLoc;
-  SourceLocation FriendLoc, ModulePrivateLoc, ConceptLoc, ContextSpecLoc;
+  SourceLocation FriendLoc, ModulePrivateLoc, ConstexprLoc, ConceptLoc;
+  SourceLocation ContextSpecLoc;
   SourceLocation TQ_pipeLoc;
 
   WrittenBuiltinSpecs writtenBS;
@@ -447,6 +450,7 @@ public:
       FS_explicit_specified(false),
       FS_noreturn_specified(false),
       Friend_specified(false),
+      Constexpr_specified(false),
       Concept_specified(false),
       ContextSpec(CS_unspecified),
       Attrs(attrFactory),
@@ -719,19 +723,19 @@ public:
   bool isModulePrivateSpecified() const { return ModulePrivateLoc.isValid(); }
   SourceLocation getModulePrivateSpecLoc() const { return ModulePrivateLoc; }
   
-  /// Constexpr is just a special case of context.
-  bool isConstexprSpecified() const { return ContextSpec == CS_constexpr; }
-  SourceLocation getConstexprSpecLoc() const { return ContextSpecLoc; }
+  bool isConstexprSpecified() const { return Constexpr_specified; }
+  SourceLocation getConstexprSpecLoc() const { return ConstexprLoc; }
 
   bool isConceptSpecified() const { return Concept_specified; }
   SourceLocation getConceptSpecLoc() const { return ConceptLoc; }
 
-  /// \brief Return true if context other than constexpr is specified.
-  bool isOtherContextSpecified() const { return ContextSpec > CS_constexpr; }
   ContextSpecifier getContextSpec() const { return ContextSpec; }
   SourceLocation getContextSpecLoc() const { return ContextSpecLoc; }
 
-  void ClearConstexprSpec() { ClearContextSpec(); }
+  void ClearConstexprSpec() {
+    Constexpr_specified = false;
+    ConstexprLoc = SourceLocation();
+  }
 
   void ClearConceptSpec() {
     Concept_specified = false;

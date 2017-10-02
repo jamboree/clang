@@ -4151,14 +4151,14 @@ Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS, DeclSpec &DS,
     return TagD;
   }
 
-  if (DS.isOtherContextSpecified()) {
+  if (auto CS = DS.getContextSpec()) {
     if (Tag)
       Diag(DS.getContextSpecLoc(), diag::err_context_spec_tag)
           << GetDiagnosticTypeSpecifierID(DS.getTypeSpecType())
-          << DeclSpec::getSpecifierName(DS.getContextSpec());
+          << DeclSpec::getSpecifierName(CS);
     else
       Diag(DS.getConstexprSpecLoc(), diag::err_context_spec_no_declarators)
-          << DeclSpec::getSpecifierName(DS.getContextSpec());
+          << DeclSpec::getSpecifierName(CS);
     // Don't emit warnings after this error.
     return TagD;
   }
@@ -5639,6 +5639,9 @@ Sema::ActOnTypedefDeclarator(Scope* S, Declarator& D, DeclContext* DC,
   if (D.getDeclSpec().isInlineSpecified())
     Diag(D.getDeclSpec().getInlineSpecLoc(), diag::err_inline_non_function)
         << getLangOpts().CPlusPlus1z;
+  if (D.getDeclSpec().isConstexprSpecified())
+    Diag(D.getDeclSpec().getConstexprSpecLoc(), diag::err_invalid_constexpr)
+      << 1;
   if (auto CS = D.getDeclSpec().getContextSpec())
     Diag(D.getDeclSpec().getContextSpecLoc(), diag::err_invalid_context_spec)
       << 2 << DeclSpec::getSpecifierName(CS);
@@ -6528,9 +6531,9 @@ NamedDecl *Sema::ActOnVariableDeclarator(
     }
 
     // Context specifier shall be applied only to the declaration of a function.
-    if (D.getDeclSpec().isOtherContextSpecified()) {
+    if (auto CS = D.getDeclSpec().getContextSpec()) {
       Diag(D.getDeclSpec().getContextSpecLoc(), diag::err_invalid_context_spec)
-          << 0 << DeclSpec::getSpecifierName(D.getDeclSpec().getContextSpec());
+          << 0 << DeclSpec::getSpecifierName(CS);
       NewVD->setInvalidDecl(true);
     }
   }
