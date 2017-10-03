@@ -212,6 +212,9 @@ DeclaratorChunk DeclaratorChunk::getFunction(bool hasProto,
   I.Fun.HasTrailingReturnType   = TrailingReturnType.isUsable() ||
                                   TrailingReturnType.isInvalid();
   I.Fun.TrailingReturnType      = TrailingReturnType.get();
+  I.Fun.ContextSpec             = TheDeclarator.getDeclSpec().getContextSpec();
+  I.Fun.ContextSpecLoc =
+      TheDeclarator.getDeclSpec().getContextSpecLoc().getRawEncoding();
 
   assert(I.Fun.TypeQuals == TypeQuals && "bitfield overflow");
   assert(I.Fun.ExceptionSpecType == ESpecType && "bitfield overflow");
@@ -492,12 +495,12 @@ const char *DeclSpec::getSpecifierName(TSS S) {
   llvm_unreachable("Unknown typespec!");
 }
 
-const char *DeclSpec::getSpecifierName(ContextSpecifier C) {
+const char *DeclSpec::getSpecifierName(CK C) {
   switch (C) {
-  case CS_unspecified:  return "unspecified";
-  case CS_generic:      return "generic";
-  case CS_plain:        return "@plain";
-  case CS_async:        return "@async";
+  case CK_unspecified:  return "unspecified";
+  case CK_generic:      return "generic";
+  case CK_plain:        return "@plain";
+  case CK_async:        return "@async";
   }
   llvm_unreachable("Unknown typespec!");
 }
@@ -991,14 +994,14 @@ bool DeclSpec::SetConceptSpec(SourceLocation Loc, const char *&PrevSpec,
   return false;
 }
 
-bool DeclSpec::SetContextSpec(ContextSpecifier C, SourceLocation Loc,
+bool DeclSpec::SetContextSpec(CK C, SourceLocation Loc,
                               const char *&PrevSpec, unsigned &DiagID) {
-  if (ContextSpec != CS_unspecified) {
+  if (ContextSpec != CK_unspecified) {
     if (ContextSpec == C)
       DiagID = diag::ext_duplicate_declspec;
     else
       DiagID = diag::err_invalid_decl_spec_combination;
-    PrevSpec = getSpecifierName(ContextSpec);
+    PrevSpec = getSpecifierName((CK)ContextSpec);
     return true;
   }
   ContextSpec = C;

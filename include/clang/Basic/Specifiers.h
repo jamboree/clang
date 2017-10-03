@@ -295,10 +295,12 @@ namespace clang {
   llvm::StringRef getNullabilitySpelling(NullabilityKind kind,
                                          bool isContextSensitive = false);
 
-  enum ContextType {
-    CT_unknown, ///<
-    CT_plain,   ///<
-    CT_async    ///<
+  /// \brief The evaluation context.
+  enum ContextKind {
+    CK_unspecified = 0,
+    CK_generic,
+    CK_plain,
+    CK_async,
   };
 
   /// \brief Kinds of parameter ABI.

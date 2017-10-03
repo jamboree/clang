@@ -1199,7 +1199,7 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
 
   // Handle context-provider.
   if (TryConsumeToken(tok::at)) {
-    if (ContextType CT = ParseContextType(nullptr)) {
+    if (ContextKind CK = ParseContextType(nullptr)) {
       //return ParseFunctionContextBlock(Res, BodyScope);
     }
   }
@@ -1228,17 +1228,17 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
   return ParseFunctionStatementBody(Res, BodyScope);
 }
 
-ContextType Parser::ParseContextType(SourceLocation *EndLoc) {
+ContextKind Parser::ParseContextType(SourceLocation *EndLoc) {
   if (Tok.is(tok::identifier)) {
     StringRef id(Tok.getIdentifierInfo()->getName());
     if (EndLoc)
       *EndLoc = Tok.getEndLoc();
     if (id == "async") {
       ConsumeToken();
-      return CT_async;
+      return CK_async;
     } else if (id == "plain") {
       ConsumeToken();
-      return CT_plain;
+      return CK_plain;
     } else {
       Diag(diag::err_unknown_context) << id;
       ConsumeToken();
@@ -1246,7 +1246,7 @@ ContextType Parser::ParseContextType(SourceLocation *EndLoc) {
   } else {
     Diag(diag::err_expected_context_name);
   }
-  return CT_unknown;
+  return CK_unspecified;
 }
 
 void Parser::SkipFunctionBody() {

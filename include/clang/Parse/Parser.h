@@ -2399,7 +2399,7 @@ private:
 
   bool isCXX11FinalKeyword() const;
 
-  ContextType ParseContextType(SourceLocation *EndLoc);
+  ContextKind ParseContextType(SourceLocation *EndLoc);
 
   /// DeclaratorScopeObj - RAII object used in Parser::ParseDirectDeclarator to
   /// enter a new C++ declarator scope and exit it when the function is

@@ -2855,11 +2855,11 @@ void Parser::ParseContextSpecifier(DeclSpec &DS) {
   ConsumeToken();
   bool isInvalid = false;
   switch (ParseContextType(&endLoc)) {
-  case CT_plain:
-    isInvalid = DS.SetContextSpec(DeclSpec::CS_plain, atLoc, PrevSpec, DiagID);
+  case CK_plain:
+    isInvalid = DS.SetContextSpec(CK_plain, atLoc, PrevSpec, DiagID);
     break;
-  case CT_async:
-    isInvalid = DS.SetContextSpec(DeclSpec::CS_async, atLoc, PrevSpec, DiagID);
+  case CK_async:
+    isInvalid = DS.SetContextSpec(CK_async, atLoc, PrevSpec, DiagID);
     break;
   default:
     return;
@@ -3510,7 +3510,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
     // generic context
     case tok::kw_generic:
       isInvalid =
-          DS.SetContextSpec(DeclSpec::CS_generic, Loc, PrevSpec, DiagID);
+          DS.SetContextSpec(CK_generic, Loc, PrevSpec, DiagID);
       break;
 
     // type-specifier

@@ -4397,6 +4397,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
         EPI.RefQualifier = !FTI.hasRefQualifier()? RQ_None
                     : FTI.RefQualifierIsLValueRef? RQ_LValue
                     : RQ_RValue;
+        EPI.ContextSpec = (ContextKind)FTI.ContextSpec;
 
         // Otherwise, we have a function with a parameter list that is
         // potentially variadic.

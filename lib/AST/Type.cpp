@@ -2675,6 +2675,7 @@ FunctionProtoType::FunctionProtoType(QualType result, ArrayRef<QualType> params,
 
   FunctionTypeBits.TypeQuals = epi.TypeQuals;
   FunctionTypeBits.RefQualifier = epi.RefQualifier;
+  FunctionTypeBits.ContextSpec = epi.ContextSpec;
 
   // Fill in the trailing argument array.
   QualType *argSlot = reinterpret_cast<QualType*>(this+1);
@@ -2865,12 +2866,14 @@ void FunctionProtoType::Profile(llvm::FoldingSetNodeID &ID, QualType Result,
   assert(!(unsigned(epi.Variadic) & ~1) &&
          !(unsigned(epi.TypeQuals) & ~255) &&
          !(unsigned(epi.RefQualifier) & ~3) &&
+         !(unsigned(epi.ContextSpec) & ~3) &&
          !(unsigned(epi.ExceptionSpec.Type) & ~15) &&
          "Values larger than expected.");
   ID.AddInteger(unsigned(epi.Variadic) +
                 (epi.TypeQuals << 1) +
                 (epi.RefQualifier << 9) +
-                (epi.ExceptionSpec.Type << 11));
+                (epi.ContextSpec << 11) +
+                (epi.ExceptionSpec.Type << 13));
   if (epi.ExceptionSpec.Type == EST_Dynamic) {
     for (QualType Ex : epi.ExceptionSpec.Exceptions)
       ID.AddPointer(Ex.getAsOpaquePtr());

@@ -328,13 +328,7 @@ public:
     PQ_FunctionSpecifier     = 8
   };
 
-  // context-specifier
-  enum ContextSpecifier : unsigned {
-    CS_unspecified = 0,
-    CS_generic,
-    CS_plain,
-    CS_async,
-  };
+  typedef ContextKind CK;
 
 private:
   // storage-class-specifier
@@ -373,7 +367,7 @@ private:
   unsigned Concept_specified : 1;
 
   // context-specifier
-  ContextSpecifier ContextSpec : 2;
+  unsigned ContextSpec : 2;
   
   union {
     UnionParsedType TypeRep;
@@ -452,7 +446,7 @@ public:
       Friend_specified(false),
       Constexpr_specified(false),
       Concept_specified(false),
-      ContextSpec(CS_unspecified),
+      ContextSpec(CK_unspecified),
       Attrs(attrFactory),
       writtenBS(),
       ObjCQualifiers(nullptr) {
@@ -549,7 +543,7 @@ public:
   static const char *getSpecifierName(DeclSpec::TSW W);
   static const char *getSpecifierName(DeclSpec::SCS S);
   static const char *getSpecifierName(DeclSpec::TSCS S);
-  static const char *getSpecifierName(DeclSpec::ContextSpecifier C);
+  static const char *getSpecifierName(DeclSpec::CK C);
 
   // type-qualifiers
 
@@ -714,7 +708,7 @@ public:
   bool SetConceptSpec(SourceLocation Loc, const char *&PrevSpec,
                       unsigned &DiagID);
 
-  bool SetContextSpec(ContextSpecifier C, SourceLocation Loc,
+  bool SetContextSpec(CK C, SourceLocation Loc,
                       const char *&PrevSpec, unsigned &DiagID);
 
   bool isFriendSpecified() const { return Friend_specified; }
@@ -729,7 +723,7 @@ public:
   bool isConceptSpecified() const { return Concept_specified; }
   SourceLocation getConceptSpecLoc() const { return ConceptLoc; }
 
-  ContextSpecifier getContextSpec() const { return ContextSpec; }
+  CK getContextSpec() const { return (CK)ContextSpec; }
   SourceLocation getContextSpecLoc() const { return ContextSpecLoc; }
 
   void ClearConstexprSpec() {
@@ -743,7 +737,7 @@ public:
   }
 
   void ClearContextSpec() {
-    ContextSpec = CS_unspecified;
+    ContextSpec = CK_unspecified;
     ContextSpecLoc = SourceLocation();
   }
 
@@ -1291,6 +1285,9 @@ struct DeclaratorChunk {
     /// specified.
     unsigned HasTrailingReturnType : 1;
 
+    /// The context-specifier.
+    unsigned ContextSpec : 2;
+
     /// The location of the left parenthesis in the source.
     unsigned LParenLoc;
 
@@ -1338,6 +1335,9 @@ struct DeclaratorChunk {
 
     /// \brief The end location of the exception specification, if any.
     unsigned ExceptionSpecLocEnd;
+
+    /// \brief The location of the context-specifier, if any.
+    unsigned ContextSpecLoc;
 
     /// Params - This is a pointer to a new[]'d array of ParamInfo objects that
     /// describe the parameters specified by this function declarator.  null if

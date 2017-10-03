@@ -1410,6 +1410,9 @@ protected:
     ///
     /// This is a value of type \c RefQualifierKind.
     unsigned RefQualifier : 2;
+
+    /// The context-specifier.
+    unsigned ContextSpec : 2;
   };
 
   class ObjCObjectTypeBitfields {
@@ -3245,11 +3248,13 @@ public:
   struct ExtProtoInfo {
     ExtProtoInfo()
         : Variadic(false), HasTrailingReturn(false), TypeQuals(0),
-          RefQualifier(RQ_None), ExtParameterInfos(nullptr) {}
+          RefQualifier(RQ_None), ContextSpec(CK_unspecified),
+          ExtParameterInfos(nullptr) {}
 
     ExtProtoInfo(CallingConv CC)
         : ExtInfo(CC), Variadic(false), HasTrailingReturn(false), TypeQuals(0),
-          RefQualifier(RQ_None), ExtParameterInfos(nullptr) {}
+          RefQualifier(RQ_None), ContextSpec(CK_unspecified),
+          ExtParameterInfos(nullptr) {}
 
     ExtProtoInfo withExceptionSpec(const ExceptionSpecInfo &O) {
       ExtProtoInfo Result(*this);
@@ -3262,6 +3267,7 @@ public:
     bool HasTrailingReturn : 1;
     unsigned char TypeQuals;
     RefQualifierKind RefQualifier;
+    ContextKind ContextSpec;
     ExceptionSpecInfo ExceptionSpec;
     const ExtParameterInfo *ExtParameterInfos;
   };
@@ -3363,6 +3369,7 @@ public:
     EPI.ExceptionSpec.Type = getExceptionSpecType();
     EPI.TypeQuals = static_cast<unsigned char>(getTypeQuals());
     EPI.RefQualifier = getRefQualifier();
+    EPI.ContextSpec = getContextSpec();
     if (EPI.ExceptionSpec.Type == EST_Dynamic) {
       EPI.ExceptionSpec.Exceptions = exceptions();
     } else if (EPI.ExceptionSpec.Type == EST_ComputedNoexcept) {
@@ -3468,6 +3475,10 @@ public:
   /// Retrieve the ref-qualifier associated with this function type.
   RefQualifierKind getRefQualifier() const {
     return static_cast<RefQualifierKind>(FunctionTypeBits.RefQualifier);
+  }
+
+  ContextKind getContextSpec() const {
+    return static_cast<ContextKind>(FunctionTypeBits.ContextSpec);
   }
 
   typedef const QualType *param_type_iterator;
