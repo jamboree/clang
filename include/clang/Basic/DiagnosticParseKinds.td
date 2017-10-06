@@ -334,8 +334,8 @@ def err_typename_invalid_constexpr : Error<
   "type name does not allow constexpr specifier to be specified">;
 def err_typename_identifiers_only : Error<
   "typename is allowed for identifiers only">;
-def err_typename_invalid_context_spec : Error<
-  "type name does not allow %0 specifier to be specified">;
+def err_typename_invalid_generic_spec : Error<
+  "type name does not allow generic specifier to be specified">;
 
 def err_friend_invalid_in_context : Error<
   "'friend' used outside of class">;

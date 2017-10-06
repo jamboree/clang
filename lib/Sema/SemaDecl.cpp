@@ -5642,9 +5642,9 @@ Sema::ActOnTypedefDeclarator(Scope* S, Declarator& D, DeclContext* DC,
   if (D.getDeclSpec().isConstexprSpecified())
     Diag(D.getDeclSpec().getConstexprSpecLoc(), diag::err_invalid_constexpr)
       << 1;
-  if (auto CS = D.getDeclSpec().getContextSpec())
-    Diag(D.getDeclSpec().getContextSpecLoc(), diag::err_invalid_context_spec)
-      << 2 << DeclSpec::getSpecifierName(CS);
+  if (D.getDeclSpec().getContextSpec() == CK_generic)
+    Diag(D.getDeclSpec().getContextSpecLoc(), diag::err_invalid_generic_spec)
+      << 2;
 
   if (D.getDeclSpec().isConceptSpecified())
     Diag(D.getDeclSpec().getConceptSpecLoc(),
@@ -6531,9 +6531,9 @@ NamedDecl *Sema::ActOnVariableDeclarator(
     }
 
     // Context specifier shall be applied only to the declaration of a function.
-    if (auto CS = D.getDeclSpec().getContextSpec()) {
-      Diag(D.getDeclSpec().getContextSpecLoc(), diag::err_invalid_context_spec)
-          << 0 << DeclSpec::getSpecifierName(CS);
+    if (D.getDeclSpec().getContextSpec() == CK_generic) {
+      Diag(D.getDeclSpec().getContextSpecLoc(), diag::err_invalid_generic_spec)
+          << 0;
       NewVD->setInvalidDecl(true);
     }
   }
@@ -11682,9 +11682,12 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   if (DS.isInlineSpecified())
     Diag(DS.getInlineSpecLoc(), diag::err_inline_non_function)
         << getLangOpts().CPlusPlus1z;
-  if (auto CS = DS.getContextSpec())
-    Diag(D.getDeclSpec().getContextSpecLoc(), diag::err_invalid_context_spec)
-        << 1 << DeclSpec::getSpecifierName(CS);
+  if (DS.isConstexprSpecified())
+    Diag(DS.getConstexprSpecLoc(), diag::err_invalid_constexpr)
+      << 0;
+  if (DS.getContextSpec() == CK_generic)
+    Diag(D.getDeclSpec().getContextSpecLoc(), diag::err_invalid_generic_spec)
+      << 1;
   if (DS.isConceptSpecified())
     Diag(DS.getConceptSpecLoc(), diag::err_concept_wrong_decl_kind);
 

@@ -212,9 +212,17 @@ DeclaratorChunk DeclaratorChunk::getFunction(bool hasProto,
   I.Fun.HasTrailingReturnType   = TrailingReturnType.isUsable() ||
                                   TrailingReturnType.isInvalid();
   I.Fun.TrailingReturnType      = TrailingReturnType.get();
-  I.Fun.ContextSpec             = TheDeclarator.getDeclSpec().getContextSpec();
-  I.Fun.ContextSpecLoc =
-      TheDeclarator.getDeclSpec().getContextSpecLoc().getRawEncoding();
+
+  // Bind concrete context to the function.
+  if (TheDeclarator.getDeclSpec().getContextSpec() > CK_generic) {
+    I.Fun.ContextSpec = TheDeclarator.getDeclSpec().getContextSpec();
+    I.Fun.ContextSpecLoc =
+        TheDeclarator.getDeclSpec().getContextSpecLoc().getRawEncoding();
+    TheDeclarator.getMutableDeclSpec().ClearContextSpec();
+  } else {
+    I.Fun.ContextSpec = 0;
+    I.Fun.ContextSpecLoc = 0;
+  }
 
   assert(I.Fun.TypeQuals == TypeQuals && "bitfield overflow");
   assert(I.Fun.ExceptionSpecType == ESpecType && "bitfield overflow");

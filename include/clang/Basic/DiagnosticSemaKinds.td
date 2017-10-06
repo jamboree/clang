@@ -2348,8 +2348,10 @@ def note_private_extern : Note<
   "use __attribute__((visibility(\"hidden\"))) attribute instead">;
 
 // [C++Ex] Context
+def err_invalid_generic_spec : Error<
+  "%select{variable|function parameter|typedef}0 cannot be generic">;
 def err_invalid_context_spec : Error<
-  "%select{variable|function parameter|typedef}0 cannot be %1">;
+  "only function can be %0">;
 def err_context_spec_tag : Error<
   "%select{class|struct|interface|union|enum}0 cannot be marked %1">;
 def err_context_spec_no_declarators : Error<

@@ -4739,6 +4739,16 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
     T.addConst();
   }
 
+  if (!D.isFunctionDeclarator()) {
+    auto CS = D.getDeclSpec().getContextSpec();
+    if (CS > CK_generic) {
+      S.Diag(D.getDeclSpec().getContextSpecLoc(),
+             diag::err_invalid_context_spec)
+          << DeclSpec::getSpecifierName(CS);
+      // DS.ClearContextSpec();
+    }
+  }
+
   // If there was an ellipsis in the declarator, the declaration declares a
   // parameter pack whose type may be a pack expansion type.
   if (D.hasEllipsis()) {
